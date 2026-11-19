@@ -1,0 +1,36 @@
+[package]
+name = "dm-ui"
+description = "TickTapDrum's interface, independent of the host that runs it"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["midi"]
+# MIDI out: the "MIDI output" setting and the dm-midi sender. Without it the setting is not
+# offered and neither dm-midi nor midir is built.
+midi = ["dep:dm-midi"]
+
+[dependencies]
+dm-audio = { workspace = true }
+dm-bank = { workspace = true }
+dm-midi = { workspace = true, optional = true }
+dm-project = { workspace = true }
+egui = { workspace = true }
+fluent-bundle = { workspace = true }
+log = { workspace = true }
+unic-langid = { workspace = true }
+
+# The system's open and save dialogs. Desktops only: phones keep projects in the app's folder.
+# The default xdg-portal backend needs no GTK on Linux.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+rfd = "0.18"
+
+# The system's language. Android's host reads it from the activity's configuration instead.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+sys-locale = { workspace = true }
+
+[dev-dependencies]
+fluent-syntax = "0.12.0"

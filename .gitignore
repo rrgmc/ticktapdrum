@@ -1,0 +1,12 @@
+local/
+.claude/worktrees/
+CLAUDE.local.md
+/target/
+
+# The iOS app's generated project, Info.plist and build output.
+/ports/ios/TickTapDrum.xcodeproj/
+/ports/ios/TickTapDrum/Info.plist
+/ports/ios/build/
+
+# Release packages, written by the packaging scripts.
+/dist/

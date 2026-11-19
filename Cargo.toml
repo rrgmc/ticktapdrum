@@ -1,0 +1,59 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/dm-audio",
+    "crates/dm-bank",
+    "crates/dm-midi",
+    "crates/dm-project",
+    "crates/dm-ui",
+    "apps/dm-desktop",
+    "apps/dm-android",
+    "apps/dm-ios",
+    "tools/icons",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+dm-audio = { path = "crates/dm-audio" }
+dm-bank = { path = "crates/dm-bank" }
+dm-midi = { path = "crates/dm-midi" }
+dm-project = { path = "crates/dm-project" }
+# Without default features, so each app chooses its own (MIDI out, for one).
+dm-ui = { path = "crates/dm-ui", default-features = false }
+
+# The synthesizer fork karaokemachine uses. It implements SF2 modulators, and it skips a defective
+# record instead of refusing the whole bank.
+rustysynth = { git = "https://github.com/rrgmc/rustysynth", branch = "custom" }
+cpal = "0.18.2"
+rtrb = "0.4.0"
+# MIDI out on Windows (WinMM), macOS and iOS (CoreMIDI) and Linux (ALSA).
+midir = "0.11.1"
+
+egui = "0.37.0"
+eframe = { version = "0.37.0", default-features = false }
+
+ureq = "3"
+sha2 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+hex = "0.4"
+thiserror = "2"
+log = "0.4"
+
+# Translations: Fluent message files, and the system's language on desktops and iOS.
+fluent-bundle = "0.16.0"
+unic-langid = "0.9.6"
+sys-locale = "0.3.2"
+
+# Android only: dm-audio opens the audio output with AAudio directly.
+ndk = { version = "0.9.0", default-features = false }
+libc = "0.2"
+
+[profile.dev.package."*"]
+# The synthesizer and the zip inflater are far too slow unoptimised to judge latency by ear.
+opt-level = 2

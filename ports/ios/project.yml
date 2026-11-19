@@ -1,0 +1,116 @@
+# The iOS app around the Rust library. XcodeGen writes TickTapDrum.xcodeproj and the Info.plist
+# from this file; both are generated and git-ignored. Edit this file, never the project in Xcode.
+# tools/ios/build.sh builds the library, runs XcodeGen and builds the app.
+name: TickTapDrum
+options:
+  bundleIdPrefix: io.github.rrgmc
+  developmentLanguage: en
+  deploymentTarget:
+    # Must equal the IPHONEOS_DEPLOYMENT_TARGET that tools/ios/build.sh exports for cargo, or code
+    # compiled by the `cc` crate fails to link.
+    iOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    # iPhone and iPad.
+    TARGETED_DEVICE_FAMILY: "1,2"
+    # Only the Apple silicon simulator slice is built.
+    EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+targets:
+  TickTapDrum:
+    type: application
+    platform: iOS
+    sources:
+      - path: TickTapDrum
+    dependencies:
+      # A static library: linked into the binary, nothing to embed.
+      - framework: build/TickTapDrum.xcframework
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.rrgmc.ticktapdrum
+        PRODUCT_NAME: TickTapDrum
+        # The team comes from the environment (DM_IOS_TEAM), never from this file. It must be set
+        # on the target: XcodeGen writes an empty value here that would hide a project-level one.
+        DEVELOPMENT_TEAM: ${DM_IOS_TEAM}
+        CODE_SIGN_STYLE: Automatic
+        # The app icon is in TickTapDrum/Assets.xcassets; tools/icons draws its image
+        # (cargo run -p dm-icons --release).
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # From `cargo rustc ... -- --print native-static-libs`, less what Xcode adds anyway, plus
+        # what cpal's CoreAudio backend and main.m's audio session use.
+        OTHER_LDFLAGS: >-
+          -liconv
+          -framework AVFAudio -framework AVFoundation -framework AudioToolbox
+          -framework CoreAudio -framework CoreFoundation -framework CoreGraphics
+          -framework Foundation -framework Metal -framework QuartzCore -framework UIKit
+    info:
+      path: TickTapDrum/Info.plist
+      properties:
+        # The English names. TickTapDrum/<language>.lproj/InfoPlist.strings translates them.
+        CFBundleDisplayName: TickTapDrum
+        CFBundleName: TickTapDrum
+        # The languages the app is translated into (crates/dm-ui/locales), so iOS offers them
+        # under Settings, the app, Language, and shows the name in the chosen one.
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations:
+          - en
+          - pt-BR
+        # From the environment, like the team. tools/ios/env.sh sets 0.1.0 and 1 when they are
+        # unset; tools/ios/package.sh sets them from the release version.
+        CFBundleShortVersionString: "${DM_VERSION_NAME}"
+        CFBundleVersion: "${DM_VERSION_CODE}"
+        # The iOS 27 SDK refuses to launch an app without a scene. main.m's DMSceneDelegate gives
+        # winit's window to this one.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default
+                UISceneDelegateClassName: DMSceneDelegate
+        # An empty launch screen. Without one iOS runs the app in a letterboxed legacy size.
+        UILaunchScreen: {}
+        # No orientation is forced.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Documents (and so Documents/exports) shows in the Files app and in Finder over USB.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        # Without it an iPad's trackpad or mouse reaches nothing.
+        UIApplicationSupportsIndirectInputEvents: true
+        LSApplicationCategoryType: public.app-category.music
+  # A UI test that drives the app from outside: tools/ios/drive.sh passes it a list of steps.
+  TickTapDrumUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: TickTapDrumUITests
+    dependencies:
+      - target: TickTapDrum
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.rrgmc.ticktapdrum.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        DEVELOPMENT_TEAM: ${DM_IOS_TEAM}
+        CODE_SIGN_STYLE: Automatic
+schemes:
+  # Declared, or xcodebuild invents a scheme with no platforms and rejects every destination.
+  TickTapDrum:
+    build:
+      targets:
+        TickTapDrum: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - TickTapDrumUITests
+    archive:
+      config: Release

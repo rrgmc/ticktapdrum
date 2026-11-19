@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="432" height="432">
+  <!-- TickTapDrum app icon: a drumhead seen from above, with a 4 x 4 step grid, a playhead column
+       and a stick tapping the top-right step. Grid rows, top to bottom: hi-hat, snare, tom, kick.
+       108 x 108 canvas as for an Android adaptive icon; launchers show the middle 72 x 72. -->
+  <rect width="108" height="108" fill="#2B2870"/>
+  <circle cx="54" cy="54" r="31" fill="#FFC53D"/>
+  <circle cx="54" cy="54" r="26" fill="#FFF3DC"/>
+  <g fill="#2B2870">
+    <circle cx="54" cy="25.5" r="1.6"/><circle cx="54" cy="82.5" r="1.6"/>
+    <circle cx="25.5" cy="54" r="1.6"/><circle cx="82.5" cy="54" r="1.6"/>
+    <circle cx="33.8" cy="33.8" r="1.6"/><circle cx="74.2" cy="33.8" r="1.6"/>
+    <circle cx="33.8" cy="74.2" r="1.6"/><circle cx="74.2" cy="74.2" r="1.6"/>
+  </g>
+  <rect x="63.15" y="34.65" width="10.2" height="38.7" rx="2.6" fill="#FFC53D" opacity="0.55"/>
+  <g>
+    <rect x="36.25" y="36.25" width="7" height="7" rx="1.82" fill="#FF6A3D"/>
+    <rect x="45.75" y="36.25" width="7" height="7" rx="1.82" fill="#FF6A3D"/>
+    <rect x="55.25" y="36.25" width="7" height="7" rx="1.82" fill="#FF6A3D"/>
+    <rect x="64.75" y="36.25" width="7" height="7" rx="1.82" fill="#FFC53D"/>
+    <rect x="36.25" y="45.75" width="7" height="7" rx="1.82" fill="#EADCC4"/>
+    <rect x="45.75" y="45.75" width="7" height="7" rx="1.82" fill="#FF6A3D"/>
+    <rect x="55.25" y="45.75" width="7" height="7" rx="1.82" fill="#EADCC4"/>
+    <rect x="64.75" y="45.75" width="7" height="7" rx="1.82" fill="#FF6A3D"/>
+    <rect x="36.25" y="55.25" width="7" height="7" rx="1.82" fill="#EADCC4"/>
+    <rect x="45.75" y="55.25" width="7" height="7" rx="1.82" fill="#EADCC4"/>
+    <rect x="55.25" y="55.25" width="7" height="7" rx="1.82" fill="#FF6A3D"/>
+    <rect x="64.75" y="55.25" width="7" height="7" rx="1.82" fill="#EADCC4"/>
+    <rect x="36.25" y="64.75" width="7" height="7" rx="1.82" fill="#FF6A3D"/>
+    <rect x="45.75" y="64.75" width="7" height="7" rx="1.82" fill="#EADCC4"/>
+    <rect x="55.25" y="64.75" width="7" height="7" rx="1.82" fill="#FF6A3D"/>
+    <rect x="64.75" y="64.75" width="7" height="7" rx="1.82" fill="#EADCC4"/>
+  </g>
+  <line x1="68.25" y1="39.75" x2="92" y2="16" stroke="#2B2870" stroke-width="8.5" stroke-linecap="round"/>
+  <line x1="68.25" y1="39.75" x2="92" y2="16" stroke="#FFC53D" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="68.25" cy="39.75" r="5.4" fill="#2B2870"/>
+  <circle cx="68.25" cy="39.75" r="3" fill="#FFC53D"/>
+</svg>

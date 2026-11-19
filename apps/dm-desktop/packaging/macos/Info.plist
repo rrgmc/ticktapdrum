@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>TickTapDrum</string>
+    <key>CFBundleDisplayName</key>
+    <string>TickTapDrum</string>
+    <!-- The languages the app is translated into. Resources/<language>.lproj/InfoPlist.strings
+         translates the names above; LSHasLocalizedDisplayName makes the Finder use them. -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>pt-BR</string>
+    </array>
+    <key>LSHasLocalizedDisplayName</key>
+    <true/>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.rrgmc.ticktapdrum.desktop</string>
+    <key>CFBundleExecutable</key>
+    <string>TickTapDrum</string>
+    <key>CFBundleIconFile</key>
+    <string>icon</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.music</string>
+</dict>
+</plist>

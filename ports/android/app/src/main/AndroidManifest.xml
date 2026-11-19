@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The app downloads its instrument bank on first start. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- hasCode is true for one small Java class, MainActivity, which extends Android's
+         NativeActivity. NativeActivity loads libticktapdrum.so, which holds the whole app.
+         MainActivity adds only the system file picker, whose answer reaches the activity that
+         started it and which NativeActivity cannot receive.
+
+         enableOnBackInvokedCallback is false so the Back button reaches the app as a key press.
+         Otherwise Android handles Back itself and closes the activity. The app closes its open
+         pop-up or dialog on Back, and with none open moves itself to the background, which
+         keeps the activity alive. When the activity is destroyed anyway, the app ends its
+         process (see Logger in apps/dm-android/src/lib.rs), because winit ignores the
+         destruction and the next launch in the same process would hang.
+
+         localeConfig lists the app's languages, so Android 13 and later let the person pick one
+         for this app alone, in the system settings. -->
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:hasCode="true"
+        android:allowBackup="false"
+        android:enableOnBackInvokedCallback="false"
+        android:localeConfig="@xml/locales_config">
+
+        <!-- configChanges lists the changes the app handles itself, so rotating the screen or
+             resizing the window does not destroy and restart the activity. With locale listed,
+             a change of language reaches the running app, which reads it from the
+             configuration (see Host in apps/dm-android/src/lib.rs). -->
+        <activity
+            android:name=".MainActivity"
+            android:label="@string/app_name"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|fontWeightAdjustment|locale|layoutDirection">
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="ticktapdrum" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -1,0 +1,4 @@
+/* The app's name in the Finder, the Dock and the menu bar. The same as app-name in
+   crates/dm-ui/locales/pt-BR/app.ftl. */
+"CFBundleDisplayName" = "TickTapDrum";
+"CFBundleName" = "TickTapDrum";

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=TickTapDrum
+Comment=Make drum patterns on a step grid
+Comment[pt_BR]=Crie padrões de bateria numa grade de passos
+Exec=ticktapdrum
+Icon=ticktapdrum
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+StartupWMClass=ticktapdrum

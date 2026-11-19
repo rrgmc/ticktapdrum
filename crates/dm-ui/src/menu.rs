@@ -1,0 +1,747 @@
+//! The menu under ☰, and the dialogs its items open: Save as, Open, Load default style, Export,
+//! Language, MIDI output, and the tempo when the strip has no room for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
+//!
+//! It does everything the old Projects screen did. Starting a new project, opening one, opening
+//! a file or starting from a beat asks first when there are unsaved changes, and deleting always
+//! asks. Each question asks in a small window of its own, over the dialog it came from.
+
+use egui::{RichText, Vec2};
+
+use crate::i18n::{self, Language};
+use crate::icons;
+use crate::pictures::RowLabels;
+use crate::projects::{ProjectEvent, ProjectsView};
+use crate::strip::Hidden;
+use crate::tempo::{self, TempoEvent};
+use crate::widgets::{self, TAP, TEXT_SIZE};
+
+pub(crate) enum MenuEvent {
+    /// Save, open, start, export, and the rest the old Projects screen did.
+    Project(ProjectEvent),
+    /// The Open or Save as dialog has just opened: read the list of saved projects again.
+    ListSaved,
+    Undo,
+    Redo,
+    /// Open the Sounds dialog.
+    Sounds,
+    Tempo(TempoEvent),
+    /// Show text in this language, or in the system's if `None`.
+    Language(Option<Language>),
+    /// The MIDI output dialog has just opened: read the list of outputs again.
+    ListMidiOutputs,
+    /// Send the drums to this MIDI output, or play them on this device if `None`.
+    MidiOutput(Option<String>),
+}
+
+/// What the MIDI output item and its dialog show.
+pub(crate) struct MidiView<'a> {
+    /// The chosen output's name, or `None`.
+    pub(crate) choice: Option<&'a str>,
+    /// Whether the drums go to the chosen output now.
+    pub(crate) connected: bool,
+    /// The outputs listed when the dialog opened.
+    pub(crate) outputs: &'a [String],
+}
+
+/// What the menu and its dialogs need to know to draw themselves.
+pub(crate) struct MenuView<'a> {
+    pub(crate) projects: ProjectsView<'a>,
+    /// The strip buttons that did not fit, which the menu offers instead.
+    pub(crate) hidden: Hidden,
+    pub(crate) can_undo: bool,
+    pub(crate) can_redo: bool,
+    pub(crate) bpm: f32,
+    /// The swing amount, 0.0 to 0.5 of a step.
+    pub(crate) swing: f32,
+    /// The language the person chose, or `None` while text follows the system.
+    pub(crate) language: Option<Language>,
+    /// The language text follows when the person chose none.
+    pub(crate) system_language: Language,
+    /// The MIDI output setting, or `None` where the platform cannot send MIDI.
+    pub(crate) midi: Option<MidiView<'a>>,
+}
+
+/// The dialog a menu item opened.
+enum Shown {
+    /// The name being typed.
+    SaveAs(String),
+    Open,
+    Presets,
+    Export,
+    Tempo,
+    Language,
+    MidiOutput,
+    /// "Start new?" when there are unsaved changes.
+    New,
+}
+
+/// An "are you sure" question waiting for an answer, over the open dialog.
+#[derive(Clone, PartialEq)]
+enum Ask {
+    Open(String),
+    OpenFile,
+    Delete(String),
+    Preset(&'static str),
+}
+
+#[derive(Default)]
+pub(crate) struct Menu {
+    dialog: Option<Shown>,
+    ask: Option<Ask>,
+}
+
+/// The width of a menu item.
+const ITEM_WIDTH: f32 = 240.0;
+
+fn item<'a>(icon: &str, word: &str) -> egui::Button<'a> {
+    widgets::button(icon, word).min_size(Vec2::new(ITEM_WIDTH, TAP))
+}
+
+fn big(text: &str) -> RichText {
+    RichText::new(text).size(TEXT_SIZE)
+}
+
+/// A plain button with a word, at least [`TAP`] high, for the dialogs.
+fn word_button<'a>(text: &str) -> egui::Button<'a> {
+    egui::Button::new(big(text)).min_size(Vec2::new(TAP, TAP))
+}
+
+impl Menu {
+    /// Opens the Save as dialog, for Ctrl+S on a project with no name yet.
+    pub(crate) fn open_save_as(&mut self) {
+        self.dialog = Some(Shown::SaveAs(String::new()));
+        self.ask = None;
+    }
+
+    /// Whether one of the menu's dialogs is open.
+    pub(crate) fn dialog_open(&self) -> bool {
+        self.dialog.is_some()
+    }
+
+    /// Opens a dialog, dropping any question left from before.
+    fn open(&mut self, dialog: Shown) {
+        self.dialog = Some(dialog);
+        self.ask = None;
+    }
+
+    /// Draws the pop-up under ☰. Items that open a dialog close the pop-up.
+    pub(crate) fn contents(&mut self, ui: &mut egui::Ui, view: &MenuView) -> Vec<MenuEvent> {
+        let mut events = Vec::new();
+        let p = &view.projects;
+        ui.set_min_width(ITEM_WIDTH);
+        ui.set_max_width(ITEM_WIDTH + 40.0);
+        let hidden = view.hidden;
+
+        // The strip buttons that did not fit come first, on one line and as icons, as in the
+        // strip: Undo, Redo and the tempo are the items most often tapped in a hurry, and at the top they stay put whatever the
+        // status below says. Undo and Redo keep the menu open, so they can be tapped again.
+        let extras = [hidden.undo, hidden.redo, hidden.tempo]
+            .iter()
+            .filter(|&&h| h)
+            .count();
+        if extras > 0 {
+            ui.horizontal_wrapped(|ui| {
+                let gaps = ui.spacing().item_spacing.x * (extras - 1) as f32;
+                let size = Vec2::new((ITEM_WIDTH - gaps) / extras as f32, TAP);
+                if hidden.undo
+                    && ui
+                        .add_enabled(
+                            view.can_undo,
+                            widgets::button(icons::UNDO, "").min_size(size),
+                        )
+                        .on_hover_text(tr!("menu-undo"))
+                        .clicked()
+                {
+                    events.push(MenuEvent::Undo);
+                }
+                if hidden.redo
+                    && ui
+                        .add_enabled(
+                            view.can_redo,
+                            widgets::button(icons::REDO, "").min_size(size),
+                        )
+                        .on_hover_text(tr!("menu-redo"))
+                        .clicked()
+                {
+                    events.push(MenuEvent::Redo);
+                }
+                if hidden.tempo
+                    && ui
+                        .add(
+                            widgets::button(icons::METRONOME, &format!("{:.0}", view.bpm))
+                                .min_size(size),
+                        )
+                        .on_hover_text(tr!("menu-tempo-tip"))
+                        .clicked()
+                {
+                    self.open(Shown::Tempo);
+                    ui.close();
+                }
+            });
+            ui.separator();
+        }
+
+        // A short status: the name, unsaved changes, and the last message.
+        // A project's name is what the person typed, so it is shown as it is.
+        let title = p.name.map_or_else(|| tr!("menu-no-name"), str::to_owned);
+        ui.label(big(&title).strong());
+        if p.unsaved {
+            ui.label(tr!("menu-unsaved"));
+        }
+        if let Some(message) = p.message {
+            ui.label(RichText::new(message).color(ui.visuals().warn_fg_color));
+        }
+        ui.separator();
+
+        match p.name {
+            // Saving under the same name stays in the menu, so the message shows it worked.
+            Some(_) => {
+                if ui
+                    .add_enabled(p.unsaved, item(icons::FLOPPY_DISK, &tr!("menu-save")))
+                    .clicked()
+                {
+                    events.push(MenuEvent::Project(ProjectEvent::Save));
+                }
+                if ui.add(item(icons::COPY, &tr!("menu-save-as"))).clicked() {
+                    self.open(Shown::SaveAs(String::new()));
+                    events.push(MenuEvent::ListSaved);
+                    ui.close();
+                }
+            }
+            None => {
+                if ui
+                    .add(item(icons::FLOPPY_DISK, &tr!("menu-save")))
+                    .clicked()
+                {
+                    self.open(Shown::SaveAs(String::new()));
+                    events.push(MenuEvent::ListSaved);
+                    ui.close();
+                }
+            }
+        }
+        if ui
+            .add(item(icons::FOLDER_OPEN, &tr!("menu-open")))
+            .clicked()
+        {
+            self.open(Shown::Open);
+            events.push(MenuEvent::ListSaved);
+            ui.close();
+        }
+        if ui.add(item(icons::FILE_PLUS, &tr!("menu-new"))).clicked() {
+            if p.unsaved {
+                self.open(Shown::New);
+            } else {
+                events.push(MenuEvent::Project(ProjectEvent::New));
+            }
+            ui.close();
+        }
+        if ui.add(item(icons::SPARKLE, &tr!("menu-presets"))).clicked() {
+            self.open(Shown::Presets);
+            ui.close();
+        }
+        if ui
+            .add(item(icons::SPEAKER_HIGH, &tr!("menu-sounds")))
+            .clicked()
+        {
+            events.push(MenuEvent::Sounds);
+            ui.close();
+        }
+        if ui.add(item(icons::EXPORT, &tr!("menu-export"))).clicked() {
+            self.open(Shown::Export);
+            ui.close();
+        }
+        // The settings, together under a heading. They belong to the device, not to the beat.
+        // Basic mode always comes last.
+        ui.separator();
+        ui.label(big(&tr!("menu-settings")).strong());
+        // How rows are labelled: each tap moves to the next choice, and the item says which
+        // one is on. It stays open, so the grid behind can be seen to change.
+        let labels = match p.row_labels {
+            RowLabels::Names => tr!("menu-rows-names"),
+            RowLabels::PicturesAndNames => tr!("menu-rows-pictures-and-names"),
+            RowLabels::Pictures => tr!("menu-rows-pictures"),
+        };
+        if ui
+            .add(
+                widgets::toggle_button(p.row_labels.shows_pictures(), icons::IMAGE, &labels)
+                    .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+            )
+            .clicked()
+        {
+            events.push(MenuEvent::Project(ProjectEvent::RowLabels(
+                p.row_labels.next(),
+            )));
+        }
+        if let Some(landscape) = p.landscape
+            && ui
+                .add(
+                    widgets::toggle_button(landscape, icons::DEVICE_ROTATE, &tr!("menu-landscape"))
+                        .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+                )
+                .clicked()
+        {
+            events.push(MenuEvent::Project(ProjectEvent::Landscape(!landscape)));
+        }
+        if ui.add(item(icons::GLOBE, &tr!("menu-language"))).clicked() {
+            self.open(Shown::Language);
+            ui.close();
+        }
+        // The item names the output chosen, shortened to fit.
+        if let Some(midi) = &view.midi {
+            let device = midi.choice.map_or_else(
+                || tr!("menu-midi-output-none"),
+                |name| crate::midi::shorten(name, crate::midi::SHORT_NAME),
+            );
+            let text = tr!("menu-midi-output-choice", device = device);
+            let mut response = ui.add(item(icons::MUSIC_NOTES, &text));
+            if let Some(name) = midi.choice
+                && name.chars().count() > crate::midi::SHORT_NAME
+            {
+                response = response.on_hover_text(name);
+            }
+            if response.clicked() {
+                self.open(Shown::MidiOutput);
+                events.push(MenuEvent::ListMidiOutputs);
+                ui.close();
+            }
+        }
+        // Basic mode always comes last.
+        if ui
+            .add(
+                widgets::toggle_button(p.basic, icons::SLIDERS_HORIZONTAL, &tr!("menu-basic"))
+                    .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+            )
+            .clicked()
+        {
+            events.push(MenuEvent::Project(ProjectEvent::Basic(!p.basic)));
+        }
+
+        events
+    }
+
+    /// Shows the dialog a menu item opened, if any. Call it every frame.
+    pub(crate) fn dialogs(&mut self, ctx: &egui::Context, view: &MenuView) -> Vec<MenuEvent> {
+        let mut events = Vec::new();
+        // Taken out while drawn, and put back unless it closes.
+        let Some(mut dialog) = self.dialog.take() else {
+            return events;
+        };
+        let p = &view.projects;
+        // Set by a choice that needs nothing more.
+        let mut done = false;
+        let closed = match &mut dialog {
+            Shown::SaveAs(text) => {
+                let title = if p.name.is_some() {
+                    tr!("menu-save-as")
+                } else {
+                    tr!("menu-save")
+                };
+                widgets::dialog_at_top(ctx, "save-as", &title, |ui| {
+                    done = save_as(ui, text, p.saved, &mut events);
+                })
+                .closed
+            }
+            Shown::Open => {
+                widgets::dialog(ctx, "open", &tr!("menu-open"), |ui| {
+                    done = self.open_list(ui, p, &mut events);
+                })
+                .closed
+            }
+            Shown::Presets => {
+                widgets::dialog(ctx, "presets", &tr!("menu-presets"), |ui| {
+                    done = self.presets(ui, p.unsaved, &mut events);
+                })
+                .closed
+            }
+            Shown::Export => {
+                widgets::dialog(ctx, "export", &tr!("menu-export"), |ui| {
+                    export(ui, p, &mut events)
+                })
+                .closed
+            }
+            Shown::Tempo => {
+                widgets::dialog(ctx, "tempo", &tr!("menu-tempo"), |ui| {
+                    let changes = tempo::contents(ui, view.bpm, view.swing);
+                    events.extend(changes.into_iter().map(MenuEvent::Tempo));
+                })
+                .closed
+            }
+            Shown::Language => {
+                widgets::dialog(ctx, "language", &tr!("menu-language"), |ui| {
+                    done = language(ui, view, &mut events);
+                })
+                .closed
+            }
+            Shown::MidiOutput => {
+                widgets::dialog(ctx, "midi-output", &tr!("menu-midi-output"), |ui| {
+                    done = view
+                        .midi
+                        .as_ref()
+                        .is_none_or(|midi| midi_output(ui, midi, &mut events));
+                })
+                .closed
+            }
+            Shown::New => match widgets::confirm(
+                ctx,
+                "new",
+                &tr!("menu-new-question"),
+                &tr!("menu-start-new"),
+                &tr!("menu-keep-this"),
+            ) {
+                Some(true) => {
+                    events.push(MenuEvent::Project(ProjectEvent::New));
+                    true
+                }
+                Some(false) => true,
+                None => false,
+            },
+        };
+        // A question a dialog asked, in its own window over the dialog.
+        if let Some(ask) = self.ask.clone() {
+            let (question, yes, no) = match &ask {
+                Ask::Open(name) => (
+                    tr!("menu-open-question", name = name.as_str()),
+                    tr!("menu-open"),
+                    tr!("menu-keep-this"),
+                ),
+                Ask::OpenFile => (
+                    tr!("menu-open-file-question"),
+                    tr!("menu-choose-file"),
+                    tr!("menu-keep-this"),
+                ),
+                Ask::Delete(name) => (
+                    tr!("menu-delete-question", name = name.as_str()),
+                    tr!("menu-delete"),
+                    tr!("menu-keep"),
+                ),
+                // Style names such as Rock are not translated.
+                Ask::Preset(name) => (
+                    tr!("menu-preset-question", name = *name),
+                    tr!("menu-start"),
+                    tr!("menu-keep-this"),
+                ),
+            };
+            match widgets::confirm(ctx, "menu-question", &question, &yes, &no) {
+                Some(true) => {
+                    self.ask = None;
+                    match ask {
+                        Ask::Open(name) => {
+                            events.push(MenuEvent::Project(ProjectEvent::Open(name)));
+                            done = true;
+                        }
+                        Ask::OpenFile => {
+                            events.push(MenuEvent::Project(ProjectEvent::OpenFile));
+                            done = true;
+                        }
+                        // The list stays open, to delete another or open one.
+                        Ask::Delete(name) => {
+                            events.push(MenuEvent::Project(ProjectEvent::Delete(name)));
+                        }
+                        Ask::Preset(name) => {
+                            events.push(MenuEvent::Project(ProjectEvent::Preset(name)));
+                            done = true;
+                        }
+                    }
+                }
+                Some(false) => self.ask = None,
+                None => {}
+            }
+        }
+        if closed || done {
+            self.ask = None;
+        } else {
+            self.dialog = Some(dialog);
+        }
+        events
+    }
+
+    /// The Open dialog: the saved projects, each with Delete, and, where the platform can,
+    /// "Open a file" and "Save to a file". Returns true when a project was opened or a file
+    /// dialog started.
+    fn open_list(
+        &mut self,
+        ui: &mut egui::Ui,
+        p: &ProjectsView,
+        events: &mut Vec<MenuEvent>,
+    ) -> bool {
+        let mut done = false;
+        if p.file_items {
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add(widgets::button(
+                        icons::FILE_ARROW_UP,
+                        &tr!("menu-open-file"),
+                    ))
+                    .clicked()
+                {
+                    if p.unsaved {
+                        self.ask = Some(Ask::OpenFile);
+                    } else {
+                        events.push(MenuEvent::Project(ProjectEvent::OpenFile));
+                        done = true;
+                    }
+                }
+                if ui
+                    .add(widgets::button(icons::FLOPPY_DISK, &tr!("menu-save-file")))
+                    .clicked()
+                {
+                    events.push(MenuEvent::Project(ProjectEvent::SaveFile));
+                    done = true;
+                }
+            });
+            ui.separator();
+        }
+
+        if p.saved.is_empty() {
+            ui.label(big(&tr!("menu-nothing-saved")));
+        }
+        // Each saved beat: its name, to open it, and Delete.
+        for name in p.saved {
+            ui.horizontal_wrapped(|ui| {
+                let current = p.name == Some(name.as_str());
+                if ui
+                    .add(crate::toggle(current, big(name)).min_size(Vec2::new(180.0, TAP)))
+                    .clicked()
+                    && !current
+                {
+                    if p.unsaved {
+                        self.ask = Some(Ask::Open(name.clone()));
+                    } else {
+                        events.push(MenuEvent::Project(ProjectEvent::Open(name.clone())));
+                        done = true;
+                    }
+                }
+                if ui
+                    .add(widgets::button(icons::TRASH, &tr!("menu-delete")))
+                    .clicked()
+                {
+                    self.ask = Some(Ask::Delete(name.clone()));
+                }
+            });
+        }
+        done
+    }
+
+    /// The preset beats. Returns true when one was chosen.
+    fn presets(&mut self, ui: &mut egui::Ui, unsaved: bool, events: &mut Vec<MenuEvent>) -> bool {
+        let mut done = false;
+        ui.label(tr!("menu-presets-intro"));
+        // Each beat: its button, then its description on a line of its own, so a long
+        // description does not wrap around the button.
+        // The names are names of styles, such as Rock or Bossa nova, which Portuguese uses as
+        // they are, so they are not translated. Their descriptions are.
+        for preset in dm_project::presets() {
+            ui.add_space(4.0);
+            if ui
+                .add(egui::Button::new(big(preset.name)).min_size(Vec2::new(140.0, TAP)))
+                .clicked()
+            {
+                if unsaved {
+                    self.ask = Some(Ask::Preset(preset.name));
+                } else {
+                    events.push(MenuEvent::Project(ProjectEvent::Preset(preset.name)));
+                    done = true;
+                }
+            }
+            ui.label(preset_description(preset));
+        }
+        done
+    }
+}
+
+/// The Save as dialog: a name box. Returns true when the project was saved or the box
+/// cancelled.
+fn save_as(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    saved: &[String],
+    events: &mut Vec<MenuEvent>,
+) -> bool {
+    let mut done = false;
+    ui.label(big(&tr!("menu-name")));
+    let edit = ui.add(
+        egui::TextEdit::singleline(text)
+            .hint_text(tr!("projects-default-name"))
+            .desired_width(f32::INFINITY)
+            .font(egui::TextStyle::Heading),
+    );
+    // Focus the box when the dialog opens, while nothing else has focus. Asking every frame
+    // would also interrupt the input method each frame, which on Android closes and reopens the
+    // on-screen keyboard over and over.
+    if !edit.has_focus() && ui.memory(|m| m.focused().is_none()) {
+        edit.request_focus();
+    }
+    let typed = crate::store::clean_name(text);
+    // Enter saves, whether or not the box still has focus: on Android the keyboard's Enter
+    // comes as a press and a release in one frame, and the box reports losing focus only on a
+    // later one. The box is the only text box in the dialog.
+    let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+    if let Some(name) = &typed
+        && saved.contains(name)
+    {
+        ui.label(tr!("menu-replaces", name = name.as_str()));
+    }
+    ui.horizontal_wrapped(|ui| {
+        let save = ui
+            .add_enabled(
+                typed.is_some(),
+                widgets::button(icons::FLOPPY_DISK, &tr!("menu-save")),
+            )
+            .clicked();
+        if (save || enter)
+            && let Some(name) = typed.clone()
+        {
+            events.push(MenuEvent::Project(ProjectEvent::SaveAs(name)));
+            done = true;
+        }
+        if ui.add(word_button(&tr!("menu-cancel"))).clicked() {
+            done = true;
+        }
+    });
+    done
+}
+
+/// The Export dialog: MIDI and WAV, the progress of a WAV export with Stop, and where exports
+/// go.
+fn export(ui: &mut egui::Ui, p: &ProjectsView, events: &mut Vec<MenuEvent>) {
+    match p.exporting {
+        Some(fraction) => {
+            ui.label(big(&tr!("menu-recording")));
+            ui.horizontal_wrapped(|ui| {
+                ui.add(
+                    egui::ProgressBar::new(fraction)
+                        .show_percentage()
+                        .desired_width(200.0),
+                );
+                if ui
+                    .add(widgets::button(icons::STOP, &tr!("menu-stop")))
+                    .clicked()
+                {
+                    events.push(MenuEvent::Project(ProjectEvent::CancelExport));
+                }
+            });
+        }
+        None => {
+            // Each kind: its button, then what it is for on a line of its own.
+            if ui
+                .add(widgets::button(icons::MUSIC_NOTES, &tr!("menu-midi")))
+                .clicked()
+            {
+                events.push(MenuEvent::Project(ProjectEvent::ExportMidi));
+            }
+            ui.label(tr!("menu-midi-about"));
+            ui.add_space(4.0);
+            if ui
+                .add_enabled(
+                    p.can_render,
+                    widgets::button(icons::FILE_AUDIO, &tr!("menu-wav")),
+                )
+                .clicked()
+            {
+                events.push(MenuEvent::Project(ProjectEvent::ExportWav));
+            }
+            ui.label(if p.can_render {
+                tr!("menu-wav-about")
+            } else {
+                tr!("menu-wav-about-no-bank")
+            });
+        }
+    }
+    if let Some(message) = p.export_message {
+        ui.add_space(8.0);
+        ui.label(big(message).color(ui.visuals().warn_fg_color));
+    }
+    if let Some(place) = p.export_place {
+        ui.add_space(8.0);
+        ui.label(tr!("menu-export-place", place = place));
+    }
+}
+
+/// The Language dialog: the system's language, then each language by its own name, which is
+/// never translated, so people can find theirs whatever the screen shows. Returns true when one
+/// was chosen.
+fn language(ui: &mut egui::Ui, view: &MenuView, events: &mut Vec<MenuEvent>) -> bool {
+    let mut done = false;
+    let system = tr!(
+        "menu-language-system",
+        language = view.system_language.native_name()
+    );
+    let choices = std::iter::once((None, system)).chain(
+        Language::ALL
+            .into_iter()
+            .map(|l| (Some(l), l.native_name().to_owned())),
+    );
+    for (choice, text) in choices {
+        let selected = view.language == choice;
+        if ui
+            .add(crate::toggle(selected, big(&text)).min_size(Vec2::new(ITEM_WIDTH, TAP)))
+            .clicked()
+        {
+            if !selected {
+                events.push(MenuEvent::Language(choice));
+            }
+            done = true;
+        }
+    }
+    done
+}
+
+/// The MIDI output dialog: "None" first, then each output the system reports. A chosen output
+/// that is not there now is listed too, so the choice still shows. A tap chooses and closes;
+/// nothing asks. Returns true when an entry was tapped.
+fn midi_output(ui: &mut egui::Ui, midi: &MidiView, events: &mut Vec<MenuEvent>) -> bool {
+    let mut done = false;
+    ui.label(tr!("menu-midi-output-about"));
+    let missing = midi
+        .choice
+        .filter(|name| !midi.outputs.iter().any(|o| o == name));
+    // Names are the system's, shown as they came.
+    let choices = std::iter::once((None, tr!("menu-midi-output-none")))
+        .chain(
+            midi.outputs
+                .iter()
+                .map(|name| (Some(name.as_str()), name.clone())),
+        )
+        .chain(missing.map(|name| {
+            (
+                Some(name),
+                tr!("menu-midi-output-not-connected", device = name),
+            )
+        }));
+    for (choice, text) in choices {
+        let selected = midi.choice == choice;
+        if ui
+            .add(crate::toggle(selected, big(&text)).min_size(Vec2::new(ITEM_WIDTH, TAP)))
+            .clicked()
+        {
+            if !selected {
+                events.push(MenuEvent::MidiOutput(choice.map(str::to_owned)));
+            }
+            done = true;
+        }
+    }
+    // A choice that is listed but not connected yet, or that will not open.
+    if let Some(name) = midi.choice
+        && missing.is_none()
+        && !midi.connected
+    {
+        ui.label(tr!("menu-midi-output-waiting", device = name));
+    }
+    done
+}
+
+/// A preset's description in the current language. The id is chosen by the preset's name; a
+/// preset added without a message shows its English description.
+fn preset_description(preset: &dm_project::Preset) -> String {
+    let id = match preset.name {
+        "Rock" => "menu-preset-rock",
+        "Pop" => "menu-preset-pop",
+        "Hip-hop" => "menu-preset-hip-hop",
+        "Funk" => "menu-preset-funk",
+        "Bossa nova" => "menu-preset-bossa-nova",
+        "House" => "menu-preset-house",
+        "Reggae" => "menu-preset-reggae",
+        _ => return preset.description.to_owned(),
+    };
+    i18n::tr(id)
+}

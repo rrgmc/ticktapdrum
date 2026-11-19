@@ -1,0 +1,108 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The release signing key. The environment wins: DM_KEYSTORE_FILE, DM_KEYSTORE_PASSWORD,
+// DM_KEY_ALIAS and DM_KEY_PASSWORD (the release workflow sets them from secrets). Otherwise
+// keystore.properties next to settings.gradle, which git ignores, with the keys storeFile,
+// storePassword, keyAlias and keyPassword. A relative storeFile is relative to ports/android.
+// Without either, the release APK is signed with the debug key, so it still installs for testing.
+def env = { String name -> System.getenv(name)?.trim() ?: null }
+def releaseKey = null
+if (env('DM_KEYSTORE_FILE')) {
+    releaseKey = [
+        storeFile    : env('DM_KEYSTORE_FILE'),
+        storePassword: env('DM_KEYSTORE_PASSWORD') ?: '',
+        keyAlias     : env('DM_KEY_ALIAS') ?: '',
+        // A PKCS12 key usually shares the store's password, so a blank key password uses it.
+        keyPassword  : env('DM_KEY_PASSWORD') ?: env('DM_KEYSTORE_PASSWORD') ?: '',
+    ]
+} else if (rootProject.file('keystore.properties').isFile()) {
+    def props = new Properties()
+    rootProject.file('keystore.properties').withInputStream { props.load(it) }
+    releaseKey = [
+        storeFile    : props.getProperty('storeFile', ''),
+        storePassword: props.getProperty('storePassword', ''),
+        keyAlias     : props.getProperty('keyAlias', ''),
+        keyPassword  : props.getProperty('keyPassword') ?: props.getProperty('storePassword', ''),
+    ]
+}
+
+android {
+    namespace = 'dev.rrgmc.ticktapdrum'
+    compileSdk = 36
+    // The NDK that built the library also strips its debug information. tools/android/build.sh sets
+    // ANDROID_NDK_HOME. Without it, the plugin wants its own default NDK version, and if that is not
+    // installed it packages the library unstripped: several hundred megabytes for a debug build.
+    // The plugin also refuses an ndkPath whose version differs from ndkVersion, so both are set.
+    def ndkHome = System.getenv('ANDROID_NDK_HOME')
+    if (ndkHome) {
+        def props = new Properties()
+        file("${ndkHome}/source.properties").withInputStream { props.load(it) }
+        ndkPath = ndkHome
+        ndkVersion = props.getProperty('Pkg.Revision')
+    }
+
+    defaultConfig {
+        applicationId = 'dev.rrgmc.ticktapdrum'
+        // AAudio, which the audio output uses, starts at Android 8.0 (API 26).
+        minSdk = 26
+        targetSdk = 36
+        // The release workflow sets both from the version tag: 1.2.3 has the code 10203. The
+        // code must grow with every release, or Android refuses the update.
+        versionCode = (env('DM_VERSION_CODE') ?: '1') as int
+        versionName = env('DM_VERSION_NAME') ?: '0.1.0'
+        // Only the ABIs tools/android/build.sh builds.
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    // The one Java class, MainActivity. The default, Java 8, draws a warning from the JDK 21 that
+    // builds it.
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    signingConfigs {
+        if (releaseKey) {
+            release {
+                storeFile = rootProject.file(releaseKey.storeFile)
+                storePassword = releaseKey.storePassword
+                keyAlias = releaseKey.keyAlias
+                keyPassword = releaseKey.keyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+            signingConfig = releaseKey ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+}
+
+// An APK without the native library installs, then fails at launch with an error that does not
+// name the cause. Refuse to package one.
+tasks.register('checkNativeLibs') {
+    doLast {
+        def dir = file('src/main/jniLibs')
+        def found = dir.exists() && dir.listFiles()?.any { new File(it, 'libticktapdrum.so').exists() }
+        if (!found) {
+            throw new GradleException("no libticktapdrum.so under ${dir}. Run tools/android/build.sh.")
+        }
+    }
+}
+tasks.configureEach { task ->
+    if (task.name.startsWith('merge') && task.name.endsWith('JniLibFolders')) {
+        task.dependsOn('checkNativeLibs')
+    }
+}

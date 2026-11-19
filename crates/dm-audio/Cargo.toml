@@ -1,0 +1,30 @@
+[package]
+name = "dm-audio"
+description = "SoundFont drum synthesis and the audio output"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rustysynth = { workspace = true }
+cpal = { workspace = true }
+rtrb = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+
+# `realtime` raises the audio thread's priority on Windows, macOS and Linux.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+cpal = { workspace = true, features = ["realtime"] }
+
+# On Android the audio output does not go through cpal: src/aaudio.rs opens AAudio directly.
+# There cpal's `realtime` feature would make cpal ask AAudio for its low-latency mode, always,
+# with no way to fall back. A real phone granted that mode (its MMAP path), then its audio driver
+# failed to route the stream to the speaker, and starting it failed with "Disconnected" on every
+# try. src/aaudio.rs asks for low-latency mode and falls back to the default mode, which every
+# device supports; see "Audio delay" in docs/DESIGN.md. On Android cpal is only used for its
+# sample conversion traits.
+[target.'cfg(target_os = "android")'.dependencies]
+ndk = { workspace = true, features = ["audio", "api-level-26"] }
+libc = { workspace = true }

@@ -1,0 +1,4 @@
+/* The app's name under its icon and in Settings. The same as app-name in
+   crates/dm-ui/locales/pt-BR/app.ftl. */
+"CFBundleDisplayName" = "TickTapDrum";
+"CFBundleName" = "TickTapDrum";

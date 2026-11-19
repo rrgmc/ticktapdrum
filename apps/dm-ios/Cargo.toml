@@ -1,0 +1,26 @@
+[package]
+name = "dm-ios"
+description = "TickTapDrum on iPhone and iPad"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# iOS loads no arbitrary dynamic libraries, so the Rust code is a static library linked into the
+# app binary. ports/ios builds the app around it.
+[lib]
+name = "ticktapdrum"
+crate-type = ["staticlib", "rlib"]
+
+[features]
+default = ["midi"]
+# MIDI out. `--no-default-features` builds the app without it.
+midi = ["dm-ui/midi"]
+
+[target.'cfg(target_os = "ios")'.dependencies]
+dm-ui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "wgpu"] }
+log = { workspace = true }
+# The type eframe's `Frame` hands out its window as; the version must match eframe's.
+raw-window-handle = "0.6"

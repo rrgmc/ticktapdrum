@@ -1,0 +1,27 @@
+[package]
+name = "dm-android"
+description = "TickTapDrum on Android"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "ticktapdrum"
+crate-type = ["cdylib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+dm-ui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "android-native-activity"] }
+log = { workspace = true }
+# The type `NativeOptions::android_app` takes. eframe does not re-export winit, so name the crate
+# winit itself depends on; the versions must match.
+android-activity = { version = "0.6", features = ["native-activity"] }
+# Sends `log` output to logcat.
+android_logger = "0.15"
+# Calls into the activity, to lock the screen orientation. The version android-activity uses.
+jni = "0.22"
+# winit reports through `tracing`. Its `log` feature passes those reports on to `log`, so they
+# reach logcat, and the logger sees the activity being destroyed (see `Logger` in lib.rs).
+tracing = { version = "0.1", features = ["log"] }

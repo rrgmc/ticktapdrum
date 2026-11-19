@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Text Android shows outside the app. The app's own text is in crates/dm-ui/locales. -->
+<resources>
+    <!-- The name under the launcher icon. The same as app-name in crates/dm-ui/locales/en/app.ftl. -->
+    <string name="app_name">TickTapDrum</string>
+</resources>

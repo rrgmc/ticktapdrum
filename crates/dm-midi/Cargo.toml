@@ -1,0 +1,17 @@
+[package]
+name = "dm-midi"
+description = "Sends TickTapDrum's notes to a MIDI output"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+dm-audio = { workspace = true }
+rtrb = { workspace = true }
+log = { workspace = true }
+
+# midir has no Android backend, so on Android the crate builds as a stub that offers no outputs.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+midir = { workspace = true }

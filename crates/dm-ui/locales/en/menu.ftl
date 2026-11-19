@@ -1,0 +1,119 @@
+# Messages for menu. Ids start with "menu-".
+# The menu opens under the ☰ button. Its items are about 240 points wide.
+
+## Strip buttons the menu offers when the strip has no room for them.
+
+menu-undo = Undo
+menu-redo = Redo
+menu-tempo-tip = Tempo and swing
+
+## The status at the top of the menu.
+
+# Instead of the project's name, before it has been saved under one.
+menu-no-name = No name yet
+menu-unsaved = Changes not saved yet. They stay on this device anyway.
+
+## The menu's items. Each is also the title of the dialog it opens.
+
+menu-save = Save
+menu-save-as = Save as
+menu-open = Open
+# Starts a new, empty project.
+menu-new = New
+# Opens a list of ready-made beats in well-known styles (rock, funk and so on).
+menu-presets = Load default style
+menu-sounds = Sounds
+menu-song = Song
+menu-export = Export
+# Locks the screen in landscape orientation.
+menu-landscape = Keep in landscape
+# A simpler version of the app: one pattern, no song.
+menu-basic = Basic mode
+menu-language = Language
+# The first choice in the Language dialog: follow the system's language. $language is that
+# language's own name, such as "English".
+menu-language-system = System ({ $language })
+# Sends the drums to another device or program over MIDI. $device is the chosen output's name,
+# as the system reports it and shortened to fit, or menu-midi-output-none.
+menu-midi-output-choice = MIDI output: { $device }
+# The title of the dialog that chooses the MIDI output.
+menu-midi-output = MIDI output
+# The first choice in the MIDI output dialog: no output, so the drums play on this device.
+menu-midi-output-none = None
+menu-midi-output-about = The drums play on the chosen output instead of on this device.
+# A chosen output that is not there now. $device is its name, as the system reported it.
+menu-midi-output-not-connected = { $device } (not connected)
+# Under the list, when the chosen output is listed but not connected (yet).
+menu-midi-output-waiting = { $device } is not connected yet.
+# One-line messages in the menu's status. $device is the output's name.
+menu-midi-sending = Sending to { $device }.
+menu-midi-gone = { $device } is gone. Playing on this device again.
+menu-midi-in-use = { $device } is in use by another program.
+# The title of the dialog that sets the tempo and the swing.
+menu-tempo = Tempo
+
+## Questions asked before something unsaved is lost.
+
+menu-new-question = Start a new beat? This beat has changes that are not saved, and they go.
+menu-start-new = New
+# Answers "no" to a question that would lose this beat's unsaved changes.
+menu-keep-this = Cancel
+menu-open-file-question = Open a file? This beat's unsaved changes go.
+menu-choose-file = Choose file
+menu-open-question = Open "{ $name }"? This beat's unsaved changes go.
+# $name is the name of a saved project, as the person typed it.
+menu-delete-question = Delete "{ $name }" for good?
+menu-delete = Delete
+# Answers "no" to "Delete for good?".
+menu-keep = Cancel
+menu-cancel = Cancel
+
+## The Open dialog.
+
+# Desktop only: opens a project file from anywhere on the computer.
+menu-open-file = Open a file
+# Desktop only: saves the project as a file anywhere on the computer.
+menu-save-file = Save to a file
+menu-nothing-saved = Nothing saved yet.
+
+## The Save as dialog.
+
+# The label above the box where the project's name is typed.
+menu-name = Name
+# $name is the name being typed, which a saved project already has.
+menu-replaces = This replaces the saved "{ $name }".
+
+## The Load default style dialog. Style names such as Rock stay in English.
+
+menu-presets-intro = A ready-made beat to play with and change. It replaces the beat on screen.
+menu-preset-question = Load { $name }? This beat's unsaved changes go.
+menu-start = Load
+menu-preset-rock = A steady straight beat with the kick on 1 and 3, the snare on 2 and 4, and a drum fill every fourth bar.
+menu-preset-pop = A bright, even beat with snare and clap together on 2 and 4 over busy hi-hats.
+menu-preset-hip-hop = A laid-back boom bap groove with a heavy kick, a hard snare and a little swing.
+menu-preset-funk = A busy groove with syncopated kicks, accented hi-hats and quiet ghost notes on the snare.
+menu-preset-bossa-nova = A gentle Brazilian rhythm with a rocking kick and a soft snare clave over two bars.
+menu-preset-house = A dance beat with the kick on every beat, claps on 2 and 4 and open hi-hats in between.
+menu-preset-reggae = A relaxed one drop with kick and snare together on beat 3 and shuffled hi-hats.
+
+## The Export dialog.
+
+menu-recording = Recording the song to a WAV file
+# Stops the recording in progress.
+menu-stop = Stop
+menu-midi = MIDI file
+menu-midi-about = The notes, for other music software.
+menu-wav = WAV recording
+menu-wav-about = The sound, for any music player.
+# Shown while the drum sounds are still downloading, so the WAV button is greyed out.
+menu-wav-about-no-bank = The sound, for any music player. It needs the drum sounds, which are not loaded yet.
+# $place is where a phone puts exported files, such as "the Files app, under On My iPhone, …".
+menu-export-place = Exports are saved in { $place }.
+
+## The Settings group at the bottom of the menu.
+
+menu-settings = Settings
+# How each row is labelled in the grid: by its name, a picture of the drum, or both.
+menu-rows-names = Rows: names
+menu-rows-pictures-and-names = Rows: pictures and names
+menu-rows-pictures = Rows: pictures

@@ -1,0 +1,10 @@
+# Gradle state and outputs.
+.gradle/
+build/
+local.properties
+# Native libraries, built by tools/android/build.sh.
+app/src/main/jniLibs/
+# The release signing key and its passwords.
+keystore.properties
+*.jks
+*.keystore

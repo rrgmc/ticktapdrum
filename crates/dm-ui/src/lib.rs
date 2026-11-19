@@ -1,0 +1,1400 @@
+//! TickTapDrum's interface. Hosts call [`DrumApp::ui`] once per frame.
+//!
+//! Get a bank; then edit patterns of one or more bars, chain them into a song, and play either
+//! one pattern on a loop or the song; choose the kit and shape each row; save and open projects,
+//! with undo and redo. The project autosaves, so closing the app or a phone stopping it loses
+//! nothing.
+//!
+//! The screen is one strip of buttons at the top and the grid below it (`strip.rs`). Everything
+//! else opens in a pop-up or a dialog over the grid, never in its place.
+//!
+//! How much of a pattern the grid shows follows the width the app actually has, never the kind
+//! of device, so an iPad in Split View gets the phone layout and a wide desktop window the
+//! tablet one:
+//!
+//! - wide enough for 16 steps of 44 points or more: one or more whole bars side by side, up to 4;
+//! - narrower: half a bar. The bar button's arrows then move by half a bar.
+
+#[macro_use]
+mod i18n;
+mod bank;
+mod bars;
+mod drums;
+mod export;
+mod files;
+mod grid;
+mod history;
+#[allow(dead_code)] // Not every icon is used.
+mod icons;
+mod menu;
+mod midi;
+mod patterns;
+mod picker;
+mod pictures;
+mod projects;
+mod rows;
+mod song;
+mod sounds;
+mod store;
+mod strip;
+mod tempo;
+mod widgets;
+
+use std::path::PathBuf;
+
+pub use picker::{PickAnswers, PickKind, PickRequest, PickedFile};
+
+use bank::BankState;
+use dm_audio::Engine;
+use dm_project::{Change, DEFAULT_VELOCITY, MAX_PATTERNS, Project, STEPS_PER_BAR};
+use history::{Group, History};
+use strip::Mode;
+
+/// The narrowest a step may be before the grid shows fewer steps.
+const MIN_STEP_WIDTH: f32 = 44.0;
+/// The same on a short screen, such as a phone in landscape, so a whole bar fits.
+const COMPACT_MIN_STEP_WIDTH: f32 = 32.0;
+/// The most bars shown side by side.
+const MAX_BARS_SHOWN: usize = 4;
+/// Below this height the screen is short, such as a phone in landscape: steps may then be as
+/// narrow as [`COMPACT_MIN_STEP_WIDTH`].
+const SHORT: f32 = 560.0;
+/// How long after the last change the autosave is written, in seconds.
+const AUTOSAVE_DELAY: f64 = 1.0;
+/// How long a notice stays on screen, in seconds.
+const NOTICE_SECONDS: f64 = 4.0;
+
+/// The whole application state the interface draws.
+pub struct DrumApp {
+    bank: BankState,
+    project: Project,
+    /// The pattern being edited, as an index into `project.patterns()`.
+    current: usize,
+    mode: Mode,
+    playing: bool,
+    /// The first bar the grid shows.
+    view_bar: usize,
+    /// On narrow screens, which half of the bar shows: 0 or 1.
+    half: usize,
+    /// While playing, the grid shows what is being heard.
+    follow: bool,
+    /// Basic mode: the first pattern only, no pattern or bar pop-up, no song, and a shorter row
+    /// pop-up. A device setting, kept in the store.
+    basic: bool,
+    /// How row names show: names, pictures and names, or pictures. A device setting.
+    row_labels: pictures::RowLabels,
+    grid: grid::Grid,
+    bar_strip: bars::BarStrip,
+    tabs: patterns::PatternTabs,
+    song_row: song::SongRow,
+    sounds: sounds::SoundsScreen,
+    /// Whether the Sounds dialog is open.
+    sounds_open: bool,
+    menu: menu::Menu,
+    row_popup: rows::RowPopup,
+    /// The saved projects, read when the Open or Save as dialog opens.
+    saved_list: Vec<String>,
+    store: store::Store,
+    /// The project's name, once it has been saved or opened under one.
+    name: Option<String>,
+    /// The project as last saved under its name, to tell whether it has unsaved changes.
+    saved: Option<Project>,
+    /// What the last save or open reported.
+    message: Option<String>,
+    /// What the last export reported, for the Export dialog.
+    export_message: Option<String>,
+    history: History,
+    /// Where exports go on a phone, which has no save dialog. `None` uses the system dialog.
+    export_dir: Option<PathBuf>,
+    /// The message that tells people where `export_dir` is, if its path means little to them.
+    export_place: Option<&'static str>,
+    /// The MIDI output the drums go to, if one is chosen. Started beside the engine.
+    midi: midi::Midi,
+    /// A one-line notice shown over the grid, and the time (egui's clock, in seconds) it goes.
+    notice: Option<(String, f64)>,
+    /// The language the person chose in the menu, or `None` to follow the system.
+    language_choice: Option<i18n::Language>,
+    /// The system's language, if the interface is translated into it.
+    system_language: Option<i18n::Language>,
+    /// The language the window title was last set in.
+    titled: Option<i18n::Language>,
+    /// A WAV export in progress.
+    wav_job: Option<export::WavJob>,
+    /// The egui context, kept so worker threads can ask for a redraw.
+    ctx: egui::Context,
+    /// Which undo group this frame's edits belong to. Set by the event handlers.
+    frame_group: Group,
+    /// Set by undo and redo, whose change must not itself be recorded.
+    skip_record: bool,
+    /// When the project last changed and the autosave is still to be written.
+    unsaved_since: Option<f64>,
+    /// Whether the running engine has been given the project.
+    synced: bool,
+    /// Whether the icon font has been given to egui.
+    fonts_installed: bool,
+    padding: egui::Margin,
+    /// Locks the screen in landscape (`true`) or lets it turn (`false`). Set by a host that can.
+    orientation: Option<Box<dyn Fn(bool)>>,
+    /// What the system's Back button does when nothing is open. Set by a host that has one.
+    leave: Option<Box<dyn Fn()>>,
+    /// Keeps the screen on (`true`) or lets it sleep (`false`). Set by a host that can.
+    keep_awake: Option<Box<dyn Fn(bool)>>,
+    /// What `keep_awake` was last told.
+    awake: bool,
+    /// Shows the host's file picker. Set by a host whose picker answers later, such as Android.
+    picker: Option<Box<dyn Fn(PickRequest)>>,
+    /// Where the host's answers to picks arrive.
+    picks: picker::PickInbox,
+    /// The picks sent to the host's picker and not yet answered.
+    pending: files::Pending,
+}
+
+impl DrumApp {
+    /// `data_dir` is a writable folder private to the app, where the bank, the projects and the
+    /// autosave live. The autosaved project, if any, comes back.
+    pub fn new(data_dir: PathBuf) -> Self {
+        let store = store::Store::new(&data_dir);
+        let (project, name) = store.restore().unwrap_or((Project::new(), None));
+        let saved = name.as_deref().and_then(|n| store.load(n).ok());
+        let basic = store.basic();
+        let language_choice = store.language();
+        let system_language = i18n::system_language();
+        let row_labels = store.row_labels();
+        let midi = midi::Midi::new(store.midi_output());
+        let app = Self {
+            bank: BankState::new(data_dir),
+            project,
+            current: 0,
+            mode: Mode::Pattern,
+            playing: false,
+            view_bar: 0,
+            half: 0,
+            follow: true,
+            basic,
+            row_labels,
+            grid: grid::Grid::default(),
+            bar_strip: bars::BarStrip::default(),
+            tabs: patterns::PatternTabs::default(),
+            song_row: song::SongRow::default(),
+            sounds: sounds::SoundsScreen::default(),
+            sounds_open: false,
+            menu: menu::Menu::default(),
+            row_popup: rows::RowPopup::default(),
+            saved_list: Vec::new(),
+            store,
+            name,
+            saved,
+            message: None,
+            export_message: None,
+            history: History::default(),
+            export_dir: None,
+            export_place: None,
+            midi,
+            notice: None,
+            language_choice,
+            system_language,
+            titled: None,
+            wav_job: None,
+            ctx: egui::Context::default(),
+            frame_group: Group::Single,
+            skip_record: false,
+            unsaved_since: None,
+            synced: false,
+            fonts_installed: false,
+            padding: egui::Margin::same(8),
+            orientation: None,
+            leave: None,
+            keep_awake: None,
+            awake: false,
+            picker: None,
+            picks: picker::PickInbox::new(),
+            pending: files::Pending::default(),
+        };
+        app.apply_language();
+        app
+    }
+
+    /// For a host that knows the system's language better than the app can ask, such as
+    /// Android: `tag` is a BCP 47 tag such as `pt-BR`. Unless the person chose a language in the
+    /// menu, text follows it.
+    pub fn with_system_locale(mut self, tag: &str) -> Self {
+        self.set_system_locale(tag);
+        self
+    }
+
+    /// The same, for a host that learns of a change while the app runs.
+    pub fn set_system_locale(&mut self, tag: &str) {
+        self.system_language = i18n::Language::matching(tag);
+        self.apply_language();
+    }
+
+    /// The language text is shown in: the person's choice, else the system's, else English.
+    fn effective_language(&self) -> i18n::Language {
+        self.language_choice
+            .or(self.system_language)
+            .unwrap_or(i18n::Language::English)
+    }
+
+    fn apply_language(&self) {
+        i18n::set_language(self.effective_language());
+    }
+
+    /// Shows text in `choice` from now on, or in the system's language if `None`, and keeps the
+    /// choice for the next start. Messages already shown were in the old language, so they go.
+    pub(crate) fn set_language_choice(&mut self, choice: Option<i18n::Language>) {
+        self.language_choice = choice;
+        if let Err(e) = self.store.set_language(choice) {
+            log::warn!("could not keep the language setting: {e}");
+        }
+        self.apply_language();
+        self.message = None;
+        self.export_message = None;
+    }
+
+    /// Where a phone saves exported MIDI and WAV files, since it has no save dialog. Desktops
+    /// leave this unset and ask where to save each file.
+    pub fn with_export_dir(mut self, dir: PathBuf) -> Self {
+        self.export_dir = Some(dir);
+        self
+    }
+
+    /// How the Export dialog names the export folder, instead of its path: the id of a message
+    /// in `locales/*/app.ftl`, so it is translated with the rest. A phone's folder is reached
+    /// through a file manager, where the path is not what people see.
+    pub fn with_export_place(mut self, message: &'static str) -> Self {
+        self.export_place = Some(message);
+        self
+    }
+
+    /// For a host that can lock the screen's orientation: `lock(true)` keeps it in landscape,
+    /// `lock(false)` lets it turn. The â˜° menu then offers the setting. The saved setting
+    /// is applied at once.
+    pub fn with_orientation_lock(mut self, lock: impl Fn(bool) + 'static) -> Self {
+        if self.store.landscape() {
+            lock(true);
+        }
+        self.orientation = Some(Box::new(lock));
+        self
+    }
+
+    /// For a host with a system Back button, such as Android: what Back does when no pop-up or
+    /// dialog is open, typically sending the app to the background. While one is open, Back
+    /// closes it instead, as a tap outside it does.
+    pub fn with_back_leaves(mut self, leave: impl Fn() + 'static) -> Self {
+        self.leave = Some(Box::new(leave));
+        self
+    }
+
+    /// For a host that can stop the screen from sleeping: `keep(true)` keeps it on, `keep(false)`
+    /// lets it sleep again. The app keeps the screen on while it plays, so a pattern or song
+    /// left playing is not cut short by the screen locking.
+    pub fn with_keep_awake(mut self, keep: impl Fn(bool) + 'static) -> Self {
+        self.keep_awake = Some(Box::new(keep));
+        self
+    }
+
+    /// For a host with its own file picker that answers later, such as Android's: `pick` shows
+    /// it for the request, and must return at once. The host hands back the result through
+    /// [`DrumApp::pick_answers`]. The menu then offers opening and saving project files, and
+    /// exports go through the picker instead of the export folder.
+    pub fn with_file_picker(mut self, pick: impl Fn(PickRequest) + 'static) -> Self {
+        self.picker = Some(Box::new(pick));
+        self
+    }
+
+    /// Where the host hands back the files its picker returns. See [`DrumApp::with_file_picker`].
+    pub fn pick_answers(&self) -> PickAnswers {
+        self.picks.answers()
+    }
+
+    /// Space kept clear around the content, in points. A phone host uses it to stay clear of the
+    /// status bar and the navigation bar, which eframe does not report on Android.
+    pub fn with_padding(mut self, padding: egui::Margin) -> Self {
+        self.padding = padding;
+        self
+    }
+
+    /// Changes the space kept clear, for a host whose system bars move, such as a phone turning
+    /// or the iOS safe area changing.
+    pub fn set_padding(&mut self, padding: egui::Margin) {
+        self.padding = padding;
+    }
+
+    /// Development shortcut: use this `.sf2` directly and skip the bank download.
+    pub fn with_soundfont_file(mut self, path: PathBuf) -> Self {
+        self.bank.use_file(path);
+        self
+    }
+
+    /// Development shortcut: install the bank from this local archive instead of downloading it.
+    /// The archive is verified exactly as a download would be.
+    pub fn with_local_archive(mut self, path: PathBuf) -> Self {
+        self.bank.use_local_archive(path);
+        self
+    }
+
+    /// Draws one frame.
+    pub fn ui(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let language = self.effective_language();
+        if self.titled != Some(language) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(tr!("app-name")));
+            self.titled = Some(language);
+        }
+        if !self.fonts_installed {
+            icons::install(&ctx);
+            self.fonts_installed = true;
+        }
+        self.bank.poll(&ctx);
+        self.picks.set_context(&ctx);
+        self.back(&ctx);
+        let frame = egui::Frame::central_panel(ui.style()).inner_margin(self.padding);
+        egui::CentralPanel::default().frame(frame).show(ui, |ui| {
+            widgets::set_safe_area(ui.ctx(), ui.max_rect());
+            // Taken out of `self` for the frame, so the editor can borrow `self` mutably.
+            if self.bank.engine_mut().is_none() {
+                self.bank.ui(ui);
+                return;
+            }
+            let mut engine = self.bank.take_engine();
+            self.editor(ui, &mut engine);
+            // After the editor, so a new engine has the project, and its kit, before MIDI out
+            // turns on and sends the kit.
+            if let Some(note) = self.midi.frame(ui.ctx(), &mut engine) {
+                let text = note.text();
+                let until = ui.input(|i| i.time) + NOTICE_SECONDS;
+                self.notice = Some((text.clone(), until));
+                self.message = Some(text);
+            }
+            self.show_notice(ui);
+            // Sends changes that waited because the audio queue was full.
+            if !engine.flush() {
+                ui.ctx().request_repaint();
+            }
+            self.bank.put_engine(engine);
+        });
+        self.update_keep_awake();
+    }
+
+    /// Shows the current notice, if any, as one line near the bottom of the screen until it
+    /// expires. Messages in the menu's status line are seen only when the menu opens; a notice is
+    /// for news the person should see at once, such as a MIDI output going away.
+    fn show_notice(&mut self, ui: &egui::Ui) {
+        let Some((text, until)) = &self.notice else {
+            return;
+        };
+        let now = ui.input(|i| i.time);
+        if now >= *until {
+            self.notice = None;
+            return;
+        }
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs_f64(until - now));
+        let rect = ui.max_rect();
+        egui::Area::new(egui::Id::unique("dm-notice"))
+            .order(egui::Order::Foreground)
+            .interactable(false)
+            .pivot(egui::Align2::CENTER_BOTTOM)
+            .fixed_pos(egui::pos2(rect.center().x, rect.bottom() - 16.0))
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_max_width(rect.width() - 32.0);
+                    ui.label(text.as_str());
+                });
+            });
+    }
+
+    /// Tells the host to keep the screen on when playing starts, and to let it sleep when
+    /// playing stops. Checked after every frame, so every way of starting or stopping counts.
+    fn update_keep_awake(&mut self) {
+        if self.awake == self.playing {
+            return;
+        }
+        self.awake = self.playing;
+        if let Some(keep) = &self.keep_awake {
+            keep(self.playing);
+        }
+    }
+
+    /// The system's Back button, which egui reports as `BrowserBack`. With a pop-up or dialog
+    /// open it becomes Escape, which closes that the way a tap outside does. With nothing open it
+    /// does what the host asked for, if anything.
+    fn back(&mut self, ctx: &egui::Context) {
+        if !ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::BrowserBack)) {
+            return;
+        }
+        // Any window over the grid counts, the question windows included.
+        let open = egui::Popup::is_any_open(ctx)
+            || ctx.memory(|m| m.top_modal_layer().is_some())
+            || self.row_popup.is_open()
+            || self.menu.dialog_open()
+            || self.sounds_open;
+        if open {
+            ctx.input_mut(|i| {
+                i.events.push(egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            });
+        } else if let Some(leave) = &self.leave {
+            leave();
+        }
+    }
+
+    /// One frame of editing, with undo recording and the autosave around it.
+    fn editor(&mut self, ui: &mut egui::Ui, engine: &mut Engine) {
+        let now = ui.input(|i| i.time);
+        // A copy of the project before this frame's edits. Typically a few kilobytes.
+        let before = self.project.clone();
+        self.frame_group = Group::Single;
+        self.skip_record = false;
+        self.ctx = ui.ctx().clone();
+        self.shortcuts(ui, engine);
+        // Answers from the host's picker. Backing out, and answers to nothing asked, do nothing.
+        while let Some((id, file)) = self.picks.take() {
+            if let Some((kind, file)) = self.pending.collect(id, file) {
+                self.carry_out(engine, kind, files::Target::Picked(file));
+            }
+        }
+        if let Some(result) = self.wav_job.as_ref().and_then(export::WavJob::poll) {
+            self.wav_job = None;
+            self.message = Some(match result {
+                Ok(target) => tr!("projects-wav-saved", place = self.saved_where(&target)),
+                Err(e) => tr!("projects-wav-failed", reason = e),
+            });
+            self.export_message = self.message.clone();
+        }
+        self.editor_frame(ui, engine);
+
+        if self.project != before {
+            if !self.skip_record {
+                self.history.record(&before, self.frame_group, now);
+                // An edit makes "Saved" or "Opened" out of date.
+                self.message = None;
+            }
+            self.unsaved_since = Some(now);
+        }
+        // The autosave waits for a pause in editing, but not when the app loses focus: a phone
+        // may end the app soon after the user leaves it.
+        let focused = ui.input(|i| i.focused);
+        if let Some(since) = self.unsaved_since {
+            if now - since >= AUTOSAVE_DELAY || !focused {
+                if let Err(e) = self.store.autosave(&self.project, self.name.as_deref()) {
+                    log::warn!("autosave failed: {e}");
+                }
+                self.unsaved_since = None;
+            } else {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_secs_f64(AUTOSAVE_DELAY));
+            }
+        }
+    }
+
+    /// Undo, redo and save from a keyboard, when one is attached and no text box has focus.
+    fn shortcuts(&mut self, ui: &mut egui::Ui, engine: &mut Engine) {
+        if ui.ctx().egui_wants_keyboard_input() {
+            return;
+        }
+        let redo_y = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Y);
+        let redo_z = egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            egui::Key::Z,
+        );
+        let undo = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z);
+        let save = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S);
+        // The longer shortcut first, so Ctrl+Shift+Z is not taken for Ctrl+Z.
+        if ui.input_mut(|i| i.consume_shortcut(&redo_z) || i.consume_shortcut(&redo_y)) {
+            self.redo(engine);
+        } else if ui.input_mut(|i| i.consume_shortcut(&undo)) {
+            self.undo(engine);
+        }
+        if ui.input_mut(|i| i.consume_shortcut(&save)) {
+            if self.name.is_some() {
+                self.handle_projects(engine, vec![projects::ProjectEvent::Save]);
+            } else {
+                self.saved_list = self.store.list();
+                self.menu.open_save_as();
+            }
+        }
+    }
+
+    fn undo(&mut self, engine: &mut Engine) {
+        if self.history.undo(&mut self.project) {
+            self.skip_record = true;
+            self.resync(engine);
+        }
+    }
+
+    fn redo(&mut self, engine: &mut Engine) {
+        if self.history.redo(&mut self.project) {
+            self.skip_record = true;
+            self.resync(engine);
+        }
+    }
+
+    /// Brings the engine fully in line with the project, after undo, redo, open or new. Every
+    /// slot is cleared first, so nothing from the previous state stays behind.
+    fn resync(&mut self, engine: &mut Engine) {
+        for slot in 0..MAX_PATTERNS {
+            engine.clear_pattern(slot);
+        }
+        engine.set_tempo(self.project.tempo);
+        engine.set_song_loop(self.project.song_loop);
+        apply(engine, self.project.full_sync());
+        self.current = self.current.min(self.project.patterns().len() - 1);
+        let bars = self.project.patterns()[self.current].bars();
+        self.view_bar = self.view_bar.min(bars - 1);
+    }
+
+    fn editor_frame(&mut self, ui: &mut egui::Ui, engine: &mut Engine) {
+        if !self.synced {
+            engine.set_tempo(self.project.tempo);
+            engine.set_song_loop(self.project.song_loop);
+            apply(engine, self.project.full_sync());
+            self.synced = true;
+        }
+
+        if self.playing && !engine.is_playing() {
+            // A song that does not repeat has reached its end.
+            self.playing = false;
+        }
+        let playhead = engine.playhead();
+        if self.playing || playhead.is_some() {
+            // The playhead moves on its own; keep drawing. The second condition covers the end
+            // of a song, which the engine reports slightly before the last step stops sounding.
+            ui.ctx().request_repaint();
+        }
+        let playing_index = playhead.and_then(|p| self.project.index_of_slot(p.pattern));
+
+        // Follow: in song mode the editor shows the pattern being heard; in both modes the grid
+        // shows the bar being heard.
+        if self.playing
+            && self.follow
+            && let Some(p) = playhead
+        {
+            if self.mode == Mode::Song
+                && let Some(index) = playing_index
+            {
+                self.current = index;
+            }
+            if playing_index == Some(self.current) {
+                self.view_bar = p.step / STEPS_PER_BAR;
+                self.half = (p.step % STEPS_PER_BAR) / (STEPS_PER_BAR / 2);
+            }
+        }
+        self.current = self.current.min(self.project.patterns().len() - 1);
+        if self.basic {
+            self.current = 0;
+            self.mode = Mode::Pattern;
+        }
+
+        // Which steps the grid shows. A short screen, such as a phone in landscape, allows
+        // narrower steps, so a whole bar fits and the short rows are not split again.
+        let width = ui.available_width();
+        let short = ui.available_height() < SHORT;
+        let min_step = if short {
+            COMPACT_MIN_STEP_WIDTH
+        } else {
+            MIN_STEP_WIDTH
+        };
+        let pattern_bars = self.project.patterns()[self.current].bars();
+        let fits = ((width - grid::label_width(self.row_labels))
+            / (STEPS_PER_BAR as f32 * min_step))
+            .floor() as usize;
+        let split = fits == 0;
+        let shown_bars = fits.clamp(1, MAX_BARS_SHOWN).min(pattern_bars);
+        self.view_bar = self.view_bar.min(pattern_bars - shown_bars);
+        if !split {
+            self.half = 0;
+        }
+        let shown = self.view_bar..self.view_bar + shown_bars;
+        let heard = playing_index == Some(self.current);
+        let playing_bar = playhead.filter(|_| heard).map(|p| p.step / STEPS_PER_BAR);
+        let playing_half = playhead
+            .filter(|p| split && heard && p.step / STEPS_PER_BAR == self.view_bar)
+            .map(|p| (p.step % STEPS_PER_BAR) / (STEPS_PER_BAR / 2));
+
+        // The strip.
+        let can_redo = self.history.can_redo();
+        let state = strip::StripState {
+            playing: self.playing,
+            mode: self.mode,
+            pattern: self.project.patterns()[self.current].name(),
+            pattern_heard: heard,
+            bars: strip::BarView {
+                first: self.view_bar,
+                shown: shown_bars,
+                total: pattern_bars,
+                half: split.then_some(self.half),
+                playing_half,
+                can_prev: self.view_bar > 0 || (split && self.half == 1),
+                can_next: if split {
+                    self.half == 0 || self.view_bar + 1 < pattern_bars
+                } else {
+                    self.view_bar + shown_bars < pattern_bars
+                },
+            },
+            bpm: self.project.tempo,
+            can_undo: self.history.can_undo(),
+            can_redo,
+            step_levels: self.project.step_levels(),
+            basic: self.basic,
+        };
+        let strip = strip::ui(ui, &state);
+        ui.add_space(4.0);
+
+        // The pop-ups under the strip's buttons.
+        // The pattern pop-up edits the patterns and the song: what Play plays at the top, the
+        // patterns in the middle, the song's play order at the end.
+        let playing_entry = playhead.and_then(|p| p.song_index);
+        let (pattern_events, song_events) = strip
+            .pattern
+            .as_ref()
+            .and_then(|button| {
+                widgets::popup(button, |ui| {
+                    ui.set_width(patterns::popup_width(ui, patterns::POPUP_MAX_WIDTH));
+                    let mut song = self.song_row.mode_contents(ui, self.mode);
+                    ui.separator();
+                    let patterns =
+                        self.tabs
+                            .popup_contents(ui, &self.project, self.current, playing_index);
+                    ui.separator();
+                    song.extend(self.song_row.order_contents(
+                        ui,
+                        &self.project,
+                        self.current,
+                        playing_entry,
+                    ));
+                    (patterns, song)
+                })
+            })
+            .unwrap_or_default();
+        let bar_events = strip
+            .bar_label
+            .as_ref()
+            .and_then(|button| {
+                widgets::popup(button, |ui| {
+                    self.bar_strip.popup_contents(
+                        ui,
+                        &self.project.patterns()[self.current],
+                        shown.clone(),
+                        playing_bar,
+                        self.follow,
+                    )
+                })
+            })
+            .unwrap_or_default();
+        let tempo_events = strip
+            .tempo
+            .as_ref()
+            .and_then(|button| {
+                widgets::popup(button, |ui| {
+                    tempo::contents(ui, self.project.tempo, self.project.swing())
+                })
+            })
+            .unwrap_or_default();
+        // Questions the pattern and bar pop-ups asked, each in a window of its own.
+        let mut pattern_events = pattern_events;
+        pattern_events.extend(self.tabs.confirm(ui.ctx(), &self.project, self.current));
+        let mut bar_events = bar_events;
+        let bars_now = self.project.patterns()[self.current].bars();
+        bar_events.extend(self.bar_strip.confirm(ui.ctx(), bars_now));
+        // With a picker, each export asks where to go, so there is no folder to name.
+        let export_place = if self.picker.is_some() {
+            None
+        } else {
+            self.export_place.map(i18n::tr).or_else(|| {
+                self.export_dir
+                    .as_ref()
+                    .map(|dir| dir.display().to_string())
+            })
+        };
+        let view = menu::MenuView {
+            projects: projects::ProjectsView {
+                name: self.name.as_deref(),
+                unsaved: self.saved.as_ref() != Some(&self.project),
+                saved: &self.saved_list,
+                file_items: files::DIALOGS || self.picker.is_some(),
+                message: self.message.as_deref(),
+                export_message: self.export_message.as_deref(),
+                exporting: self.wav_job.as_ref().map(export::WavJob::progress),
+                can_render: self.bank.soundfont().is_some(),
+                export_place: export_place.as_deref(),
+                landscape: self.orientation.is_some().then(|| self.store.landscape()),
+                basic: self.basic,
+                row_labels: self.row_labels,
+            },
+            hidden: strip.hidden,
+            can_undo: self.history.can_undo(),
+            can_redo,
+            bpm: self.project.tempo,
+            swing: self.project.swing(),
+            language: self.language_choice,
+            system_language: self.system_language.unwrap_or(i18n::Language::English),
+            midi: midi::MidiOut::supported().then(|| menu::MidiView {
+                choice: self.midi.choice(),
+                connected: self.midi.connected(),
+                outputs: self.midi.outputs(),
+            }),
+        };
+        let mut menu_events =
+            widgets::popup(&strip.menu, |ui| self.menu.contents(ui, &view)).unwrap_or_default();
+        menu_events.extend(self.menu.dialogs(ui.ctx(), &view));
+
+        // The dialogs the strip and the menu open.
+        let mut sound_events = Vec::new();
+        if self.sounds_open {
+            let kits = engine.kits().to_vec();
+            let dialog = widgets::dialog(ui.ctx(), "sounds", &tr!("menu-sounds"), |ui| {
+                self.sounds
+                    .dialog_contents(ui, &self.project, &kits, self.row_labels)
+            });
+            sound_events = dialog.inner;
+            self.sounds_open = !dialog.closed;
+        }
+
+        // The grid. While anything is open above it, a tap only closes that and changes no step.
+        let view = if split {
+            grid::View {
+                first_step: self.view_bar * STEPS_PER_BAR + self.half * STEPS_PER_BAR / 2,
+                visible: STEPS_PER_BAR / 2,
+            }
+        } else {
+            grid::View {
+                first_step: self.view_bar * STEPS_PER_BAR,
+                visible: shown_bars * STEPS_PER_BAR,
+            }
+        };
+        // A row's own pop-up leaves the names live, so another name opens at the first tap.
+        let other_open =
+            egui::Popup::is_any_open(ui.ctx()) || self.menu.dialog_open() || self.sounds_open;
+        self.grid
+            .set_blocked(other_open || self.row_popup.is_open(), other_open);
+        self.grid.set_highlight(self.row_popup.row());
+        self.grid.set_row_labels(self.row_labels);
+        // Basic mode has no step levels button, so a tap there only turns a step on or off.
+        self.grid.set_step_levels(if self.basic {
+            dm_project::StepLevels::OnOff
+        } else {
+            self.project.step_levels()
+        });
+        let grid_playhead = playhead.filter(|_| heard).map(|p| p.step);
+        let grid_events = self.grid.ui(
+            ui,
+            &self.project,
+            &self.project.patterns()[self.current],
+            view,
+            grid_playhead,
+        );
+        for event in &grid_events {
+            if let grid::GridEvent::OpenRow { row, rect } = event {
+                self.row_popup.open(*row, *rect);
+            }
+        }
+        let row_events = self
+            .row_popup
+            .show(ui.ctx(), &self.project, &self.grid, self.basic);
+
+        // Apply everything the user did this frame.
+        for event in grid_events {
+            match event {
+                grid::GridEvent::Preview { row } => self.preview_row(engine, row),
+                grid::GridEvent::OpenRow { .. } => {}
+                grid::GridEvent::Set {
+                    row,
+                    step,
+                    velocity,
+                } => {
+                    self.frame_group = Group::Paint(self.grid.gesture());
+                    if let Ok(changes) = self.project.set_step(self.current, row, step, velocity) {
+                        apply(engine, changes);
+                    }
+                    if velocity > 0
+                        && let Some(info) = self.project.rows().get(row)
+                    {
+                        // Heard at the level just set, so a soft or loud step sounds like one.
+                        let heard = scaled(velocity, info.volume);
+                        if heard > 0 {
+                            engine.hit(info.key, heard);
+                        }
+                    }
+                }
+            }
+        }
+        for event in row_events {
+            match event {
+                rows::RowEvent::Sound(event) => self.handle_sounds(engine, vec![event]),
+                rows::RowEvent::Fill { row, every } => self.fill_row(engine, row, Some(every)),
+                rows::RowEvent::ClearRow { row } => self.fill_row(engine, row, None),
+            }
+        }
+        self.handle_sounds(engine, sound_events);
+        for event in strip.events {
+            match event {
+                strip::StripEvent::Play => self.play(engine),
+                strip::StripEvent::Stop => {
+                    engine.stop();
+                    self.playing = false;
+                }
+                strip::StripEvent::PrevPage => self.page(split, shown_bars, false),
+                strip::StripEvent::NextPage => self.page(split, shown_bars, true),
+                strip::StripEvent::Undo => self.undo(engine),
+                strip::StripEvent::Redo => self.redo(engine),
+                strip::StripEvent::StepLevels => {
+                    let next = self.project.step_levels().next();
+                    self.project.set_step_levels(next);
+                }
+            }
+        }
+        for event in tempo_events {
+            self.handle_tempo(engine, event);
+        }
+        for event in menu_events {
+            match event {
+                menu::MenuEvent::Project(event) => self.handle_projects(engine, vec![event]),
+                menu::MenuEvent::ListSaved => self.saved_list = self.store.list(),
+                menu::MenuEvent::Undo => self.undo(engine),
+                menu::MenuEvent::Redo => self.redo(engine),
+                menu::MenuEvent::Sounds => self.sounds_open = true,
+                menu::MenuEvent::Tempo(event) => self.handle_tempo(engine, event),
+                menu::MenuEvent::ListMidiOutputs => {
+                    self.midi.list();
+                    // This frame drew the dialog with the old list.
+                    ui.ctx().request_repaint();
+                }
+                menu::MenuEvent::MidiOutput(choice) => {
+                    if let Err(e) = self.store.set_midi_output(choice.as_deref()) {
+                        log::warn!("could not keep the MIDI output setting: {e}");
+                    }
+                    self.midi.choose(choice);
+                }
+                menu::MenuEvent::Language(choice) => {
+                    self.set_language_choice(choice);
+                    // This frame was drawn in the old language; the next shows the new one.
+                    ui.ctx().request_repaint();
+                }
+            }
+        }
+        for event in bar_events {
+            let result = match event {
+                bars::BarEvent::Select(bar) => {
+                    self.view_bar = bar;
+                    self.half = 0;
+                    if self.playing {
+                        self.follow = false;
+                    }
+                    Ok(Vec::new())
+                }
+                bars::BarEvent::AddBar => {
+                    let result = self.project.add_bar(self.current);
+                    if result.is_ok() {
+                        self.view_bar = self.project.patterns()[self.current].bars() - 1;
+                    }
+                    result
+                }
+                // The bar goes with its notes: nothing is kept hidden for later.
+                bars::BarEvent::RemoveBar => {
+                    self.project
+                        .remove_bar(self.current)
+                        .and_then(|mut changes| {
+                            changes.extend(self.project.clear_hidden_bars(self.current)?);
+                            Ok(changes)
+                        })
+                }
+                bars::BarEvent::CopyBar => {
+                    let result = self.project.copy_bar(self.current, self.view_bar);
+                    if result.is_ok() {
+                        self.view_bar += 1;
+                    }
+                    result
+                }
+                bars::BarEvent::ToggleFollow => {
+                    self.follow = !self.follow;
+                    Ok(Vec::new())
+                }
+            };
+            self.finish(engine, result);
+        }
+        for event in pattern_events {
+            match event {
+                patterns::PatternEvent::Select(index) => self.select_pattern(engine, index),
+                patterns::PatternEvent::Add => {
+                    let result = self.project.add_pattern().map(|(index, changes)| {
+                        apply(engine, changes);
+                        index
+                    });
+                    if let Ok(index) = result {
+                        self.select_pattern(engine, index);
+                    }
+                }
+                patterns::PatternEvent::Copy => {
+                    let result = self
+                        .project
+                        .copy_pattern(self.current)
+                        .map(|(index, changes)| {
+                            apply(engine, changes);
+                            index
+                        });
+                    if let Ok(index) = result {
+                        self.select_pattern(engine, index);
+                    }
+                }
+                patterns::PatternEvent::Delete => {
+                    let deleting_playing = self.playing && playing_index == Some(self.current);
+                    let result = self.project.delete_pattern(self.current);
+                    if result.is_ok() {
+                        self.current = self.current.saturating_sub(1);
+                        self.view_bar = 0;
+                        if deleting_playing {
+                            engine.stop();
+                            self.playing = false;
+                        }
+                    }
+                    self.finish(engine, result);
+                }
+            }
+        }
+        for event in song_events {
+            let result = match event {
+                song::SongEvent::Append => self.project.song_append(self.current),
+                song::SongEvent::MoveLeft(entry) => self.project.song_move(entry, entry - 1),
+                song::SongEvent::MoveRight(entry) => self.project.song_move(entry, entry + 1),
+                song::SongEvent::Remove(entry) => self.project.song_remove(entry),
+                song::SongEvent::SetMode(mode) => {
+                    self.set_mode(engine, mode);
+                    Ok(Vec::new())
+                }
+                song::SongEvent::ToggleLoop => {
+                    self.project.song_loop = !self.project.song_loop;
+                    engine.set_song_loop(self.project.song_loop);
+                    Ok(Vec::new())
+                }
+            };
+            self.finish(engine, result);
+        }
+    }
+
+    fn set_mode(&mut self, engine: &mut Engine, mode: Mode) {
+        self.mode = mode;
+        if self.playing {
+            self.play(engine);
+        }
+    }
+
+    fn handle_tempo(&mut self, engine: &mut Engine, event: tempo::TempoEvent) {
+        match event {
+            tempo::TempoEvent::Tempo(bpm) => {
+                self.frame_group = Group::Tempo;
+                self.project.tempo = bpm;
+                engine.set_tempo(bpm);
+            }
+            tempo::TempoEvent::Swing(amount) => {
+                self.frame_group = Group::Swing;
+                apply(engine, self.project.set_swing(amount));
+            }
+        }
+    }
+
+    /// Moves the grid one screen back or forward: half a bar when the grid shows half a bar,
+    /// otherwise as many bars as it shows.
+    /// Past the last screen it wraps round to the first, and before the first to the last.
+    fn page(&mut self, split: bool, shown_bars: usize, forward: bool) {
+        let bars = self.project.patterns()[self.current].bars();
+        if split {
+            let pages = bars * 2;
+            let page = self.view_bar * 2 + self.half;
+            let page = if forward {
+                (page + 1) % pages
+            } else {
+                (page + pages - 1) % pages
+            };
+            self.view_bar = page / 2;
+            self.half = page % 2;
+        } else {
+            let last = bars - shown_bars;
+            self.view_bar = match (forward, self.view_bar) {
+                (true, v) if v >= last => 0,
+                (true, v) => (v + shown_bars).min(last),
+                (false, 0) => last,
+                (false, v) => v.saturating_sub(shown_bars),
+            };
+        }
+        if self.playing {
+            self.follow = false;
+        }
+    }
+
+    /// Makes a row in the pattern being edited play on every `every`-th step and nowhere else,
+    /// in every bar the pattern plays. `None` clears the row.
+    fn fill_row(&mut self, engine: &mut Engine, row: usize, every: Option<usize>) {
+        let steps = self.project.patterns()[self.current].bars() * STEPS_PER_BAR;
+        for step in 0..steps {
+            let velocity = if every.is_some_and(|n| step % n == 0) {
+                DEFAULT_VELOCITY
+            } else {
+                0
+            };
+            if let Ok(changes) = self.project.set_step(self.current, row, step, velocity) {
+                apply(engine, changes);
+            }
+        }
+    }
+
+    fn handle_sounds(&mut self, engine: &mut Engine, events: Vec<sounds::SoundEvent>) {
+        use sounds::SoundEvent;
+        for event in events {
+            let result = match event {
+                SoundEvent::Kit(program) => Ok(self.project.set_kit(program)),
+                SoundEvent::Rename(row, name) => {
+                    self.project.rename_row(row, &name).map(|()| Vec::new())
+                }
+                SoundEvent::Mute(row) => self.project.toggle_mute(row),
+                SoundEvent::Solo(row) => self.project.toggle_solo(row),
+                SoundEvent::Volume(row, percent) => {
+                    self.frame_group = Group::Volume(row);
+                    self.project.set_volume(row, percent)
+                }
+                SoundEvent::MoveUp(row) => self.project.move_row(row, row - 1),
+                SoundEvent::MoveDown(row) => self.project.move_row(row, row + 1),
+                SoundEvent::SetDrum(row, key) => self.project.set_row_key(row, key),
+                SoundEvent::Remove(row) => self.project.remove_row(row),
+                SoundEvent::Add(key) => self.project.add_row(key),
+                SoundEvent::Preview(key, percent) => {
+                    hit_at(engine, key, percent);
+                    Ok(Vec::new())
+                }
+            };
+            self.finish(engine, result);
+        }
+    }
+
+    fn handle_projects(&mut self, engine: &mut Engine, events: Vec<projects::ProjectEvent>) {
+        use projects::ProjectEvent;
+        for event in events {
+            match event {
+                ProjectEvent::Save => {
+                    if let Some(name) = self.name.clone() {
+                        self.save_as(&name);
+                    }
+                }
+                ProjectEvent::SaveAs(name) => self.save_as(&name),
+                ProjectEvent::New => {
+                    self.replace_project(engine, Project::new(), None);
+                    self.message = Some(tr!("projects-new"));
+                }
+                ProjectEvent::Open(name) => match self.store.load(&name) {
+                    Ok(project) => {
+                        self.replace_project(engine, project, Some(name.clone()));
+                        self.message = Some(tr!("projects-opened", name = name.as_str()));
+                    }
+                    Err(e) => {
+                        self.message = Some(tr!(
+                            "projects-open-failed",
+                            name = name.as_str(),
+                            reason = e
+                        ))
+                    }
+                },
+                ProjectEvent::Delete(name) => {
+                    match self.store.delete(&name) {
+                        Ok(()) => {
+                            if self.name.as_deref() == Some(name.as_str()) {
+                                // The project stays open, but no longer has a saved copy.
+                                self.name = None;
+                                self.saved = None;
+                                self.unsaved_since = Some(f64::NEG_INFINITY);
+                            }
+                            self.message = Some(tr!("projects-deleted", name = name.as_str()));
+                        }
+                        Err(e) => {
+                            self.message = Some(tr!(
+                                "projects-delete-failed",
+                                name = name.as_str(),
+                                reason = e
+                            ))
+                        }
+                    }
+                    self.saved_list = self.store.list();
+                }
+                ProjectEvent::OpenFile => self.pick(engine, PickKind::OpenProject),
+                ProjectEvent::SaveFile => self.pick(engine, PickKind::SaveProject),
+                ProjectEvent::Preset(name) => {
+                    if let Some(project) = dm_project::preset_project(name) {
+                        self.replace_project(engine, project, None);
+                        self.message = Some(tr!("projects-preset-started", name = name));
+                    }
+                }
+                ProjectEvent::ExportMidi => self.pick(engine, PickKind::ExportMidi),
+                ProjectEvent::ExportWav => {
+                    // A recording needs the bank.
+                    if self.bank.soundfont().is_some() {
+                        self.pick(engine, PickKind::ExportWav);
+                    }
+                }
+                ProjectEvent::CancelExport => {
+                    if let Some(job) = &self.wav_job {
+                        job.cancel();
+                    }
+                }
+                ProjectEvent::Landscape(on) => {
+                    if let Some(lock) = &self.orientation {
+                        lock(on);
+                    }
+                    if let Err(e) = self.store.set_landscape(on) {
+                        log::warn!("the landscape setting was not saved: {e}");
+                    }
+                }
+                ProjectEvent::Basic(on) => {
+                    self.basic = on;
+                    if on {
+                        // Basic mode plays and edits the first pattern only.
+                        if self.mode == Mode::Song {
+                            self.set_mode(engine, Mode::Pattern);
+                        }
+                        if self.current != 0 {
+                            self.select_pattern(engine, 0);
+                        }
+                    }
+                    if let Err(e) = self.store.set_basic(on) {
+                        log::warn!("the basic mode setting was not saved: {e}");
+                    }
+                }
+                ProjectEvent::RowLabels(labels) => {
+                    self.row_labels = labels;
+                    if let Err(e) = self.store.set_row_labels(labels) {
+                        log::warn!("the row labels setting was not saved: {e}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Names a saved export for a message: a picked file by the name the picker reported; a path
+    /// by its file name and the export folder's place when the host gave one, otherwise in full.
+    fn saved_where(&self, target: &files::Target) -> String {
+        let files::Target::Path(path) = target else {
+            return target.name();
+        };
+        match (self.export_place.map(i18n::tr), path.file_name()) {
+            (Some(place), Some(file)) => tr!(
+                "projects-saved-where",
+                file = file.to_string_lossy().into_owned(),
+                place = place
+            ),
+            _ => path.display().to_string(),
+        }
+    }
+
+    /// Asks where the file for `kind` is: through the host's picker, whose answer arrives on a
+    /// later frame, or else the export folder or a desktop dialog, which answer at once. The new
+    /// file is named after the project, or "My beat" in the current language.
+    fn pick(&mut self, engine: &mut Engine, kind: PickKind) {
+        let name = self
+            .name
+            .clone()
+            .unwrap_or_else(|| tr!("projects-default-name"));
+        let path = match files::route(
+            kind,
+            self.picker.is_some(),
+            self.export_dir.as_deref(),
+            &name,
+        ) {
+            files::Route::Picker => {
+                if let Some(picker) = &self.picker {
+                    picker(files::request(self.pending.ask(kind), kind, &name));
+                }
+                return;
+            }
+            files::Route::Folder(path) => {
+                if let Some(dir) = path.parent()
+                    && let Err(e) = std::fs::create_dir_all(dir)
+                {
+                    log::warn!("could not create the export folder: {e}");
+                    return;
+                }
+                path
+            }
+            files::Route::Dialog => match files::dialog(kind, &name) {
+                Some(path) => path,
+                None => return,
+            },
+        };
+        self.carry_out(engine, kind, files::Target::Path(path));
+    }
+
+    /// Does what a pick was for, with the file it chose.
+    fn carry_out(&mut self, engine: &mut Engine, kind: PickKind, target: files::Target) {
+        match kind {
+            PickKind::OpenProject => match store::read_file(&target) {
+                Ok(project) => {
+                    // Opened from outside the app: it gets a name, but no saved copy inside the
+                    // app until it is saved.
+                    let name = target.stem().and_then(|s| store::clean_name(&s));
+                    self.replace_project(engine, project, name);
+                    self.saved = None;
+                    self.message = Some(tr!("projects-opened-file", path = target.name()));
+                }
+                Err(e) => {
+                    self.message = Some(tr!(
+                        "projects-open-file-failed",
+                        path = target.name(),
+                        reason = e
+                    ))
+                }
+            },
+            PickKind::SaveProject => {
+                self.message = Some(match store::write_file(&target, &self.project) {
+                    Ok(()) => tr!("projects-saved-file", path = target.name()),
+                    Err(e) => tr!("projects-not-saved", reason = e),
+                });
+            }
+            PickKind::ExportMidi => {
+                self.message = Some(match export::write_midi(&target, &self.project) {
+                    Ok(()) => tr!("projects-midi-saved", place = self.saved_where(&target)),
+                    Err(e) => tr!("projects-midi-failed", reason = e.to_string()),
+                });
+                self.export_message = self.message.clone();
+            }
+            PickKind::ExportWav => {
+                let Some(soundfont) = self.bank.soundfont() else {
+                    return;
+                };
+                if let Some(job) = &self.wav_job {
+                    job.cancel();
+                }
+                self.wav_job = Some(export::WavJob::start(
+                    soundfont,
+                    &self.project,
+                    target,
+                    self.ctx.clone(),
+                ));
+            }
+        }
+    }
+
+    fn save_as(&mut self, name: &str) {
+        match self.store.save(name, &self.project) {
+            Ok(()) => {
+                self.name = Some(name.to_owned());
+                self.saved = Some(self.project.clone());
+                self.message = Some(tr!("projects-saved", name = name));
+                // The autosave now names this project.
+                self.unsaved_since = Some(f64::NEG_INFINITY);
+                self.saved_list = self.store.list();
+            }
+            Err(e) => self.message = Some(tr!("projects-not-saved", reason = e)),
+        }
+    }
+
+    /// Opens a different project: stops playback, forgets undo, and resyncs the engine.
+    fn replace_project(&mut self, engine: &mut Engine, project: Project, name: Option<String>) {
+        engine.stop();
+        self.playing = false;
+        self.saved = name.is_some().then(|| project.clone());
+        self.project = project;
+        self.name = name;
+        self.history.clear();
+        self.skip_record = true;
+        self.current = 0;
+        self.view_bar = 0;
+        self.half = 0;
+        self.resync(engine);
+        self.unsaved_since = Some(f64::NEG_INFINITY);
+    }
+
+    /// Plays a row's drum once at the row's volume. Mute and solo do not apply: the user asked
+    /// to hear it.
+    fn preview_row(&self, engine: &mut Engine, row: usize) {
+        if let Some(info) = self.project.rows().get(row) {
+            hit_at(engine, info.key, info.volume);
+        }
+    }
+
+    fn play(&mut self, engine: &mut Engine) {
+        log::info!(
+            "play: output latency {} frames at {} Hz",
+            engine.output_latency_frames(),
+            engine.sample_rate()
+        );
+        match self.mode {
+            Mode::Pattern => {
+                engine.play_pattern(self.project.patterns()[self.current].slot());
+            }
+            Mode::Song => {
+                if self.project.song().is_empty() {
+                    return;
+                }
+                engine.play_song(0);
+            }
+        }
+        self.playing = true;
+        self.follow = true;
+    }
+
+    fn select_pattern(&mut self, engine: &mut Engine, index: usize) {
+        self.current = index;
+        self.view_bar = 0;
+        self.half = 0;
+        if self.playing && self.mode == Mode::Pattern {
+            engine.cue_pattern(self.project.patterns()[index].slot());
+        } else if self.playing {
+            // In song mode, choosing a pattern to edit stops following the song.
+            self.follow = false;
+        }
+    }
+
+    fn finish(&mut self, engine: &mut Engine, result: Result<Vec<Change>, dm_project::Refused>) {
+        match result {
+            Ok(changes) => apply(engine, changes),
+            Err(refused) => log::info!("refused: {refused:?}"),
+        }
+    }
+}
+
+/// Tells the engine about project changes.
+fn apply(engine: &mut Engine, changes: Vec<Change>) {
+    for change in changes {
+        match change {
+            Change::Step {
+                slot,
+                row,
+                step,
+                velocity,
+            } => engine.set_step(slot, row, step, velocity),
+            Change::Length { slot, steps } => engine.set_length(slot, steps),
+            Change::Song(order) => engine.set_song(&order),
+            Change::RowKey { row, key } => engine.set_row_key(row, key),
+            Change::RowGain { row, percent } => {
+                engine.set_row_gain(row, f32::from(percent) / 100.0)
+            }
+            Change::ClearSlot { slot } => engine.clear_pattern(slot),
+            Change::Kit(program) => engine.set_kit(program),
+            Change::Swing(thousandths) => engine.set_swing(f32::from(thousandths) / 1000.0),
+        }
+    }
+}
+
+/// Plays a drum once at a volume in percent; nothing at 0.
+fn hit_at(engine: &mut Engine, key: u8, percent: u8) {
+    let velocity = scaled(DEFAULT_VELOCITY, percent);
+    if velocity > 0 {
+        engine.hit(key, velocity);
+    }
+}
+
+/// A velocity scaled by a volume in percent, at least 1 unless the volume is 0.
+fn scaled(velocity: u8, percent: u8) -> u8 {
+    if percent == 0 {
+        return 0;
+    }
+    ((u32::from(velocity) * u32::from(percent)).div_ceil(100)).clamp(1, 127) as u8
+}
+
+/// A button that shows whether it is on. Unlike egui's selectable button it always draws its
+/// frame, so it looks tappable when off.
+pub(crate) fn toggle<'a>(selected: bool, text: impl Into<egui::WidgetText>) -> egui::Button<'a> {
+    egui::Button::new(text).selected(selected)
+}

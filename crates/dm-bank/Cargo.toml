@@ -1,0 +1,19 @@
+[package]
+name = "dm-bank"
+description = "Downloads, verifies and installs the instrument bank"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# TLS is rustls with the ring provider and the bundled Mozilla roots (webpki-roots). It needs no
+# platform certificate store, so it behaves the same on Windows, macOS, Linux and Android, and ring
+# builds with the Android NDK's C compiler alone. Gzip is left out: the archive is already a zip.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+sha2 = { workspace = true }
+zip = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }

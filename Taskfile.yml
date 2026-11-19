@@ -1,0 +1,135 @@
+# Common tasks, for https://taskfile.dev. `task` lists them.
+#
+#   task run                       # the desktop app
+#   task check                     # format check, clippy and tests, before a push
+#   task build:android             # the APK; RELEASE=1 for an optimised library
+#   task run:android               # install it on the connected device and show its log
+#   task build:android:release     # the signed release APK
+#   task package VERSION=0.2.0     # this system's desktop packages, into dist/
+#   task build:ios                 # the iOS app (macOS only); DM_IOS_TEAM signs it for devices
+#   task run:ios                   # start it on a simulator; DEVICE=1 for a connected device
+#   task bank:install DIR=<folder> # download and install the bank into a folder
+#
+# Every task forwards to cargo or to a script under tools/, so all of them also work without
+# `task`. Task runs commands through its own POSIX shell on every system. Two rules follow:
+# only cargo, git and shell builtins may be assumed on PATH, and bash scripts run through
+# `{{.SH}}`, because on Windows a bare `bash` is WSL's, not Git Bash.
+
+version: '3'
+
+silent: true
+
+vars:
+  # Git Bash on Windows, found from git's own location; plain bash elsewhere.
+  SH:
+    sh: '{{if eq OS "windows"}}p=$(git --exec-path); echo "${p%/mingw*}/bin/bash.exe"{{else}}echo bash{{end}}'
+  RELEASE: ''
+  DEVICE: ''
+  DIR: ''
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  run:
+    desc: Run the desktop app. DM_DATA_DIR, DM_SF2 and DM_BANK_ZIP work as in BUILDING.md.
+    cmds:
+      - cargo run -p dm-desktop {{if .RELEASE}}--release{{end}}
+
+  build:
+    desc: Build the whole workspace for this computer.
+    cmds:
+      - cargo build --workspace {{if .RELEASE}}--release{{end}}
+
+  fmt:
+    desc: Format all Rust code.
+    cmds:
+      - cargo fmt --all
+
+  lint:
+    desc: Run clippy over every target, with warnings as errors.
+    cmds:
+      - cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    desc: Run the tests. Set DM_TEST_SF2 to an .sf2 file to include the audio tests.
+    cmds:
+      - cargo test --workspace
+
+  check:
+    desc: Format check, clippy and tests, in the order a failure is cheapest to read.
+    cmds:
+      - cargo fmt --all --check
+      - task: lint
+      - task: test
+
+  build:android:
+    desc: Build the Android APK. RELEASE=1 builds an optimised library.
+    cmds:
+      - '"{{.SH}}" tools/android/build.sh {{if .RELEASE}}--release{{end}}'
+
+  build:android:release:
+    desc: Build the signed release APK (key from ports/android/keystore.properties or DM_KEYSTORE_*).
+    cmds:
+      - '"{{.SH}}" tools/android/build.sh --apk-release'
+
+  package:
+    desc: "Build this system's desktop packages into dist/, e.g. `task package VERSION=0.2.0`."
+    requires:
+      vars: [VERSION]
+    cmds:
+      - cmd: powershell -NoProfile -ExecutionPolicy Bypass -File apps/dm-desktop/packaging/windows/package.ps1 {{.VERSION}}
+        platforms: [windows]
+      - cmd: '"{{.SH}}" apps/dm-desktop/packaging/macos/package.sh {{.VERSION}}'
+        platforms: [darwin]
+      - cmd: '"{{.SH}}" apps/dm-desktop/packaging/linux/package.sh {{.VERSION}}'
+        platforms: [linux]
+
+  package:ios:
+    desc: "Build the iOS release packages into dist/, e.g. `task package:ios VERSION=0.2.0`. macOS only."
+    requires:
+      vars: [VERSION]
+    cmds:
+      - '"{{.SH}}" tools/ios/package.sh {{.VERSION}}'
+
+  run:android:
+    desc: Install the APK on the connected device or emulator, start it and show its log.
+    cmds:
+      - '"{{.SH}}" tools/android/run.sh'
+
+  android:
+    desc: Build the APK, then install and run it.
+    cmds:
+      - task: build:android
+      - task: run:android
+
+  build:ios:
+    desc: Build the iOS app for the simulator, and for devices (signed when DM_IOS_TEAM is set). macOS only.
+    cmds:
+      - '"{{.SH}}" tools/ios/build.sh {{if .RELEASE}}--release{{end}}'
+
+  run:ios:
+    desc: Install the iOS app on a simulator (DM_IOS_SIM, default iPhone 17) and start it. DEVICE=1 uses a connected device.
+    cmds:
+      - '"{{.SH}}" tools/ios/run.sh {{if .DEVICE}}--device{{end}} {{if .RELEASE}}--release{{end}}'
+
+  ios:
+    desc: Build the iOS app, then install and start it. macOS only.
+    cmds:
+      - task: build:ios
+      - task: run:ios
+
+  bank:install:
+    desc: Download and install the instrument bank into DIR, as the app does.
+    requires:
+      vars: [DIR]
+    cmds:
+      - cargo run --release -p dm-bank --example install -- "{{.DIR}}"
+
+  clean:
+    desc: Remove build outputs, Rust, Android and iOS.
+    cmds:
+      - cargo clean
+      - '"{{.SH}}" -c "rm -rf ports/android/app/build ports/android/.gradle ports/android/app/src/main/jniLibs ports/ios/build ports/ios/TickTapDrum.xcodeproj"'

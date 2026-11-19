@@ -1,0 +1,6 @@
+# The one place the compiler version is written down. The Android targets must be added to this
+# toolchain: run `rustup target add aarch64-linux-android x86_64-linux-android` from inside the
+# checkout so they land on the pin.
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]

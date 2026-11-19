@@ -1,0 +1,164 @@
+# Checks every push to master and every pull request:
+#   - the format check and clippy, on Linux;
+#   - the tests, on Linux, Windows and macOS;
+#   - a debug build of the Android app;
+#   - a debug build of the iOS app, for the simulator and unsigned for devices.
+# Tests that need a SoundFont (DM_TEST_SF2) or the network skip themselves, since CI has neither.
+#
+# A change that touches only documentation (Markdown files, docs/, .gitignore) skips the build
+# jobs. The workflow still starts, so the required checks report as skipped, which GitHub counts as
+# passed; with paths-ignore they would never report and the pull request could not merge.
+#
+# The Rust version is the one in rust-toolchain.toml. setup-rust-toolchain reads it, and also
+# caches cargo's build output.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  changes:
+    name: Changed files
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Anything besides documentation?
+        id: diff
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # No usable base (a new branch, or history rewritten): build everything.
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          code=$(git diff --name-only "$BASE...HEAD" | grep -v -E '\.md$|^docs/|^\.gitignore$' || true)
+          if [ -n "$code" ]; then
+            echo "Changed outside the documentation:"
+            echo "$code"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Only documentation changed; skipping the build jobs."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  lint:
+    name: Format and clippy
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          # The action adds -D warnings to every build by default. Clippy below sets it itself.
+          rustflags: ""
+
+      - name: Linux build libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libdbus-1-dev pkg-config
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: Tests (${{ matrix.os }})
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+
+      - name: Linux build libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libdbus-1-dev pkg-config
+
+      - name: Tests
+        run: cargo test --workspace
+
+  android:
+    name: Android (debug build)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ubuntu-latest
+    env:
+      # The NDK the local builds use; see BUILDING.md.
+      NDK_VERSION: 28.2.13676358
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-linux-android,x86_64-linux-android
+          rustflags: ""
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Debug APK
+        run: bash tools/android/build.sh
+
+  ios:
+    name: iOS (debug build)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    # main.m uses iOS 26 APIs, so the build needs Xcode 26 or newer.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-apple-ios,aarch64-apple-ios-sim
+          rustflags: ""
+
+      - name: XcodeGen
+        run: brew install xcodegen
+
+      - name: Simulator app, and the device app unsigned
+        run: bash tools/ios/build.sh
