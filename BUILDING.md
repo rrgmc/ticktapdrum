@@ -276,7 +276,9 @@ Two GitHub Actions workflows live in `.github/workflows`.
 
 **`ci.yml`** runs on every push to `master` and every pull request. It checks the format and
 runs clippy on Linux, runs the tests on Linux, Windows and macOS, and builds the Android and iOS
-apps in debug. A change to documentation only skips the build jobs.
+apps in debug. A change to documentation only skips the build jobs. `master` is protected:
+changes reach it only through a pull request, and its last job, "CI result", must pass. That job
+fails if any other job failed and passes when they passed or were skipped.
 
 **`release.yml`** runs when a version tag is pushed. It builds every package and publishes them,
 with a `SHA256SUMS.txt`, as a GitHub release named after the tag:
