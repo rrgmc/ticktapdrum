@@ -70,6 +70,10 @@ The app keeps the bank, your projects and the autosave in its data folder:
 
 On iPhone and iPad, exported files appear in the Files app, under **On My iPhone > TickTapDrum**.
 
+## Author
+
+Rangel Reale ([realerangel@gmail.com](mailto:realerangel@gmail.com))
+
 ## Licence
 
 TickTapDrum is released under the [MIT licence](LICENSE). The instrument bank it downloads has
