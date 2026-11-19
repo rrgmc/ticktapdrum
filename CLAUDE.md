@@ -23,9 +23,18 @@ done so far. How to build and run it is in [`BUILDING.md`](BUILDING.md).
 instead of `git checkout -b`. Never edit the main checkout directly. Worktrees live under
 `.claude/worktrees/`, which git ignores.
 
+## Pull requests
+
+**`master` is protected: changes reach it only through a pull request**, and CI must pass first.
+Push the worktree's branch and open a pull request with `gh pr create`; never merge into `master`
+locally or push to it. Open the pull request when the user asks to push, and merge it only when the
+user asks.
+
 ## Nothing committed describes the local machine
 
 No tracked file may name a local drive or folder, a LAN address, personal hardware, or a person's
 private details. That covers prose, comments, test data and images. Such facts go in
 `CLAUDE.local.md` at the repository root, which git ignores. A committed file that needs one says
-"see the local notes" or uses an invented sample such as `<your projects folder>`.
+"see the local notes" or uses an invented sample such as `<your projects folder>`. The one
+exception is the README's "Author" section, which names the author and their email at the user's
+request.
