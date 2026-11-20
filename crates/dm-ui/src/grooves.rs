@@ -392,13 +392,17 @@ fn groove_row(
                 let bars = tr!("grooves-bars", count = groove.bars.len());
                 // A groove that comes with the app is listed under its style, its folder, so
                 // its tempo says more.
-                let detail = if key == MAGENTA_KEY {
+                let mut detail = if key == MAGENTA_KEY {
                     format!("{} BPM · {bars}", groove.bpm)
                 } else if groove.folder.is_empty() {
                     bars
                 } else {
                     format!("{} · {bars}", groove.folder)
                 };
+                // A groove from a keyboard style names the keyboard's kit.
+                if let Some(kit) = &groove.kit {
+                    detail = format!("{detail} · {kit}");
+                }
                 ui.add(egui::Label::new(RichText::new(detail).small().weak()).truncate());
             });
         });

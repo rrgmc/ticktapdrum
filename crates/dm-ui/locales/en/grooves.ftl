@@ -30,7 +30,7 @@ grooves-delete-groove-question = Delete the groove { $name }?
 # $reason is why, already in words.
 grooves-delete-failed = Not deleted: { $reason }
 # The kind of file a desktop's open dialog lists.
-grooves-file-kind = MIDI files and zips
+grooves-file-kind = MIDI files, zips and keyboard styles
 
 ## The Add grooves from a link dialog. A link is a web address, such as https://example.com/a.mid.
 
@@ -134,3 +134,8 @@ grooves-magenta-page = The Groove MIDI Dataset
 grooves-magenta-license = The CC BY 4.0 licence
 # Hover text of the Load button beside a groove that comes with the app.
 grooves-magenta-load-tip = Start a new beat from this groove
+
+# After adding a groove from a keyboard style. $kit is the keyboard's kit, such as RockDrumKit.
+grooves-kit-notice = The keyboard plays this on { $kit }.
+# A button under grooves-kit-notice. $kit is the app's nearest kit, such as Power Kit.
+grooves-use-kit = Use { $kit }

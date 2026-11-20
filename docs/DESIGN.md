@@ -1507,9 +1507,9 @@ Not checked:
 - **Phone screens.** The section step's pickers are small for a finger.
 - **iOS and macOS,** and the Send to keyboard failure messages on real hardware.
 
-## Import grooves from a keyboard style (planned)
+## Import grooves from a keyboard style
 
-Planned, not started. The reverse of "Export as a keyboard style": the drum parts of a Yamaha
+Built; "What the build found" below says what was checked. The reverse of "Export as a keyboard style": the drum parts of a Yamaha
 style become grooves in the groove list.
 [`research/style-import-spike.md`](research/style-import-spike.md) has the findings it rests on:
 172 real styles, of which 65% of the sections import once each kit's keys are mapped.
@@ -1528,13 +1528,13 @@ style become grooves in the groove list.
   from the key map's table, so a kit it does not know shows nothing.
 - **Adding such a groove suggests the nearest kit.** The table gives each Yamaha kit the nearest
   kit in the app's short list: RockDrumKit gives Power, BrushKit gives Brush, AnalogT8Kit gives
-  808, the standard and pop kits give Standard; percussion and effect kits give none. When the
-  project's kit is another one, the groove dialog shows one line after the groove is added: "The
-  keyboard plays this on RockDrumKit." with a button "Use the Power kit". One tap changes the
-  project's kit, and Undo takes it back. Nothing changes without the tap.
-- **What did not come in is said in one line,** as for a pack today: "11 of 15 parts added; 3
-  were played off the grid, 1 uses sounds the app does not have." A style in 3/4 is refused as a
-  whole: "This style is in 3/4."
+  808, the standard and pop kits give Standard; percussion and effect kits give none. Adding a
+  groove closes the groove list, so when the project's kit is another one, the notice at the
+  bottom of the screen says "The keyboard plays this on RockDrumKit." with a button "Use the Power
+  kit". It stays a little longer than a plain notice. One tap changes the project's kit, and Undo
+  takes it back. Nothing changes without the tap.
+- **What did not come in is said in one line,** as for a pack today, with each refused section
+  named after the style and its marker. A style in 3/4 has every section refused for that.
 - **Nothing is asked.** As with other imports, the person chooses afterwards, by adding the
   grooves they want.
 
@@ -1552,9 +1552,11 @@ style become grooves in the groove list.
   and over the open one; extra snares become the snare; clicks, loop slices and effects are left
   out. A sound already on a General MIDI key of its own kind keeps it. With a kit the table does
   not know, notes on General MIDI keys keep their key and the rest are left out.
-- **Then each section goes through the groove rules,** with one change for styles: General MIDI
-  percussion (keys 60 to 81) counts as drum keys, since the map has put it there. The other rules
-  stay: 4/4 only, one tempo, at most 16 bars, notes on the grid.
+- **Then each section goes through the groove rules,** with two changes for styles. Every General
+  MIDI key from 35 to 81 counts as a drum key, tambourine and cowbell included, since the map has
+  put each sound there. A tempo change inside a section (an Ending slowing down) is ignored, and
+  the groove takes the setup bar's tempo. The other rules stay: 4/4 only, at most 16 bars, notes
+  on the grid. MIDI files keep the old rules.
 
 ### The key map
 
@@ -1569,14 +1571,33 @@ style become grooves in the groove list.
   `cargo run -p dm-yamaha-kits -- <psrsx920_sx720_en_dl_a0.xlsx>` writes
   `crates/dm-groove/src/yamaha_kits.rs`.
 
-### Build order
+### What the build found
 
-1. **The style reader and the key map** in `dm-groove`, with tests. A round trip is a strong test:
-   a project written by "Keyboard style" and read back must give the same patterns.
-2. **The file types** in `dm-ui`: the picker's filter, Android's MIME types, the share and link
-   routes.
-3. **Check on real styles:** the 172 from the research, and listen to a few imported sections
-   next to the keyboard playing the same style, to check the hi-hat threshold and the snares.
+Checked on 2026-11-20 on Windows.
+
+- **How it is built.** `dm-groove` reads styles in `style.rs` (with the generated
+  `yamaha_kits.rs`), and `groove.rs` takes a `Source` so styles get their two rule changes. The
+  `styles` example imports every style under a folder and prints the totals:
+  `cargo run --release -p dm-groove --example styles -- <folder>`. In `dm-ui`, the groove list
+  shows the kit, and the notice can carry a button.
+- **On 172 real styles** (the research's set), 1,976 of 2,451 sections import (81%), and 158
+  styles have at least one. Refused: 379 sections off the grid, 75 in 3/4, 16 with no drums and 5
+  longer than 16 bars. Before ignoring tempo changes and counting tambourine and cowbell, 1,343
+  imported.
+- **A round trip holds:** every preset written by Keyboard style and read back gives the same
+  patterns, tempo and kit.
+- **In the app:** a style opened with "Add grooves from a file" became a pack of 14 grooves, each
+  with its kit ("RealDrumKit + PopLatinKit1"). Adding one with the Power kit chosen showed "O
+  teclado toca isto com RealDrumKit." with "Usar Standard 1"; the tap chose Standard 1 and Undo
+  went back to Power 1. With Standard already chosen, no notice showed.
+
+Not checked:
+
+- **How the grooves sound.** Nobody has listened to an imported section next to the keyboard
+  playing the same style, so the hi-hat threshold (25 closed, 50 open) and the snare choices are
+  unconfirmed.
+- **Android and iOS:** opening a style there, sharing one to the app, and a link to one.
+- **Styles from other Yamaha models,** whose kits are not in the table yet.
 
 ## Open questions
 
