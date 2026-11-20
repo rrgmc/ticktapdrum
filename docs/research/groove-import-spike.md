@@ -157,6 +157,29 @@ The app's swing delays every second 16th. It cannot express 8th-note swing or tr
 - Odd meters are common in packs: 21.6% of Beat Farm (7/4 and 3/4) and 10.5% of Perfect Drums
   (12/8 and 6/8), against 1% of GMD. Every file had a time signature, so they are easy to detect.
 
+### 6. Accepting only groove files
+
+A later question was whether the import can accept groove loops and refuse every other MIDI file.
+A rule of six checks was tried on the same files: notes on one channel only; 4/4 with no change;
+one tempo; at most 16 bars; at most 10% of notes more than a quarter step off the grid; and at least
+90% of notes on drum-kit keys (General MIDI 35 to 59, so hand percussion keys count against it).
+
+| Source | Accepted | Refused mainly for |
+|---|---|---|
+| Beat Farm (GM) | 189 of 241 | 52 not in 4/4, 8 off the grid (32nd-note hi-hat rolls) |
+| Perfect Drums mapping | 141 of 382 | 164 not mostly kit keys, 79 off the grid, 40 not in 4/4 |
+| GetGood Drums mapping | 86 of 274 | 140 not mostly kit keys, 101 with keys outside GM, 67 off the grid |
+| GMD | 286 of 1,150 | 689 off the grid, 297 longer than 16 bars |
+
+- Every Beat Farm file in 4/4 that sits on the grid was accepted. The kit-key check refused no GM
+  file: every Beat Farm file has all its notes on kit keys.
+- The kit-key check refuses most files made for other drum programs. Some of them still pass,
+  probably grooves without a hi-hat whose keys happen to match GM; how they sound was not checked.
+- GMD's TD-11 hi-hat keys 22 and 26 are outside the kit keys, so many GMD files fail that check.
+  GMD files would need to be recognised and mapped first.
+- Full-song MIDI files were not tested. The one-channel and 16-bar checks should refuse them, but
+  that is reasoning, not measurement.
+
 ## What was checked and what was not
 
 - **Checked:** every file parsed. Seven sample files, chosen to cover clean, swung, triplet, live

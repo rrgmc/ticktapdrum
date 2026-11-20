@@ -332,7 +332,7 @@ impl Analysis {
         }
     }
 
-    pub const CSV_HEADER: &str = "file,verdict,format,ppq,bpm,tempo_changes,time_sig,ts_changes,map,channels,notes,drum_notes,dropped,gs_extra,err_straight,swing,offset,err_swing,err_trip8,err_trip16,tight,far,moved_ms_mean,moved_ms_p95,collisions,wrapped,bars,first_step,distinct_bars,near_distinct_bars,distinct_velocities,soft,normal,loud";
+    pub const CSV_HEADER: &str = "file,verdict,format,ppq,bpm,tempo_changes,time_sig,ts_changes,map,channels,notes,drum_notes,dropped,gs_extra,err_straight,swing,offset,err_swing,err_trip8,err_trip16,tight,far,moved_ms_mean,moved_ms_p95,collisions,wrapped,bars,first_step,distinct_bars,near_distinct_bars,distinct_velocities,soft,normal,loud,kit_share";
 
     pub fn csv_row(&self) -> String {
         let ts = self
@@ -340,7 +340,7 @@ impl Analysis {
             .map_or("none".to_owned(), |(n, d)| format!("{n}/{d}"));
         let channels: Vec<String> = self.channels.iter().map(|c| (c + 1).to_string()).collect();
         format!(
-            "\"{}\",{:?},{},{},{:.2},{},{},{},{},{},{},{},{},{},{:.4},{:.2},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.2},{},{},{},{},{},{},{},{},{},{}",
+            "\"{}\",{:?},{},{},{:.2},{},{},{},{},{},{},{},{},{},{:.4},{:.2},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.2},{},{},{},{},{},{},{},{},{},{},{:.3}",
             self.path.display(),
             self.verdict(),
             self.format,
@@ -375,6 +375,12 @@ impl Analysis {
             self.levels[0],
             self.levels[1],
             self.levels[2],
+            self.raw_keys
+                .iter()
+                .filter(|(k, _)| (35..=59).contains(*k))
+                .map(|(_, c)| c)
+                .sum::<usize>() as f64
+                / self.drum_notes.max(1) as f64,
         )
     }
 
