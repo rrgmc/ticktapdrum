@@ -1587,7 +1587,21 @@ there; see "Android, later".
   the range. Those with a near drum now play as it: snare roll (29) and soft snare (31) as the
   acoustic snare, sticks (32) and open rim shot (34) as side stick, soft bass drum (33) as the
   kick. The rest (clicks, brushes, castanets) stay ignored. The names are XG's; the SX720's own
-  kits may differ.
+  kits may differ. This is the rule until the keyboard's kit is known; see the next item.
+- **A Yamaha keyboard's kit is followed.** When the player picks a voice, the keyboard sends its
+  bank and program on the part's channel, with XG messages that start `F0 43`. 0x43 is Yamaha's
+  manufacturer number, so those messages show the device is a Yamaha. Then, if the bank and
+  program are in the SX720 kit table (`dm-groove`, from "Import grooves from a keyboard style"),
+  each key goes through that kit's key map, as a style's notes do: on ElectroKit, key 24 records
+  as the kick and 27 as the clap. A key the kit leaves out is ignored. The table's numbers match
+  what the SX720 sent: ElectroKit is bank 127, program 70.
+- **The nearest app kit is offered,** not chosen. A notice names the keyboard's kit, with a
+  button for the nearest kit in the app's list ("Use Electro"), as a style import does. The
+  project changes only if the player taps it. A device that is not a Yamaha and picks a General
+  MIDI kit on channel 10 gets the same offer for that kit.
+- **The kit already chosen is not known.** The keyboard sends nothing for the voice already
+  selected, and MIDI has no way to ask for it. Until the next voice change, keys follow the rule
+  above.
 - **Playing a pattern records.** While MIDI input is on and the keyboard connected, each run of the
   pattern being edited, from Play to Stop, is a take. Playing the song records nothing, and
   neither does a key pressed while stopped: it only flashes its row. A small red dot on Play, by
