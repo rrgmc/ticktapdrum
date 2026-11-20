@@ -11,6 +11,8 @@
 //! groove-spike analyze [--half] [--map auto|gm|td11] <file or folder>... [--csv out.csv]
 //! groove-spike convert [--map ...] <in.mid> <out.drums>
 //! groove-spike render  [--map ...] <in.mid> <bank.sf2> <out folder>
+//! groove-spike tab <file.txt or folder>... [--csv out.csv]
+//! groove-spike tab-render <tab.txt> <bank.sf2> <out folder>
 //! ```
 
 mod analysis;
@@ -18,6 +20,7 @@ mod build;
 mod keymap;
 mod read;
 mod render;
+mod tab;
 
 use std::path::{Path, PathBuf};
 
@@ -50,6 +53,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         "roundtrip" => roundtrip(),
+        "tab" => tabs(&args, csv.as_deref()),
+        "tab-render" if args.len() == 3 => render::tab(
+            Path::new(&args[0]),
+            Path::new(&args[1]),
+            Path::new(&args[2]),
+        ),
         "render" if args.len() == 3 => render::run(
             Path::new(&args[0]),
             Path::new(&args[1]),
@@ -70,6 +79,65 @@ pub fn analysis_of(path: &Path, map: KeyMap) -> Result<Analysis, Box<dyn std::er
     let bytes = std::fs::read(path)?;
     let file = read::parse(&bytes)?;
     Ok(analysis::analyze(path, &file, map))
+}
+
+fn collect_ext(path: &Path, ext: &str, out: &mut Vec<PathBuf>) {
+    if path.is_dir() {
+        let mut entries: Vec<_> = std::fs::read_dir(path)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        entries.sort();
+        for e in entries {
+            collect_ext(&e, ext, out);
+        }
+    } else if path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case(ext))
+    {
+        out.push(path.to_owned());
+    }
+}
+
+/// Reads a tab file as text. Old tabs are often Latin-1, so bytes that are not UTF-8 are
+/// replaced rather than refused.
+pub fn read_text(path: &Path) -> std::io::Result<String> {
+    Ok(String::from_utf8_lossy(&std::fs::read(path)?).into_owned())
+}
+
+fn tabs(paths: &[String], csv: Option<&Path>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut files = Vec::new();
+    for p in paths {
+        collect_ext(Path::new(p), "txt", &mut files);
+    }
+    let mut results = Vec::new();
+    let mut failed = Vec::new();
+    for f in &files {
+        match read_text(f) {
+            Ok(text) => results.push(tab::parse(f, &text)),
+            Err(e) => failed.push((f.clone(), e.to_string())),
+        }
+    }
+    if let Some(csv) = csv {
+        let mut text = String::from(tab::TabReport::CSV_HEADER);
+        text.push('\n');
+        for r in &results {
+            text.push_str(&r.csv_row());
+            text.push('\n');
+        }
+        std::fs::write(csv, text)?;
+    }
+    if results.len() == 1 {
+        let r = &results[0];
+        let built = build::from_grid(&r.grid, r.tempo.unwrap_or(100.0), 0.0);
+        println!("{}\n{}", r.report(), built.report());
+    } else {
+        tab::print_summary(&results, &failed);
+    }
+    Ok(())
 }
 
 fn collect(path: &Path, out: &mut Vec<PathBuf>) {
