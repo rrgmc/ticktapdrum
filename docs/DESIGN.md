@@ -1348,6 +1348,24 @@ for the grid.
   it. A song plays from its start, so it is offered only for a pattern.
 - **The window's title names the project** once it has one: "Name - TickTapDrum".
 
+## Export as a keyboard style (proposed)
+
+Not started; a proposal from research. Arranger keyboards play a "style": a drum and band backing
+with several sections (main variations, fills, intros, endings) that follows the player's chords.
+A beat made in the app could become the drum part of such a style.
+[`research/arranger-style-export.md`](research/arranger-style-export.md) has the findings.
+
+- **Yamaha first** (PSR-SX720 and similar). A Yamaha style is a format-0 MIDI file with markers
+  for its sections. A drum-only style needs none of the extra data blocks, so the existing MIDI
+  export does most of the work.
+- **Korg Pa later, if asked for.** Korg keyboards import a MIDI file separated by markers into a
+  style, so the same writer could serve both with different marker names.
+- **Roland and Casio are left out:** no open format or import route was found.
+- **The ☰ menu's Export would offer "Export style"** with a choice of keyboard brand. Its dialog
+  shows which pattern becomes each section, lets the person change it, and says what is missing.
+- **Before any code,** load a style made by hand (or by Yamaha's free MIDI Song to Style app) on
+  the SX720, to confirm the keyboard accepts a drum-only style and to find its drum kit numbers.
+
 ## Open questions
 
 None at present. The three earlier ones were researched in
