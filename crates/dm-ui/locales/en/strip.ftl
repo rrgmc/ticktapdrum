@@ -9,6 +9,14 @@ strip-stop = Stop
 # Hover text on Play while the drums go to a MIDI output instead of this device's speakers.
 # $device is the output's name, as the system reports it.
 strip-midi-tip = The drums play on { $device }.
+# Hover text on Play while the MIDI input is on and connected: playing a pattern records the
+# hits from it. $device is the input's name, as the system reports it.
+strip-record-tip = Playing records from { $device }.
+# The MIDI in button, shown while the MIDI input is connected. On, playing a pattern records what
+# is played on the input. $device is the input's name, as the system reports it.
+strip-midi-in = MIDI in
+strip-midi-in-off-tip = Record from { $device } while a pattern plays.
+strip-midi-in-on-tip = Recording from { $device } while a pattern plays. Tap to stop.
 strip-patterns = Patterns
 strip-tempo-tip = Tempo and swing
 strip-undo = Undo

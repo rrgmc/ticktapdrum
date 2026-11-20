@@ -22,6 +22,8 @@ use crate::pictures::RowLabels;
 const AUTOSAVE: &str = "autosave";
 /// Holds the name of the project the autosave belongs to, if it has one.
 const AUTOSAVE_NAME: &str = "autosave.name";
+/// Exists while row names show the keyboard key that plays each drum, with MIDI in on.
+const KEY_NAMES: &str = "keys.show";
 /// Exists while the screen is kept in landscape.
 const LANDSCAPE: &str = "landscape.lock";
 /// Holds the tag of the language the person chose. Missing while the app follows the system.
@@ -30,6 +32,11 @@ const LANGUAGE: &str = "language";
 const MIDI_OUTPUT: &str = "midi.output";
 /// Holds the MIDI output volume in percent. Missing while it is the default, 100.
 const MIDI_VOLUME: &str = "midi.volume";
+/// Holds "on" while the MIDI input is on. Missing while it is off, the default.
+const MIDI_INPUT: &str = "midi.input";
+/// Holds the name of the chosen MIDI input. Missing while it is the output's own device, the
+/// default.
+const MIDI_INPUT_DEVICE: &str = "midi.input.device";
 /// Holds how row names show, when not as names.
 const ROW_LABELS: &str = "row.labels";
 /// Holds "on" or "off" for the bar strip under the buttons. Missing until the person chooses,
@@ -187,6 +194,16 @@ impl Store {
         }
     }
 
+    /// Whether row names show the keyboard key that plays each drum while MIDI in is on. Off
+    /// until chosen: drum pads have no key names. A device setting.
+    pub(crate) fn key_names(&self) -> bool {
+        self.flag(KEY_NAMES)
+    }
+
+    pub(crate) fn set_key_names(&self, on: bool) -> Result<(), String> {
+        self.set_flag(KEY_NAMES, on)
+    }
+
     /// Whether the screen is kept in landscape. A device setting, not part of any project.
     pub(crate) fn landscape(&self) -> bool {
         self.flag(LANDSCAPE)
@@ -272,6 +289,46 @@ impl Store {
         }
         fs::create_dir_all(&self.dir).map_err(folder_error)?;
         fs::write(path, percent.to_string()).map_err(write_error)
+    }
+
+    /// Whether the MIDI input is on: the hits played on the chosen device are listened to. Off
+    /// when the file is missing or holds anything but "on". A device setting, not part of any
+    /// project.
+    pub(crate) fn midi_input(&self) -> bool {
+        fs::read_to_string(self.dir.join(MIDI_INPUT)).is_ok_and(|text| text.trim() == "on")
+    }
+
+    pub(crate) fn set_midi_input(&self, on: bool) -> Result<(), String> {
+        let path = self.dir.join(MIDI_INPUT);
+        if !on {
+            return match fs::remove_file(path) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(delete_error(e)),
+                _ => Ok(()),
+            };
+        }
+        fs::create_dir_all(&self.dir).map_err(folder_error)?;
+        fs::write(path, "on").map_err(write_error)
+    }
+
+    /// The name of the chosen MIDI input, or `None` for the output's own device. A device
+    /// setting, not part of any project. The name is kept exactly as the system reported it.
+    pub(crate) fn midi_input_device(&self) -> Option<String> {
+        let name = fs::read_to_string(self.dir.join(MIDI_INPUT_DEVICE)).ok()?;
+        (!name.is_empty()).then_some(name)
+    }
+
+    pub(crate) fn set_midi_input_device(&self, name: Option<&str>) -> Result<(), String> {
+        let path = self.dir.join(MIDI_INPUT_DEVICE);
+        match name {
+            Some(name) if !name.is_empty() => {
+                fs::create_dir_all(&self.dir).map_err(folder_error)?;
+                fs::write(path, name).map_err(write_error)
+            }
+            _ => match fs::remove_file(path) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(delete_error(e)),
+                _ => Ok(()),
+            },
+        }
     }
 
     /// How row names show in the grid. A device setting, not part of any project.
@@ -597,6 +654,17 @@ mod tests {
     }
 
     #[test]
+    fn the_key_names_setting_is_kept() {
+        let store = temp_store("key-names");
+        assert!(!store.key_names());
+        store.set_key_names(true).unwrap();
+        assert!(store.key_names());
+        assert!(!store.landscape());
+        store.set_key_names(false).unwrap();
+        assert!(!store.key_names());
+    }
+
+    #[test]
     fn the_landscape_setting_is_kept() {
         let store = temp_store("landscape");
         assert!(!store.landscape());
@@ -652,6 +720,47 @@ mod tests {
         assert_eq!(store.midi_volume(), 100);
         fs::write(store.dir.join(MIDI_VOLUME), "250").unwrap();
         assert_eq!(store.midi_volume(), 100);
+    }
+
+    #[test]
+    fn the_midi_input_starts_off_and_is_kept() {
+        let store = temp_store("midi-input");
+        assert!(!store.midi_input());
+        store.set_midi_input(true).unwrap();
+        assert!(store.midi_input());
+        assert_eq!(
+            fs::read_to_string(store.dir.join(MIDI_INPUT)).unwrap(),
+            "on"
+        );
+        // Off is the default, so its file goes.
+        store.set_midi_input(false).unwrap();
+        store.set_midi_input(false).unwrap();
+        assert!(!store.dir.join(MIDI_INPUT).exists());
+        assert!(!store.midi_input());
+        // Anything but "on" reads as off.
+        fs::write(store.dir.join(MIDI_INPUT), "yes").unwrap();
+        assert!(!store.midi_input());
+        fs::write(store.dir.join(MIDI_INPUT), " on\n").unwrap();
+        assert!(store.midi_input());
+    }
+
+    #[test]
+    fn the_midi_input_device_is_kept_by_name() {
+        let store = temp_store("midi-input-device");
+        assert_eq!(store.midi_input_device(), None);
+        let name = " Drum Pads 2 ";
+        store.set_midi_input_device(Some(name)).unwrap();
+        assert_eq!(store.midi_input_device().as_deref(), Some(name));
+        // The on/off toggle is a file of its own.
+        assert!(!store.midi_input());
+        store.set_midi_input(true).unwrap();
+        assert_eq!(store.midi_input_device().as_deref(), Some(name));
+        // None is "Same as output", the default, so its file goes.
+        store.set_midi_input_device(None).unwrap();
+        store.set_midi_input_device(None).unwrap();
+        assert!(!store.dir.join(MIDI_INPUT_DEVICE).exists());
+        assert_eq!(store.midi_input_device(), None);
+        assert!(store.midi_input());
     }
 
     #[test]

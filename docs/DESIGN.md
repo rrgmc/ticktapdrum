@@ -123,7 +123,7 @@ Deleting a pattern is a separate, explicit command.
   green, cymbals blue, everything else purple. A row's lit steps take its colour, and so do a
   stripe beside its name and one on each drum in the drum list. Loud and soft steps still differ
   in shape as well, so the grid reads without colour vision.
-- **Rows can show pictures**, for children who cannot read yet. ☰ → "Rows: …" cycles through
+- **Rows can show pictures**, for children who cannot read yet. ☰ → "Instruments: …" cycles through
   three choices, a device setting:
   - **Names** (the default): the name with the family's stripe.
   - **Pictures and names**: a picture with the name, the name under it on a tall row and beside
@@ -299,7 +299,7 @@ the beat.
 | **♩ 120** | Opens the tempo pop-up: large − and + buttons, a slider, and Swing. |
 | **▂▄▆** | Step levels: moves to the next choice of what a tap on a step does (see "Steps and loudness"). |
 | **↶** | Undo. Redo sits beside it when there is room. Either is in ☰ when it does not fit. |
-| **☰** | Opens the menu: Undo, Redo and the tempo on one line at the top when the strip has no room for them, then Save, Save as, Open, New, Load default style, Sounds, Export MIDI and Export WAV. Last, under "Settings": Rows (names or pictures), Keep in landscape, and Language. Sounds opens the Sounds dialog: the drum kit and "Add a row". |
+| **☰** | Opens the menu: Undo, Redo and the tempo on one line at the top when the strip has no room for them, then Save, Save as, Open, New, Load default style, Sounds, Export MIDI and Export WAV. Last, under "Settings": Instruments (names or pictures), Keep in landscape, Language, MIDI output, MIDI input and Keyboard notes. Sounds opens the Sounds dialog: the drum kit and "Add a row". |
 
 - **The strip never wraps and never scrolls.** Each button shows an icon and a word when there is
   room, and only the icon when there is not. If the icons still do not fit, buttons move into ☰
@@ -730,6 +730,9 @@ Shown as JSON. Field names are proposals.
     clipboard not checked.*
 
     The brief for milestones 11 to 13 is "Groove import" below, with what they found.
+14. **MIDI in** on desktop and iOS. The user records a beat by playing along to the loop on a
+    MIDI keyboard or drum pads, by default the device chosen as MIDI output. *Built; checked on Windows over a MIDI loopback port, and
+    played by the user on a PSR-SX720.* The brief and the findings are "Milestone 14: MIDI in" below.
 
 ## Milestone 7: iOS
 
@@ -1540,6 +1543,180 @@ Not checked:
 - **A style with no Intro or Ending:** what the keyboard does when those buttons are pressed.
 - **Phone screens.** The section step's pickers are small for a finger.
 - **iOS and macOS,** and the Send to keyboard failure messages on real hardware.
+
+## Milestone 14: MIDI in
+
+The keyboard chosen under "MIDI output" also becomes a way to write beats. With MIDI input on and
+a drum kit selected on the keyboard, the user plays a pattern and plays along to the loop. Each hit lands on the
+nearest step. Placing notes on a grid is hard for some beginners; playing a beat is easier.
+
+**It must stay as simple as the rest of the app.** There is one button and no question, and no
+Record button: with MIDI in on, playing a pattern records.
+
+**No mapping is needed.** A keyboard with a drum kit selected sends the General MIDI key for each
+drum: 36 is the kick, 38 the snare, 42 the closed hi-hat. The app's rows use the same keys.
+
+**Desktop (Windows, macOS, Linux) and iOS only,** like MIDI out. Android waits for MIDI out
+there; see "Android, later".
+
+### Definition of done
+
+- **MIDI input is off until the person turns it on.** A "MIDI in" button in the strip, after
+  Play, turns it on and off. It shows while the MIDI input is connected, and looks pressed while
+  on. It is a device setting, kept in the data folder as `midi.input`, so it survives a restart.
+  While it is off, the app ignores the input's keys. Turning it off during a take ends the take.
+  Off is the default because people also play the keyboard over the drums: a melody's keys fall
+  in the drum range, and the app would take them for drums.
+- **The input is the output's device unless chosen otherwise.** ☰ → Settings has "MIDI input:
+  Same as output", which a keyboard never needs to change. Its dialog lists "Same as output" and
+  the inputs the system reports, for drum pads or another device. It is a device setting, kept
+  as `midi.input.device` (missing means the same as the output). The input stays open whatever
+  the MIDI in button says, so the button knows whether the device is there; the button only
+  decides whether its hits count.
+- **The app sounds hits only from another device.** A keyboard that is also the output plays its
+  own keys, so the app neither plays the hit nor sends it back, and nothing sounds twice. Hits
+  from any other input play as tapping a row's name does: through the app's sound at the row's
+  volume, or sent to the MIDI output if one is chosen.
+- **One channel is taken.** The first channel that sends a note-on after the input opens is the
+  one the app listens to, until the input opens again. A keyboard sends its right-hand part on its
+  own channel, usually 1, and may send its style's drums on channel 10 at the same time; the rule
+  keeps the style out. This needs checking on a real keyboard.
+- **Keys outside the drum kit are ignored, unless they have a near drum.** General MIDI drums are
+  keys 35 to 81. Yamaha's XG kits also use keys 13 to 34 and 82 to 87, and the app's bank has
+  other sounds there. The PSR-SX720's lowest key sends 24, so its 11 lowest keys fell outside
+  the range. Those with a near drum now play as it: snare roll (29) and soft snare (31) as the
+  acoustic snare, sticks (32) and open rim shot (34) as side stick, soft bass drum (33) as the
+  kick. The rest (clicks, brushes, castanets) stay ignored. The names are XG's; the SX720's own
+  kits may differ.
+- **Playing a pattern records.** While MIDI input is on and the keyboard connected, each run of the
+  pattern being edited, from Play to Stop, is a take. Playing the song records nothing, and
+  neither does a key pressed while stopped: it only flashes its row. A small red dot on Play, by
+  the MIDI badge, shows that playing records.
+- **Each hit lands on the nearest step**, measured from when the user heard the beat, not from
+  when the message arrived. A hit just before the loop's start lands on its first step. Swing
+  counts: a hit is snapped to the swung grid, with groove import's snapping
+  (`dm-groove`, `snap`).
+- **Recording only adds notes.** A hit on a step already on keeps the louder of the two levels.
+  Removing notes stays a tap on the grid. One take, from Play to Stop, undoes as one step.
+- **Velocity sets the level.** A light hit makes a soft step, a middling one a normal step, and a
+  hard one a loud step. The step levels button moves up to show the levels the take used, as a
+  beat to start from does. The thresholds are set by ear on a real keyboard.
+- **A key flashes its row,** recording or not: the row's name lights up for a moment, so the
+  player sees which drum each key is.
+- **A key with no row is offered, not added.** It shows as an inactive row under the others: faded,
+  with the drum's name and picture and a plus sign. It flashes like the others. Clicking it adds
+  the drum as a row at the bottom, as one undo step. The app never asks which row a key belongs
+  to.
+- **At most 3 inactive rows,** the drums most recently played that have no row. A fourth pushes
+  out the oldest. They belong to this session, not to the project, and are not saved.
+- **Hits recorded on an inactive row wait in it** as faint steps of the pattern they were played
+  in. Adding the row keeps them, at the levels played. They are dropped when the row is pushed
+  out, when another project opens or a new one starts, and on Undo or Redo, which work on the
+  project alone. They do not play: only the keyboard sounded them.
+- **Rows can show the keyboard key that plays them.** Not every keyboard marks its keys with
+  drums, so with the "Keyboard notes" setting on (☰, under Settings) and MIDI in on, each name box
+  shows its key, small and on the right: C1 for the kick, D1 for the snare. Keys are named as
+  Yamaha names them, with middle C (60) as C3. A keyboard whose voice is shifted by an octave
+  sends other notes, so the names then sit an octave off the keys pressed. The setting is off
+  by default, because drum pads have no key names. It is a device setting, kept in the data
+  folder as `keys.show`.
+- **A keyboard that disappears** stops recording, keeps what was recorded, and shows one line.
+- **Checked on a real target:** the PSR-SX720 over Bluetooth on Windows, with a drum kit on its
+  right-hand part. Record what was heard, how far off hits landed, and what was not checked.
+
+### Recommended route
+
+- **`dm-midi` opens the input.** It already does for Send to keyboard and the switch-off check
+  (`sender.rs`). Those uses and this one share one connection, since Windows lets only one
+  connection hold a port. The callback filters channel and key, then pushes each hit with its
+  timestamp into a queue. The input callback never touches the synthesizer or the project.
+- **The engine plays hits from a queue,** as it plays steps. The audio thread drains it at the
+  start of each block, so a hit sounds within one block. The block size sets the delay the user
+  feels; measure it on each platform.
+- **The UI records.** It reads the hits the engine played, each with the playback position at
+  which the user heard it, and turns them into step edits through the normal undo path. The engine
+  knows that position from the audio stream's timestamps, which MIDI out already uses.
+- **The input's timestamp is the hit's time.** midir gives each message a time in microseconds.
+  Turning it into the engine's clock must not use the time the callback ran, which Bluetooth and
+  WinMM can delay.
+
+### Risks
+
+- **Bluetooth timing.** Bluetooth LE MIDI adds 10 to 30 ms of delay that varies from hit to hit.
+  At 120 BPM a step lasts 125 ms, so snapping should hide this.
+- **The channel rule** may pick the wrong channel if the style plays before the first key. Test
+  it on the SX720 before relying on it.
+
+### Left out
+
+- **Step entry while stopped.** The grid has no cursor, so a hit has no obvious step to land on.
+- **A count-in** before recording. The loop already gives the beat; add one if people ask.
+- **Recording into the song**, across patterns.
+- **Recording that replaces** what is in the pattern.
+- **MIDI clock in,** following another device's tempo.
+
+### What milestone 14 found
+
+Checked on 2026-11-20 on Windows, by screenshot of the desktop app, with the Windows MIDI
+Services loopback pair as the MIDI output. A throwaway program (not in the repository) played a
+beat at the app's tempo into the pair's other port, on channel 1.
+
+- **How it is built.** `dm-audio` takes live hits from a queue (`Engine::take_live_hits`), plays
+  them at the row's volume when asked to, and reports where in the beat each was heard
+  (`Engine::take_heard_hits`, `live.rs`). `dm-midi` reads the notes from the output's input, with
+  the channel lock, the key range and the timestamp mapping in `input.rs`. `dm-ui` records in
+  `record.rs`; `dm_groove::snap` is now public for it. A take is the undo group `Recording`.
+- **The engine can also sound live hits,** and `dm-midi` can open any input by name
+  (`InputChoice`). The app uses neither: its input is always the output's device, which sounds
+  its own keys.
+- **The first build had a Record button,** which showed beside Play once the loopback input
+  connected and turned red while recording. It was replaced by the MIDI in button.
+- **The take landed as played** (before inactive rows; see below). Loud kicks on every beat, normal snares on beats 2 and 4, soft
+  closed hi-hats on every second step, all evenly spaced, with no hit doubled or moved by jitter.
+  A cowbell, which had no row, got a Cowbell row at the bottom. A crash sent on channel 10 after
+  the channel 1 notes was ignored, and so was a key outside the drum range sent first. The step
+  levels button moved up to show loud and soft.
+- **One Undo took the whole take back,** the new row and the step levels included, and left
+  nothing more to undo.
+- **The loopback's timestamps run about 30 ms behind its callback,** steadily; the mapping
+  absorbs that.
+- **The output and its input share a cut name.** WinMM cuts names to 31 characters, so both
+  loopback ports are "Loopback Padrão de Aplicativo (". Choosing by name takes the first. The
+  same was true of outputs before.
+
+**The MIDI in button, flashes and inactive rows** were checked the same way, by screenshot:
+
+- With MIDI in off, a beat played into the loopback changed nothing.
+- With it on and the pattern stopped, Play showed its red dot, the kick and closed hi-hat names
+  flashed in their colours, and the cowbell, which has no row, showed as a faded row with a plus
+  sign. Nothing was recorded.
+- With the pattern playing, the take landed as before. The cowbell's hit waited as a faint step
+  in its faded row. Clicking the row added Cowbell with that note. Undo took back the add alone,
+  then the take.
+- The user played the PSR-SX720 into the first build and found it worked.
+
+**What the PSR-SX720 sends when a voice changes** (2026-11-20, over its Bluetooth adapter). The
+right-hand part sent its notes on channel 3. Switching it from StandardKit to ElectroKit sent, at
+once: the XG message `F0 43 10 4C 08 02 07 01 F7` (part 3's mode is Drum), bank select 127 and 0,
+program 70, then the part's volume, reverb and two more XG settings. Nothing is sent for the
+voice already chosen, and General MIDI has no way to ask for it. So the app could tell drums
+from a melody at each change, but only from the next change on. Program 70 is Yamaha's own
+number, not XG's Electro kit (24), so matching the keyboard's kit to an app kit would need a
+table of the SX720's kits. Neither is built.
+
+Not checked:
+
+- **The real keyboard, in detail.** The user found the first build worked on the PSR-SX720, but
+  these were not looked at closely: whether the channel rule keeps its style's drums out, how late
+  hits land over Bluetooth, the soft and loud thresholds by ear, and the MIDI in button, flashes
+  and inactive rows with the keyboard.
+- **The strip on a 375-point phone,** with the MIDI in button. The other strip buttons fit there.
+- **Idle redraws.** While MIDI in is on, the app redraws 20 times a second when nothing plays, so
+  a flash shows at once (`INPUT_POLL`). Its CPU cost was not measured.
+- **The "gone" line,** shown when the keyboard disappears during a take.
+- **Hits at the very start of the first loop.** A hit a fraction of a frame before play starts
+  has no position and is dropped.
+- **macOS, iOS and Linux.**
 
 ## Import grooves from a keyboard style
 

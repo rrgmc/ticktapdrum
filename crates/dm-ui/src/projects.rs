@@ -35,6 +35,8 @@ pub(crate) enum ProjectEvent {
     CancelExport,
     /// Keep the screen in landscape, or let it turn freely.
     Landscape(bool),
+    /// Show in row names the keyboard key that plays each drum while MIDI in is on, or not.
+    KeyNames(bool),
     /// Add the pasted drum tab as a new pattern, with what the person chose for reading it.
     PasteTab(String, dm_tab::Options),
     /// Start a new project from this groove that comes with the app, as a ready-made style.
@@ -68,6 +70,8 @@ pub(crate) struct ProjectsView<'a> {
     pub(crate) export_place: Option<&'a str>,
     /// Whether the screen is kept in landscape. `None` where the host cannot lock it.
     pub(crate) landscape: Option<bool>,
+    /// Whether row names show keyboard keys while MIDI in is on. `None` where there is no MIDI.
+    pub(crate) key_names: Option<bool>,
     /// How row names show in the grid.
     pub(crate) row_labels: crate::pictures::RowLabels,
     /// Whether the bar thumbnails show under the strip.

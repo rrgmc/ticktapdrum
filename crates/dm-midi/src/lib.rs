@@ -1,5 +1,5 @@
 //! Sends TickTapDrum's notes to a MIDI output: a hardware drum module or synthesizer, or
-//! another program.
+//! another program. Also listens to a MIDI input for drum hits played on it.
 //!
 //! [`MidiOut::start`] takes the receiving end of the engine's MIDI queue and runs a thread that
 //! sends each message when it falls due. The interface picks the output by name with
@@ -10,12 +10,23 @@
 //! [`MidiOut::send_style`] writes a style file into a Yamaha arranger keyboard through the same
 //! output, with the input of the same name for the keyboard's replies.
 //!
-//! See "Milestone 9: MIDI out" and "Export as a keyboard style" in `docs/DESIGN.md`.
+//! For MIDI in, [`MidiOut::listen`] takes the sending end of the engine's live hit queue, and the
+//! interface picks the input with [`MidiOut::select_input`]. By default the input is the one named
+//! like the output. While [`MidiOut::set_listening`] is on, each note-on of a General MIDI drum
+//! key on the input's first channel goes into the queue as a [`dm_audio::LiveHit`], timed by the
+//! input's own timestamp. The hit sounds in the app unless it comes from the output's own device. An input with the
+//! output's name is opened once and shared with Send to keyboard and the switch-off check, since
+//! Windows lets only one connection hold a port. [`MidiOut::input_status`] says how it goes.
+//!
+//! See "Milestone 9: MIDI out", "Export as a keyboard style" and "Milestone 14: MIDI in" in
+//! `docs/DESIGN.md`.
 
 use std::time::Instant;
 
-use dm_audio::{MidiEvent, MidiEvents};
+use dm_audio::{LiveHits, MidiEvent, MidiEvents};
 
+#[cfg_attr(target_os = "android", allow(dead_code))]
+mod input;
 #[cfg_attr(target_os = "android", allow(dead_code))]
 mod liveness;
 #[cfg_attr(target_os = "android", allow(dead_code))]
@@ -29,7 +40,7 @@ pub mod transfer;
 /// Linux), which other programs see as an input.
 pub const VIRTUAL_PORT: &str = "TickTapDrum";
 
-/// What the MIDI thread is doing with the chosen output.
+/// What the MIDI thread is doing with the chosen output, or with the chosen input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MidiStatus {
     /// No output is chosen.
@@ -42,6 +53,19 @@ pub enum MidiStatus {
     /// The chosen output is there but would not open, for example because another program holds
     /// it. The text is the system's reason, for the log. The thread keeps trying.
     Failed(String),
+}
+
+/// Which MIDI input the drum hits come from.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum InputChoice {
+    /// The input with the same name as the chosen output. A keyboard has one of each, so this
+    /// needs no second choice. With no output chosen, nothing is listened to.
+    #[default]
+    SameAsOutput,
+    /// The input with this name, for example drum pads that have no output.
+    Named(String),
+    /// No input: hits are not listened to.
+    None,
 }
 
 /// Which kind of keyboard a style goes to. Each brand has its own file transfer.
@@ -157,6 +181,63 @@ impl MidiOut {
         }
     }
 
+    /// Gives the thread the queue to put drum hits into, the sending end of the engine's live
+    /// hit queue. Until this is called, and while [`MidiOut::set_listening`] is off, notes on the
+    /// input are ignored. A second call replaces the first queue.
+    pub fn listen(&mut self, hits: LiveHits) {
+        #[cfg(not(target_os = "android"))]
+        self.handle.listen(hits);
+        #[cfg(target_os = "android")]
+        let _ = hits;
+    }
+
+    /// Lets the input's hits into the queue, or stops them. Off by default. While off, the input
+    /// stays open, so [`MidiOut::input_status`] still tells whether it is there, but no hit is
+    /// pushed and no channel is taken. Turning on takes a channel afresh. Cheap and never
+    /// blocks.
+    pub fn set_listening(&mut self, on: bool) {
+        #[cfg(not(target_os = "android"))]
+        self.handle.set_listening(on);
+        #[cfg(target_os = "android")]
+        let _ = on;
+    }
+
+    /// The inputs there are now, by name, sorted. Enumerates afresh on each call, so call it when
+    /// a list opens, not every frame. Leaves out the app's own virtual port.
+    pub fn inputs(&self) -> Vec<String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            sender::inputs()
+        }
+        #[cfg(target_os = "android")]
+        {
+            Vec::new()
+        }
+    }
+
+    /// Chooses the input the drum hits come from. Never blocks: the thread opens it. A different
+    /// choice, even one that names the same port, makes the input take a channel afresh.
+    pub fn select_input(&mut self, choice: InputChoice) {
+        #[cfg(not(target_os = "android"))]
+        self.handle.select_input(choice);
+        #[cfg(target_os = "android")]
+        let _ = choice;
+    }
+
+    /// What the thread is doing with the chosen input: [`MidiStatus::Off`] when no input applies
+    /// ([`InputChoice::None`], or [`InputChoice::SameAsOutput`] with no output chosen),
+    /// [`MidiStatus::Connected`] while it is open. Cheap; call it every frame.
+    pub fn input_status(&self) -> MidiStatus {
+        #[cfg(not(target_os = "android"))]
+        {
+            self.handle.input_status()
+        }
+        #[cfg(target_os = "android")]
+        {
+            MidiStatus::Off
+        }
+    }
+
     /// Starts writing a style file into the keyboard where `target` keeps its styles (for
     /// Yamaha, the User drive's `STYLE` folder), through the chosen output and the input of the
     /// same name. Replaces a file of the same name. Never blocks: the thread does the work, and
@@ -201,6 +282,53 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    /// Waits up to a second for the input status to satisfy `ok`.
+    fn wait_for_input(midi: &MidiOut, ok: impl Fn(&MidiStatus) -> bool) -> MidiStatus {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            let status = midi.input_status();
+            if ok(&status) || Instant::now() > deadline {
+                return status;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn the_input_status_follows_the_choices() {
+        let (_producer, consumer) = rtrb::RingBuffer::new(16);
+        let mut midi = MidiOut::start(consumer);
+        let (hits, _heard) = rtrb::RingBuffer::new(dm_audio::LIVE_QUEUE_CAPACITY);
+        midi.listen(hits);
+        let absent = |s: &MidiStatus| matches!(s, MidiStatus::Missing | MidiStatus::Failed(_));
+
+        // "Same as output" with no output listens to nothing.
+        std::thread::sleep(Duration::from_millis(20));
+        assert_eq!(midi.input_status(), MidiStatus::Off);
+
+        // With an output chosen, it looks for the input of that name.
+        midi.select(Some("No such device, surely".to_owned()));
+        let status = wait_for_input(&midi, absent);
+        assert!(absent(&status), "{status:?}");
+
+        midi.select_input(InputChoice::None);
+        assert_eq!(
+            wait_for_input(&midi, |s| *s == MidiStatus::Off),
+            MidiStatus::Off
+        );
+
+        midi.select(None);
+        midi.select_input(InputChoice::Named("No such input, surely".to_owned()));
+        let status = wait_for_input(&midi, absent);
+        assert!(absent(&status), "{status:?}");
+
+        midi.select_input(InputChoice::SameAsOutput);
+        assert_eq!(
+            wait_for_input(&midi, |s| *s == MidiStatus::Off),
+            MidiStatus::Off
+        );
     }
 
     #[test]

@@ -30,6 +30,8 @@ menu-song = Música
 menu-export = Exportar
 # Trava a tela na horizontal.
 menu-landscape = Manter na horizontal
+menu-key-names = Notas do teclado
+menu-key-names-tip = Com a entrada MIDI ligada, mostra ao lado de cada peça a nota do teclado que a toca.
 menu-bar-line = Mostrar compassos abaixo dos botões
 menu-language = Idioma
 # A primeira escolha da janela Idioma: seguir o idioma do sistema. $language é o nome desse
@@ -55,6 +57,18 @@ menu-midi-volume-about = A saída escolhida toca todas as peças neste volume. O
 menu-midi-sending = Enviando para { $device }.
 menu-midi-gone = { $device } não está mais disponível. Tocando neste aparelho de novo.
 menu-midi-in-use = { $device } está em uso por outro programa.
+# Mensagem de uma linha quando a entrada MIDI some durante a gravação. $device é o nome dela.
+menu-midi-input-gone = { $device } não está mais disponível. A gravação parou.
+# De onde vêm as batidas tocadas num aparelho MIDI. $device é o nome da entrada escolhida, como o
+# sistema informa e encurtado para caber, ou menu-midi-input-same.
+menu-midi-input-choice = Entrada MIDI: { $device }
+# O título da janela que escolhe a entrada MIDI.
+menu-midi-input = Entrada MIDI
+# A primeira escolha da janela Entrada MIDI: a entrada do mesmo aparelho da saída MIDI.
+menu-midi-input-same = Igual à saída
+menu-midi-input-about = De onde vêm as batidas que você toca. Igual à saída serve para um teclado; escolha outra para pads de bateria.
+# Uma entrada escolhida que não está presente agora. $device é o nome dela, como o sistema informou.
+menu-midi-input-not-connected = { $device } (sem conexão)
 # O título da janela que ajusta o andamento e o swing.
 menu-tempo = Andamento
 
@@ -136,9 +150,9 @@ menu-keyboard-send-about-no-output = Escolha antes o teclado em Ajustes, Saída 
 menu-settings = Ajustes
 menu-import = Importar
 # Como cada linha aparece na grade: pelo nome, por um desenho da peça, ou pelos dois.
-menu-rows-names = Linhas: nomes
-menu-rows-pictures-and-names = Linhas: desenhos e nomes
-menu-rows-pictures = Linhas: desenhos
+menu-rows-names = Instrumentos: nomes
+menu-rows-pictures-and-names = Instrumentos: desenhos e nomes
+menu-rows-pictures = Instrumentos: desenhos
 
 ## A janela Colar uma tablatura de bateria. O título dela é menu-paste-tab.
 

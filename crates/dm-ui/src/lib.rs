@@ -32,11 +32,13 @@ mod keyboard;
 mod link;
 mod menu;
 mod midi;
+mod offered;
 mod paste_tab;
 mod patterns;
 mod picker;
 mod pictures;
 mod projects;
+mod record;
 mod rows;
 mod song;
 mod sounds;
@@ -69,6 +71,9 @@ const SHORT: f32 = 560.0;
 const AUTOSAVE_DELAY: f64 = 1.0;
 /// How long a notice stays on screen, in seconds.
 const NOTICE_SECONDS: f64 = 4.0;
+/// How often the interface looks for hits from the MIDI input while nothing plays, in seconds,
+/// so a key's flash shows soon after the key is played.
+const INPUT_POLL: f64 = 0.05;
 /// How much longer a notice with a button stays, so there is time to tap it.
 const KIT_NOTICE_EXTRA: f64 = 5.0;
 
@@ -88,6 +93,9 @@ pub struct DrumApp {
     follow: bool,
     /// How row names show: names, pictures and names, or pictures. A device setting.
     row_labels: pictures::RowLabels,
+    /// Whether row names show the keyboard key that plays each drum while MIDI in is on. A
+    /// device setting, kept in the store.
+    key_names: bool,
     /// Whether the bar thumbnails show under the strip, or `None` until the person chooses,
     /// when [`bar_line_default`] decides. A device setting.
     bar_line: Option<bool>,
@@ -116,8 +124,17 @@ pub struct DrumApp {
     export_dir: Option<PathBuf>,
     /// The message that tells people where `export_dir` is, if its path means little to them.
     export_place: Option<&'static str>,
-    /// The MIDI output the drums go to, if one is chosen. Started beside the engine.
+    /// The MIDI output the drums go to, if one is chosen, and the input drum hits come from.
+    /// Started beside the engine.
     midi: midi::Midi,
+    /// The number of the take being recorded from the MIDI input, while one is: from Play to
+    /// Stop of a pattern, with the input on and connected.
+    recording: Option<u64>,
+    /// How many takes have started, to number the next one.
+    takes: u64,
+    /// The drums played on the MIDI input that have no row, shown as inactive rows. This
+    /// session's, never saved.
+    offered: offered::Offered,
     /// A one-line notice shown over the grid, and the time (egui's clock, in seconds) it goes.
     notice: Option<(String, f64)>,
     /// A button the notice carries: its words and the kit it chooses. Only a groove from a
@@ -187,7 +204,12 @@ impl DrumApp {
         let system_language = i18n::system_language();
         let row_labels = store.row_labels();
         let bar_line = store.bar_strip();
-        let midi = midi::Midi::new(store.midi_output(), store.midi_volume());
+        let midi = midi::Midi::new(
+            store.midi_output(),
+            store.midi_volume(),
+            store.midi_input(),
+            store.midi_input_device(),
+        );
         // Only the names: reading the packs waits until the list opens.
         let app = Self {
             bank: BankState::new(data_dir),
@@ -199,6 +221,7 @@ impl DrumApp {
             half: 0,
             follow: true,
             row_labels,
+            key_names: store.key_names(),
             bar_line,
             grid: grid::Grid::default(),
             bar_strip: bars::BarStrip::default(),
@@ -218,6 +241,9 @@ impl DrumApp {
             export_dir: None,
             export_place: None,
             midi,
+            recording: None,
+            takes: 0,
+            offered: offered::Offered::default(),
             notice: None,
             notice_kit: None,
             language_choice,
@@ -421,7 +447,16 @@ impl DrumApp {
             // After the editor, so a new engine has the project, and its kit, before MIDI out
             // turns on and sends the kit.
             self.style_transfer(ui.ctx());
-            if let Some(note) = self.midi.frame(ui.ctx(), &mut engine) {
+            let mut notes: Vec<midi::Note> =
+                self.midi.frame(ui.ctx(), &mut engine).into_iter().collect();
+            // An input that goes away ends the take. What was recorded stays. Its one line
+            // replaces the output's, since a keyboard takes both away at once.
+            if self.recording.is_some() && !self.midi.input_connected() {
+                self.recording = None;
+                let name = self.midi.input_name().unwrap_or_default().to_owned();
+                notes = vec![midi::Note::InputGone(name)];
+            }
+            for note in notes {
                 let text = note.text();
                 let until = ui.input(|i| i.time) + NOTICE_SECONDS;
                 self.notice = Some((text.clone(), until));
@@ -542,6 +577,8 @@ impl DrumApp {
             });
             self.export_message = self.message.clone();
         }
+        // A drum on offer that has a row by now, added another way, is offered no more.
+        self.offered.forget_rows_of(&self.project);
         self.editor_frame(ui, engine);
 
         if self.project != before {
@@ -555,6 +592,7 @@ impl DrumApp {
             }
             self.unsaved_since = Some(now);
         }
+        self.record_hits(engine, now);
         // The autosave waits for a pause in editing, but not when the app loses focus: a phone
         // may end the app soon after the user leaves it.
         let focused = ui.input(|i| i.focused);
@@ -601,6 +639,8 @@ impl DrumApp {
 
     fn undo(&mut self, engine: &mut Engine) {
         if self.history.undo(&mut self.project) {
+            // Undo works on the project alone; notes waiting on a drum on offer go.
+            self.offered.drop_notes();
             self.skip_record = true;
             self.resync(engine);
         }
@@ -608,6 +648,7 @@ impl DrumApp {
 
     fn redo(&mut self, engine: &mut Engine) {
         if self.history.redo(&mut self.project) {
+            self.offered.drop_notes();
             self.skip_record = true;
             self.resync(engine);
         }
@@ -679,9 +720,17 @@ impl DrumApp {
         // left now is a little more, so near the edge the guess may pick the narrower column.
         let rows_tall = grid::row_height(
             ui.available_height() - bars::INDICATOR_HEIGHT - bars::INDICATOR_GAP,
-            self.project.rows().len(),
+            self.project.rows().len() + self.offered.len(),
         );
-        let labels = grid::label_width(ui.ctx(), &self.project, self.row_labels, width, rows_tall);
+        let labels = grid::label_width(
+            ui.ctx(),
+            &self.project,
+            &self.offered.keys(),
+            self.row_labels,
+            width,
+            rows_tall,
+            self.key_names && self.midi.input_connected(),
+        );
         let fits = ((width - labels) / (STEPS_PER_BAR as f32 * min_step)).floor() as usize;
         let split = fits == 0;
         let shown_bars = fits.clamp(1, MAX_BARS_SHOWN).min(pattern_bars);
@@ -721,6 +770,16 @@ impl DrumApp {
             can_redo,
             step_levels: self.project.step_levels(),
             midi_device: self.midi.choice().filter(|_| self.midi.connected()),
+            recording_from: self
+                .midi
+                .input_name()
+                .filter(|_| self.midi.input_connected()),
+            midi_in: self.midi.input_open().then(|| {
+                (
+                    self.midi.input(),
+                    self.midi.input_name().unwrap_or_default(),
+                )
+            }),
         };
         let strip = strip::ui(ui, &state);
         ui.add_space(4.0);
@@ -818,6 +877,7 @@ impl DrumApp {
                 can_render: self.bank.soundfont().is_some(),
                 export_place: export_place.as_deref(),
                 landscape: self.orientation.is_some().then(|| self.store.landscape()),
+                key_names: midi::MidiOut::supported().then_some(self.key_names),
                 row_labels: self.row_labels,
                 bar_line,
             },
@@ -833,6 +893,8 @@ impl DrumApp {
                 connected: self.midi.connected(),
                 outputs: self.midi.outputs(),
                 volume: self.midi.volume(),
+                input: self.midi.input_device(),
+                inputs: self.midi.inputs(),
             }),
             grooves: grooves::GroovesView {
                 magenta: &self.magenta,
@@ -878,6 +940,8 @@ impl DrumApp {
         self.grid.set_highlight(self.row_popup.row());
         self.grid.set_row_labels(self.row_labels);
         self.grid.set_step_levels(self.project.step_levels());
+        self.grid
+            .set_show_keys(self.key_names && self.midi.input_connected());
         let grid_playhead = playhead.filter(|_| heard).map(|p| p.step);
         // The grid takes the rest of the screen but a thin line at the bottom, the bar
         // indicator, which is inside the safe area so a phone's gesture bar does not hide it.
@@ -892,6 +956,7 @@ impl DrumApp {
                 self.grid.ui(
                     ui,
                     &self.project,
+                    &self.offered,
                     &self.project.patterns()[self.current],
                     view,
                     grid_playhead,
@@ -917,6 +982,13 @@ impl DrumApp {
             match event {
                 grid::GridEvent::Preview { row } => self.preview_row(engine, row),
                 grid::GridEvent::OpenRow { .. } => {}
+                grid::GridEvent::AddOffered { key } => {
+                    let now = ui.input(|i| i.time);
+                    self.add_offered(engine, key, now);
+                }
+                grid::GridEvent::RemoveOffered { key } => {
+                    self.offered.remove(key);
+                }
                 grid::GridEvent::Set {
                     row,
                     step,
@@ -952,6 +1024,20 @@ impl DrumApp {
                 strip::StripEvent::Stop => {
                     engine.stop();
                     self.playing = false;
+                    self.recording = None;
+                }
+                strip::StripEvent::MidiIn => {
+                    let on = !self.midi.input();
+                    if let Err(e) = self.store.set_midi_input(on) {
+                        log::warn!("could not keep the MIDI input setting: {e}");
+                    }
+                    self.midi.set_input(on);
+                    // Turning the input off ends the take, without the line about a keyboard
+                    // that went away, and takes the drums on offer away with their notes.
+                    if !on {
+                        self.recording = None;
+                        self.offered = offered::Offered::default();
+                    }
                 }
                 strip::StripEvent::PrevPage => self.page(split, shown_bars, false),
                 strip::StripEvent::NextPage => self.page(split, shown_bars, true),
@@ -984,6 +1070,20 @@ impl DrumApp {
                         log::warn!("could not keep the MIDI output setting: {e}");
                     }
                     self.midi.choose(choice);
+                }
+                menu::MenuEvent::ListMidiInputs => {
+                    self.midi.list_inputs();
+                    // This frame drew the dialog with the old list.
+                    ui.ctx().request_repaint();
+                }
+                menu::MenuEvent::MidiInput(device) => {
+                    if let Err(e) = self.store.set_midi_input_device(device.as_deref()) {
+                        log::warn!("could not keep the MIDI input device setting: {e}");
+                    }
+                    self.midi.choose_input(device);
+                    // A take on the old input ends here, without the line about a device that
+                    // went away.
+                    self.recording = None;
                 }
                 menu::MenuEvent::MidiVolume { percent, keep } => {
                     self.midi.set_volume(engine, percent);
@@ -1301,6 +1401,12 @@ impl DrumApp {
                         job.cancel();
                     }
                 }
+                ProjectEvent::KeyNames(on) => {
+                    self.key_names = on;
+                    if let Err(e) = self.store.set_key_names(on) {
+                        log::warn!("the keyboard notes setting was not saved: {e}");
+                    }
+                }
                 ProjectEvent::Landscape(on) => {
                     if let Some(lock) = &self.orientation {
                         lock(on);
@@ -1522,6 +1628,8 @@ impl DrumApp {
         self.project = project;
         self.name = name;
         self.history.clear();
+        // Notes waiting on a drum on offer were played against the old project.
+        self.offered.drop_notes();
         self.skip_record = true;
         self.current = 0;
         self.view_bar = 0;
@@ -1559,6 +1667,87 @@ impl DrumApp {
         self.preview = None;
         self.playing = true;
         self.follow = true;
+    }
+
+    /// Adds the drum on offer with `key` as a row at the bottom, with the notes recorded on it.
+    /// One undo step, as the frame records it. With the rows full, it says so and stays on offer.
+    fn add_offered(&mut self, engine: &mut Engine, key: u8, now: f64) {
+        match self.offered.add_to(&mut self.project, key) {
+            Ok(changes) => apply(engine, changes),
+            Err(dm_project::Refused::TooManyRows) => {
+                let text = tr!("sounds-max-rows", count = dm_project::MAX_ROWS);
+                self.notice = Some((text, now + NOTICE_SECONDS));
+            }
+            Err(refused) => log::info!("refused: {refused:?}"),
+        }
+    }
+
+    /// Takes the hits the engine played from the MIDI input. Each lights its row's name, and a
+    /// drum with no row is offered. While a pattern plays with the input on and connected, a
+    /// take records: the hits heard in the pattern being edited become steps, or wait on a drum
+    /// on offer. Stopped, or playing the song, nothing is recorded. The hits are taken every
+    /// frame, so their queue never fills. Each take, from Play to Stop, undoes as one step.
+    fn record_hits(&mut self, engine: &mut Engine, now: f64) {
+        let hits = engine.take_heard_hits();
+        let input = self.midi.input_connected();
+        // A take runs from Play to Stop of a pattern. Anything that stops the pattern looping
+        // ends it: Stop, a song that is played, a groove preview, opening a project, the input
+        // turned off.
+        let armed = input && self.playing && self.mode == Mode::Pattern;
+        if !armed {
+            self.recording = None;
+        } else if self.recording.is_none() {
+            self.takes += 1;
+            self.recording = Some(self.takes);
+        }
+        if input && !self.playing {
+            // The interface may otherwise draw only on input, and a key's flash must show at
+            // once.
+            self.ctx
+                .request_repaint_after(std::time::Duration::from_secs_f64(INPUT_POLL));
+        }
+        if hits.is_empty() {
+            return;
+        }
+        for hit in &hits {
+            self.grid.flash(hit.key, now);
+            if !self.project.rows().iter().any(|r| r.key == hit.key) {
+                self.offered.offer(hit.key);
+            }
+        }
+        self.ctx.request_repaint();
+        let Some(take) = self.recording else {
+            return;
+        };
+        let slot = self.project.patterns()[self.current].slot();
+        let heard: Vec<_> = hits
+            .into_iter()
+            .filter_map(|hit| {
+                let p = hit.position?;
+                (p.song_index.is_none() && p.pattern == slot).then_some((hit, p.step))
+            })
+            .collect();
+        if heard.is_empty() {
+            return;
+        }
+        let before = self.project.clone();
+        for (hit, step) in heard {
+            match record::record_hit(
+                &mut self.project,
+                &mut self.offered,
+                self.current,
+                hit.key,
+                hit.velocity,
+                step,
+            ) {
+                Ok(changes) => apply(engine, changes),
+                Err(refused) => log::info!("recording refused: {refused:?}"),
+            }
+        }
+        if self.project != before {
+            self.history.record(&before, Group::Recording(take), now);
+            self.unsaved_since = Some(now);
+        }
     }
 
     /// Plays the pattern being edited from the first step of `bar`, and follows it.

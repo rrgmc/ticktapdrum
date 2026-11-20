@@ -9,6 +9,14 @@ strip-stop = Parar
 # Dica no botão Tocar quando a bateria vai para uma saída MIDI em vez dos alto-falantes deste
 # aparelho. $device é o nome da saída, como o sistema informa.
 strip-midi-tip = A bateria toca em { $device }.
+# Dica no botão Tocar enquanto a entrada MIDI está ligada e conectada: tocar um padrão grava as
+# batidas dela. $device é o nome da entrada, como o sistema informa.
+strip-record-tip = Tocar grava o que vem de { $device }.
+# O botão Entrada MIDI, mostrado enquanto a entrada MIDI está conectada. Ligado, tocar um padrão
+# grava o que se toca na entrada. $device é o nome da entrada, como o sistema informa.
+strip-midi-in = Entrada MIDI
+strip-midi-in-off-tip = Gravar de { $device } enquanto um padrão toca.
+strip-midi-in-on-tip = Gravando de { $device } enquanto um padrão toca. Toque para parar.
 strip-patterns = Padrões
 strip-tempo-tip = Andamento e swing
 strip-undo = Desfazer

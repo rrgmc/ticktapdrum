@@ -1,4 +1,4 @@
-//! Prints the MIDI outputs the system reports, as the interface would list them.
+//! Prints the MIDI outputs and inputs the system reports, as the interface would list them.
 //!
 //! `cargo run -p dm-midi --example ports`
 
@@ -6,16 +6,21 @@ use dm_midi::MidiOut;
 
 fn main() {
     if !MidiOut::supported() {
-        println!("MIDI out is not supported on this platform.");
+        println!("MIDI is not supported on this platform.");
         return;
     }
     let (_producer, consumer) = rtrb::RingBuffer::new(1);
     let midi = MidiOut::start(consumer);
-    let outputs = midi.outputs();
-    if outputs.is_empty() {
-        println!("No MIDI outputs.");
+    print_list("Outputs", midi.outputs());
+    print_list("Inputs", midi.inputs());
+}
+
+fn print_list(title: &str, names: Vec<String>) {
+    println!("{title}:");
+    if names.is_empty() {
+        println!("  none");
     }
-    for name in outputs {
-        println!("{name}");
+    for name in names {
+        println!("  {name}");
     }
 }

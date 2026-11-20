@@ -1,5 +1,7 @@
 //! The MIDI output setting: which output the drums go to, kept by name in the store, and what
-//! the interface does when that output connects, disappears or will not open.
+//! the interface does when that output connects, disappears or will not open. The drum hits
+//! for MIDI in come from the input of the same device, or from another input chosen by name,
+//! such as drum pads (see "Milestone 14: MIDI in").
 //!
 //! Setting it up is one choice and no questions (see "Milestone 9: MIDI out" in
 //! `docs/DESIGN.md`). While the chosen output is connected, the engine's MIDI out is on, which
@@ -7,9 +9,13 @@
 
 use dm_audio::Engine;
 #[cfg(feature = "midi")]
-pub(crate) use dm_midi::{KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus};
+pub(crate) use dm_midi::{
+    InputChoice, KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus,
+};
 #[cfg(not(feature = "midi"))]
-pub(crate) use off::{KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus};
+pub(crate) use off::{
+    InputChoice, KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus,
+};
 
 /// Stands in for `dm-midi` in a build without the `midi` feature: it reports no MIDI, so the
 /// setting is not offered and the engine's MIDI out stays off.
@@ -45,6 +51,20 @@ mod off {
             MidiStatus::Off
         }
 
+        pub(crate) fn listen(&mut self, _hits: dm_audio::LiveHits) {}
+
+        pub(crate) fn set_listening(&mut self, _on: bool) {}
+
+        pub(crate) fn inputs(&self) -> Vec<String> {
+            Vec::new()
+        }
+
+        pub(crate) fn select_input(&mut self, _choice: InputChoice) {}
+
+        pub(crate) fn input_status(&self) -> MidiStatus {
+            MidiStatus::Off
+        }
+
         pub(crate) fn send_style(
             &mut self,
             _target: KeyboardTarget,
@@ -56,6 +76,15 @@ mod off {
         pub(crate) fn transfer(&self) -> TransferStatus {
             TransferStatus::Idle
         }
+    }
+
+    #[allow(dead_code)]
+    #[derive(Debug, Clone, Default, PartialEq, Eq)]
+    pub(crate) enum InputChoice {
+        #[default]
+        SameAsOutput,
+        Named(String),
+        None,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +129,8 @@ pub(crate) enum Note {
     Gone(String),
     /// The output is there but another program holds it.
     InUse(String),
+    /// The input went away while recording. Recording stopped and kept its notes.
+    InputGone(String),
 }
 
 impl Note {
@@ -109,6 +140,7 @@ impl Note {
             Note::Sending(name) => tr!("menu-midi-sending", device = name.as_str()),
             Note::Gone(name) => tr!("menu-midi-gone", device = name.as_str()),
             Note::InUse(name) => tr!("menu-midi-in-use", device = name.as_str()),
+            Note::InputGone(name) => tr!("menu-midi-input-gone", device = name.as_str()),
         }
     }
 }
@@ -140,6 +172,15 @@ fn channel_volume(percent: u8) -> u8 {
     ((u16::from(percent.min(100)) * 127 + 50) / 100) as u8
 }
 
+/// Which input to open: the chosen output's own device, or the input of this name. It is open
+/// whether or not the MIDI in button is on, so the button can show while it is there.
+fn input_choice(device: Option<&str>) -> InputChoice {
+    match device {
+        Some(name) => InputChoice::Named(name.to_owned()),
+        None => InputChoice::SameAsOutput,
+    }
+}
+
 /// `name` cut to at most `max` characters, the last of them an ellipsis, for a narrow label.
 pub(crate) fn shorten(name: &str, max: usize) -> String {
     if name.chars().count() <= max {
@@ -167,16 +208,92 @@ pub(crate) struct Midi {
     outputs: Vec<String>,
     /// The MIDI output volume in percent, 0..=100. A device setting, kept in the store.
     volume: u8,
+    /// Whether the chosen input was open when last looked at, whether or not it is on.
+    input_open: bool,
+    /// Whether the input's hits are listened to: the MIDI in button. Off by default. A device
+    /// setting, kept in the store.
+    input: bool,
+    /// The chosen input's name, or `None` for the output's own device. A device setting, kept
+    /// in the store.
+    input_device: Option<String>,
+    /// The inputs listed when the input dialog last opened.
+    inputs: Vec<String>,
 }
 
 impl Midi {
-    /// Follows the choice and the volume kept in the store. Nothing is sent until an engine
-    /// exists.
-    pub(crate) fn new(choice: Option<String>, volume: u8) -> Self {
+    /// Follows the choices, the volume and the input setting kept in the store. Nothing is sent
+    /// until an engine exists.
+    pub(crate) fn new(
+        choice: Option<String>,
+        volume: u8,
+        input: bool,
+        input_device: Option<String>,
+    ) -> Self {
         Self {
             choice,
             volume: volume.min(100),
+            input,
+            input_device,
             ..Self::default()
+        }
+    }
+
+    /// Whether the input is on and open now, so drum hits arrive and playing a pattern records
+    /// them.
+    pub(crate) fn input_connected(&self) -> bool {
+        self.input && self.input_open
+    }
+
+    /// Whether the chosen input is open now, on or off. The MIDI in button shows while it is.
+    pub(crate) fn input_open(&self) -> bool {
+        self.input_open
+    }
+
+    /// Whether the input is on.
+    pub(crate) fn input(&self) -> bool {
+        self.input
+    }
+
+    /// Turns the input on or off. Off, the input stays open but its hits are dropped. The
+    /// caller keeps the setting.
+    pub(crate) fn set_input(&mut self, on: bool) {
+        self.input = on;
+        if let Some(out) = &mut self.out {
+            out.set_listening(on);
+        }
+    }
+
+    /// The chosen input's name, or `None` for the output's own device.
+    pub(crate) fn input_device(&self) -> Option<&str> {
+        self.input_device.as_deref()
+    }
+
+    /// The name of the input the hits come from: the chosen one, or else the output's.
+    pub(crate) fn input_name(&self) -> Option<&str> {
+        self.input_device().or(self.choice())
+    }
+
+    /// The inputs listed when the input dialog last opened.
+    pub(crate) fn inputs(&self) -> &[String] {
+        &self.inputs
+    }
+
+    /// Reads the inputs there are now, for the dialog that just opened.
+    pub(crate) fn list_inputs(&mut self) {
+        self.inputs = self.out.as_ref().map(MidiOut::inputs).unwrap_or_default();
+    }
+
+    /// Chooses the input by name, or `None` for the output's own device. The caller keeps the
+    /// choice.
+    pub(crate) fn choose_input(&mut self, device: Option<String>) {
+        if device == self.input_device {
+            return;
+        }
+        self.input_device = device;
+        // Not open until the sender says so.
+        self.input_open = false;
+        if let Some(out) = &mut self.out {
+            out.select_input(input_choice(self.input_device.as_deref()));
         }
     }
 
@@ -264,12 +381,21 @@ impl Midi {
             engine.set_midi_volume(channel_volume(self.volume));
             let mut out = MidiOut::start(events);
             out.select(self.choice.clone());
+            if let Some(hits) = engine.take_live_hits() {
+                out.listen(hits);
+            }
+            // The hits come from the input named like the output unless another is chosen: one
+            // choice for a keyboard. The input opens either way; the MIDI in button lets its
+            // hits through.
+            out.select_input(input_choice(self.input_device.as_deref()));
+            out.set_listening(self.input);
             self.out = Some(out);
             self.last = None;
             self.sending = false;
             self.by_hand = false;
         }
         let out = self.out.as_ref()?;
+        self.input_open = out.input_status() == MidiStatus::Connected;
         let now = out.status();
         let last = self.last.replace(now.clone()).unwrap_or(MidiStatus::Off);
 
@@ -289,7 +415,7 @@ impl Midi {
         if matches!(now, MidiStatus::Missing | MidiStatus::Failed(_)) {
             self.by_hand = false;
         }
-        if self.choice.is_some() {
+        if self.choice.is_some() || self.input_device.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(POLL));
         }
         note
@@ -368,7 +494,7 @@ mod tests {
 
     #[test]
     fn a_choice_is_kept_before_any_engine_exists() {
-        let mut midi = Midi::new(Some("Synth".into()), 100);
+        let mut midi = Midi::new(Some("Synth".into()), 100, false, None);
         assert_eq!(midi.choice(), Some("Synth"));
         assert!(!midi.connected());
         midi.list();
@@ -378,5 +504,47 @@ mod tests {
         assert!(!midi.by_hand);
         midi.choose(Some("Other".into()));
         assert!(midi.by_hand);
+    }
+
+    #[test]
+    fn the_input_is_the_outputs_unless_another_is_chosen() {
+        assert_eq!(input_choice(None), InputChoice::SameAsOutput);
+        assert_eq!(
+            input_choice(Some("Pads")),
+            InputChoice::Named("Pads".into())
+        );
+
+        let mut midi = Midi::new(Some("Keyboard".into()), 100, true, None);
+        assert_eq!(midi.input_device(), None);
+        assert_eq!(midi.input_name(), Some("Keyboard"));
+        midi.choose_input(Some("Pads".into()));
+        assert_eq!(midi.input_device(), Some("Pads"));
+        assert_eq!(midi.input_name(), Some("Pads"));
+        // Pads work with no output at all.
+        midi.choose(None);
+        assert_eq!(midi.input_name(), Some("Pads"));
+        midi.list_inputs();
+        assert!(midi.inputs().is_empty());
+        midi.choose_input(None);
+        assert_eq!(midi.input_name(), None);
+    }
+
+    #[test]
+    fn the_button_gates_an_open_input() {
+        let mut midi = Midi::new(None, 100, false, Some("Pads".into()));
+        midi.input_open = true;
+        // Open but off: the button shows, nothing is recorded.
+        assert!(midi.input_open());
+        assert!(!midi.input_connected());
+        midi.set_input(true);
+        assert!(midi.input_connected());
+        // Turning it off leaves the input open.
+        midi.set_input(false);
+        assert!(midi.input_open());
+        assert!(!midi.input_connected());
+        // A new choice is not open until the sender says so.
+        midi.set_input(true);
+        midi.choose_input(None);
+        assert!(!midi.input_connected());
     }
 }
