@@ -3,3 +3,6 @@
 *.sh text eol=lf
 gradlew text eol=lf
 *.bat text eol=crlf
+# tools/changelog/changelog.sh reads these, and a carriage return breaks its heading matches.
+CHANGELOG.md text eol=lf
+changelog.d/*.md text eol=lf
