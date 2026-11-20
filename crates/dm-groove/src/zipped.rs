@@ -1,4 +1,4 @@
-//! Reads the MIDI files out of a zip, and picks the General MIDI folder when a pack holds one
+//! Reads the MIDI files and styles out of a zip, and picks the General MIDI folder when a pack holds one
 //! version of its grooves per drum program.
 
 use std::io::{Cursor, Read};
@@ -29,7 +29,9 @@ pub struct Contents {
 
 /// Reads the MIDI files in a zip.
 ///
-/// A file counts as MIDI by its name, `.mid` or `.midi`; its content is checked later. Folders,
+/// A file counts as MIDI by its name: `.mid` or `.midi`, or one of a Yamaha style's extensions
+/// (`.sty`, `.prs`, `.sst`, `.scp`, `.fps`, `.bcs`), in any case. Its content is checked later,
+/// and decides whether it is read as a style. Folders,
 /// macOS `__MACOSX` folders and dot-files are ignored, as are files of any other kind.
 ///
 /// When the pack holds a folder named for General MIDI (see [`is_general_midi`]) next to other
@@ -175,9 +177,16 @@ pub fn is_general_midi(name: &str) -> bool {
     matches!(words, [.., "gm"] | [.., "general", "midi"])
 }
 
+/// The extensions of the files read from a zip: MIDI files and Yamaha's styles.
+const EXTENSIONS: [&str; 8] = [
+    ".mid", ".midi", ".sty", ".prs", ".sst", ".scp", ".fps", ".bcs",
+];
+
 fn is_midi_name(name: &str) -> bool {
     let lower = name.to_lowercase();
-    lower.ends_with(".mid") || lower.ends_with(".midi")
+    EXTENSIONS
+        .iter()
+        .any(|extension| lower.ends_with(extension))
 }
 
 /// A file name without its extension. A name that is all extension, such as `.mid`, stays whole.

@@ -562,6 +562,8 @@ mod tests {
         let groove = |name: &str| Groove {
             name: name.into(),
             folder: String::new(),
+            kit: None,
+            similar_kit: None,
             bpm: 100.0,
             bars: vec![Vec::new()],
         };
@@ -581,6 +583,8 @@ mod tests {
         Groove {
             name: "Beat".into(),
             folder: String::new(),
+            kit: None,
+            similar_kit: None,
             bpm: 90.0,
             bars: (0..bars)
                 .map(|bar| {
