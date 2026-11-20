@@ -156,8 +156,8 @@ pub struct DrumApp {
     pending: files::Pending,
     /// Where files a host hands in, such as a shared groove pack, arrive.
     incoming: incoming::IncomingInbox,
-    /// Whether the groove list has any packs, which the menu's Grooves item needs.
-    has_grooves: bool,
+    /// The grooves that come with the app, read once.
+    magenta: dm_groove::Pack,
     /// The groove list's packs and their keys, read when the list opens.
     groove_packs: Vec<(String, dm_groove::Pack)>,
     /// The line at the top of the groove list: what the last import did, or why an add failed.
@@ -179,7 +179,6 @@ impl DrumApp {
         let bar_line = store.bar_strip();
         let midi = midi::Midi::new(store.midi_output());
         // Only the names: reading the packs waits until the list opens.
-        let has_grooves = !store.pack_keys().is_empty();
         let app = Self {
             bank: BankState::new(data_dir),
             project,
@@ -230,7 +229,7 @@ impl DrumApp {
             picks: picker::PickInbox::new(),
             pending: files::Pending::default(),
             incoming: incoming::IncomingInbox::new(),
-            has_grooves,
+            magenta: grooves::magenta_pack(),
             groove_packs: Vec::new(),
             groove_note: None,
             preview: None,
@@ -799,7 +798,7 @@ impl DrumApp {
                 outputs: self.midi.outputs(),
             }),
             grooves: grooves::GroovesView {
-                any: self.has_grooves,
+                magenta: &self.magenta,
                 packs: &self.groove_packs,
                 playing: self.preview.as_ref().map(|(key, i)| (key.as_str(), *i)),
                 note: self.groove_note.as_deref(),
@@ -1220,6 +1219,19 @@ impl DrumApp {
                     }
                 }
                 ProjectEvent::PasteTab(text, options) => self.paste_tab(engine, &text, options),
+                ProjectEvent::Magenta(index) => {
+                    let Some(groove) = self.magenta.grooves.get(index).cloned() else {
+                        continue;
+                    };
+                    if let Ok((project, _)) =
+                        dm_project::Project::from_imported(&groove.bars, groove.bpm)
+                    {
+                        self.stop_preview(engine);
+                        self.replace_project(engine, project, None);
+                        self.message =
+                            Some(tr!("projects-preset-started", name = groove.name.as_str()));
+                    }
+                }
                 ProjectEvent::BarLine(on) => {
                     self.bar_line = Some(on);
                     if let Err(e) = self.store.set_bar_strip(on) {
@@ -1492,7 +1504,6 @@ impl DrumApp {
             Ok(key) => key,
             Err(e) => return self.import_failed(tr!("grooves-not-saved", reason = e)),
         };
-        self.has_grooves = true;
         self.message = Some(message.clone());
         self.groove_note = Some(message);
         self.open_groove_list(Some(key));
@@ -1544,11 +1555,13 @@ impl DrumApp {
     /// Reads the groove list again, after an import or a delete.
     fn reload_grooves(&mut self) {
         self.groove_packs = self.store.load_packs();
-        self.has_grooves = !self.groove_packs.is_empty();
     }
 
     /// The groove at `index` in the pack with `key`, if both are there.
     fn groove(&self, key: &str, index: usize) -> Option<&dm_groove::Groove> {
+        if key == grooves::MAGENTA_KEY {
+            return self.magenta.grooves.get(index);
+        }
         self.groove_packs
             .iter()
             .find(|(k, _)| k == key)

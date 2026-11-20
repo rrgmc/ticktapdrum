@@ -95,6 +95,8 @@ enum Shown {
     Grooves {
         focus: Option<String>,
     },
+    /// The grooves that come with the app, from the Ready-made styles dialog.
+    Magenta,
     /// "Start new?" when there are unsaved changes.
     New,
 }
@@ -106,6 +108,8 @@ enum Ask {
     OpenFile,
     Delete(String),
     Preset(&'static str),
+    /// Starting a new project from a groove that comes with the app: its place and name.
+    Magenta(usize, String),
     Groove(grooves::Ask),
 }
 
@@ -125,10 +129,6 @@ pub(crate) struct Menu {
 /// The width of a menu item.
 const ITEM_WIDTH: f32 = 240.0;
 
-/// Google Magenta's Groove MIDI Dataset, MIDI files only (3.3 MB, CC BY 4.0). A tap in the link
-/// dialog downloads it straight into the app.
-const MAGENTA_ZIP: &str =
-    "https://storage.googleapis.com/magentadata/datasets/groove/groove-v1.0.0-midionly.zip";
 /// Pages with free groove packs, opened in the browser from the link dialog: the label's
 /// message id, then the address. Checked to answer on 2026-11-20.
 const GROOVE_PAGES: [(&str, &str); 3] = [
@@ -265,8 +265,9 @@ impl Menu {
     }
 
     /// Whether the groove list is open.
+    /// Whether a list of grooves is open: the groove list or the grooves that come with the app.
     pub(crate) fn grooves_open(&self) -> bool {
-        matches!(self.dialog, Some(Shown::Grooves { .. }))
+        matches!(self.dialog, Some(Shown::Grooves { .. } | Shown::Magenta))
     }
 
     /// Closes the groove list, once a groove from it has been added.
@@ -458,10 +459,10 @@ impl Menu {
             });
             ui.close();
         }
-        if view.grooves.any
-            && ui
-                .add(item(icons::PLAYLIST, &tr!("grooves-title")))
-                .clicked()
+        // There is always the pack that comes with the app.
+        if ui
+            .add(item(icons::PLAYLIST, &tr!("grooves-title")))
+            .clicked()
         {
             self.open(Shown::Grooves { focus: None });
             events.push(MenuEvent::Grooves(GrooveEvent::Open));
@@ -630,6 +631,35 @@ impl Menu {
                 events.extend(list_events.into_iter().map(MenuEvent::Grooves));
                 closed
             }
+            Shown::Magenta => {
+                let mut list_events = Vec::new();
+                let closed = widgets::dialog(ctx, "magenta", &tr!("grooves-magenta-title"), |ui| {
+                    grooves::magenta_list(ui, &view.grooves, &mut list_events);
+                })
+                .closed;
+                for event in list_events {
+                    match event {
+                        // Load replaces the project, as a ready-made style does, so it asks
+                        // first when there are unsaved changes.
+                        GrooveEvent::Add { groove, .. } => {
+                            let name = view
+                                .grooves
+                                .magenta
+                                .grooves
+                                .get(groove)
+                                .map_or_else(String::new, |g| g.name.clone());
+                            if p.unsaved {
+                                self.ask = Some(Ask::Magenta(groove, name));
+                            } else {
+                                events.push(MenuEvent::Project(ProjectEvent::Magenta(groove)));
+                                done = true;
+                            }
+                        }
+                        other => events.push(MenuEvent::Grooves(other)),
+                    }
+                }
+                closed
+            }
             Shown::New => match widgets::confirm(
                 ctx,
                 "new",
@@ -669,6 +699,11 @@ impl Menu {
                     tr!("menu-start"),
                     tr!("menu-keep-this"),
                 ),
+                Ask::Magenta(_, name) => (
+                    tr!("menu-preset-question", name = name.as_str()),
+                    tr!("menu-start"),
+                    tr!("menu-keep-this"),
+                ),
                 Ask::Groove(ask) => ask.words(),
             };
             match widgets::confirm(ctx, "menu-question", &question, &yes, &no) {
@@ -689,6 +724,10 @@ impl Menu {
                         }
                         Ask::Preset(name) => {
                             events.push(MenuEvent::Project(ProjectEvent::Preset(name)));
+                            done = true;
+                        }
+                        Ask::Magenta(index, _) => {
+                            events.push(MenuEvent::Project(ProjectEvent::Magenta(index)));
                             done = true;
                         }
                         // The list stays open, to play, add or delete another.
@@ -777,6 +816,18 @@ impl Menu {
     /// The preset beats. Returns true when one was chosen.
     fn presets(&mut self, ui: &mut egui::Ui, unsaved: bool, events: &mut Vec<MenuEvent>) -> bool {
         let mut done = false;
+        // The grooves that come with the app, in a list of their own: beats by real drummers,
+        // each added as a new pattern instead of replacing the project.
+        if ui
+            .add(widgets::button(
+                icons::PLAYLIST,
+                &tr!("grooves-magenta-title"),
+            ))
+            .clicked()
+        {
+            self.open(Shown::Magenta);
+        }
+        ui.separator();
         ui.label(tr!("menu-presets-intro"));
         // Each beat: its button, then its description on a line of its own, so a long
         // description does not wrap around the button.
@@ -996,19 +1047,6 @@ fn add_link(
             });
             ui.separator();
             ui.label(big(&tr!("grooves-sources")).strong());
-            // Magenta's dataset is one file, so a tap downloads it here, as if its link had
-            // been pasted.
-            if ui
-                .link(big(&tr!("grooves-source-magenta-add")))
-                .on_hover_text(MAGENTA_ZIP)
-                .clicked()
-            {
-                *text = MAGENTA_ZIP.to_owned();
-                *error = None;
-                events.push(MenuEvent::Grooves(GrooveEvent::Download(
-                    MAGENTA_ZIP.to_owned(),
-                )));
-            }
             ui.label(tr!("grooves-sources-hint"));
             for (label, address) in GROOVE_PAGES {
                 ui.hyperlink_to(big(&crate::i18n::tr(label)), address)

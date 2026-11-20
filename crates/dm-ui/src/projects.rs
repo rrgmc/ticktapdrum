@@ -26,6 +26,8 @@ pub(crate) enum ProjectEvent {
     Landscape(bool),
     /// Add the pasted drum tab as a new pattern, with what the person chose for reading it.
     PasteTab(String, dm_tab::Options),
+    /// Start a new project from this groove that comes with the app, as a ready-made style.
+    Magenta(usize),
     /// Show the bar thumbnails under the strip all the time, or only in the bar pop-up.
     BarLine(bool),
     /// Show row names as names, pictures and names, or pictures.

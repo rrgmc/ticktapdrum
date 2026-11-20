@@ -1279,13 +1279,33 @@ list instead of opening a submenu beside it, which works the same with a finger 
 The app points to free sources from the dialogs that take them, so nobody has to search first.
 eframe's `links` feature opens a link in the system browser on the desktop and on Android.
 
-- **"Add grooves from a link" lists free grooves.** "Add Google's Groove MIDI Dataset now
-  (3 MB)" downloads Magenta's MIDI-only zip straight into the app, as if its link had been
-  pasted. Links to Magenta's page and to Groove Monkee's two free pages open in the browser,
-  with a line saying to copy a download link there and paste it.
+- **"Add grooves from a link" lists free grooves.** Links to Magenta's page and to Groove
+  Monkee's two free pages open in the browser, with a line saying to copy a download link there
+  and paste it.
 - **"Paste a drum tab" lists where to find tabs:** Ultimate Guitar's drum tabs and Tabcrawler,
   opened in the browser.
 - Every address answered on 2026-11-20. Pages move, so a link may break in a later version.
+
+## Grooves that come with the app
+
+25 beats from Google Magenta's Groove MIDI Dataset (CC BY 4.0) ship with the app, so there are
+grooves by real drummers without a download. `dm-groove`'s `curate_magenta` example chooses
+them from the dataset's MIDI zip and writes `crates/dm-ui/assets/magenta-grooves.json` (19 KB):
+beats only, from the files the app accepts, up to three per style, at most their first four
+bars. The dataset's "grooveN" takes count as their style, and a file name is taken once. That
+gives 12 styles: baião, funk, hip hop, jazz, jazz fusion, pop, soft pop, punk, rock, indie rock,
+soul and Motown soul.
+
+- **"Ready-made styles" has a button, "Grooves by real drummers",** that lists them with their
+  credits and links to the dataset and the licence. Load starts a new project from one, as a
+  ready-made style does: pattern A holds the groove at its tempo, and it asks first when there
+  are unsaved changes.
+- **The Grooves list always shows them first,** as a pack that cannot be deleted, with the
+  credits. Add puts one in the project as a new pattern, like any imported groove. The Grooves
+  item is therefore always in the menu.
+- **The credits** are in the dialog, the Grooves list, the README and
+  `crates/dm-ui/assets/MAGENTA-CREDITS.txt`, as CC BY 4.0 asks.
+- The link dialog no longer offers to download the whole dataset; the page link stays.
 
 ## Bars under the buttons
 

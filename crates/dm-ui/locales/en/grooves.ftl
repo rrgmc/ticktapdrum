@@ -10,7 +10,6 @@ grooves-add-from-file = Add grooves from a file
 # The groove list's menu item and dialog title.
 grooves-title = Grooves
 grooves-intro = Tap Play to hear a groove. Add puts it in your project as a new pattern.
-grooves-empty = No grooves yet.
 # A pack's heading: its name and how many grooves it holds.
 grooves-pack = { $name } ({ $count })
 # How long a groove is, in bars.
@@ -120,10 +119,18 @@ grooves-no-room = No room for another pattern: a project holds 26.
 grooves-add-failed = The groove was not added.
 # A heading over links to free grooves, in the Add grooves from a link dialog.
 grooves-sources = Free grooves
-# A link that downloads Google Magenta's Groove MIDI Dataset into the app at once.
-grooves-source-magenta-add = Add Google's Groove MIDI Dataset now (3 MB)
 # Above links that open web pages in the browser.
 grooves-sources-hint = These pages open in the browser. Copy a download link there and paste it above.
 grooves-source-magenta-page = Groove MIDI Dataset (Google Magenta)
 grooves-source-groove-monkee = Groove Monkee: free MIDI loops
 grooves-source-beat-farm = Groove Monkee: Beat Farm
+# The dialog listing the grooves that come with the app, and the button that opens it in the
+# Ready-made styles dialog. Google Magenta and Groove MIDI Dataset are names; keep them.
+grooves-magenta-title = Grooves by real drummers
+grooves-magenta-intro = Beats played by drummers on an electronic kit, a few for each style. Tap Play to hear one; Load starts a new beat from it, as a ready-made style does.
+# The credits, required by the licence. Keep the names, the year and "CC BY 4.0".
+grooves-magenta-credits = From the Groove MIDI Dataset by Google Magenta (Gillick, Roberts, Engel, Eck and Bamman, 2019), licensed under CC BY 4.0. Chosen and changed for TickTapDrum: the first bars of each take, with the notes moved onto the 16-step grid.
+grooves-magenta-page = The Groove MIDI Dataset
+grooves-magenta-license = The CC BY 4.0 licence
+# Hover text of the Load button beside a groove that comes with the app.
+grooves-magenta-load-tip = Start a new beat from this groove

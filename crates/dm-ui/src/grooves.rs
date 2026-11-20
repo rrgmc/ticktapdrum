@@ -12,6 +12,21 @@ use egui::{RichText, Vec2};
 use crate::icons;
 use crate::widgets::{self, TAP, TEXT_SIZE};
 
+/// The key of the grooves that come with the app, in [`GrooveEvent`]s. No pack in the store has
+/// it: keys there are file names.
+pub(crate) const MAGENTA_KEY: &str = "builtin:magenta";
+/// Where the grooves that come with the app are from.
+const MAGENTA_PAGE: &str = "https://magenta.tensorflow.org/datasets/groove";
+const MAGENTA_LICENSE: &str = "https://creativecommons.org/licenses/by/4.0/";
+
+/// The grooves that come with the app: 25 beats in 12 styles from Google Magenta's Groove MIDI
+/// Dataset (CC BY 4.0), chosen by `dm-groove`'s `curate_magenta` example. See
+/// `assets/MAGENTA-CREDITS.txt`.
+pub(crate) fn magenta_pack() -> Pack {
+    dm_groove::pack_from_json(include_str!("../assets/magenta-grooves.json"))
+        .expect("the bundled grooves are valid")
+}
+
 /// The largest file the import reads, in bytes. `dm-groove` allows 100 MB unpacked in a zip, so
 /// a larger file cannot be a pack it accepts.
 pub(crate) const MAX_FILE: usize = 100 * 1024 * 1024;
@@ -43,8 +58,8 @@ pub(crate) enum GrooveEvent {
 
 /// What the groove items and the groove list need to know to draw themselves.
 pub(crate) struct GroovesView<'a> {
-    /// Whether the groove list has any grooves, which the menu's Grooves item needs.
-    pub(crate) any: bool,
+    /// The grooves that come with the app.
+    pub(crate) magenta: &'a Pack,
     /// The packs read when the list opened, each with its key.
     pub(crate) packs: &'a [(String, Pack)],
     /// The groove playing on its own: its pack's key and its place in the pack.
@@ -98,8 +113,9 @@ fn big(text: &str) -> RichText {
 }
 
 /// The groove list's contents: the note, then each pack as a heading that opens and closes, with
-/// its grooves under it. `focus` is a pack to open and show, once, such as the one just imported.
-/// A delete sets `ask` instead of deleting.
+/// its grooves under it. The pack that comes with the app is always first and cannot be deleted;
+/// Add puts one of its grooves in as a new pattern, like any other. `focus` is a pack to open
+/// and show, once, such as the one just imported. A delete sets `ask` instead of deleting.
 pub(crate) fn list(
     ui: &mut egui::Ui,
     view: &GroovesView,
@@ -110,21 +126,18 @@ pub(crate) fn list(
     if let Some(note) = view.note {
         ui.label(big(note).color(ui.visuals().warn_fg_color));
     }
-    if view.packs.is_empty() {
-        ui.label(big(&tr!("grooves-empty")));
-        return;
-    }
     ui.label(tr!("grooves-intro"));
-    let only_one = view.packs.len() == 1;
-    for (key, pack) in view.packs {
+    let magenta = std::iter::once((MAGENTA_KEY, view.magenta, false));
+    let imported = view
+        .packs
+        .iter()
+        .map(|(key, pack)| (key.as_str(), pack, true));
+    for (key, pack, deletable) in magenta.chain(imported) {
         ui.separator();
-        let id = ui.make_persistent_id(("dm-groove-pack", key.as_str()));
-        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
-            ui.ctx(),
-            id,
-            only_one,
-        );
-        let focused = focus.as_deref() == Some(key.as_str());
+        let id = ui.make_persistent_id(("dm-groove-pack", key));
+        let mut state =
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
+        let focused = focus.as_deref() == Some(key);
         if focused {
             state.set_open(true);
         }
@@ -136,10 +149,19 @@ pub(crate) fn list(
             } else {
                 icons::CARET_RIGHT
             };
-            let delete_width = TAP + ui.spacing().item_spacing.x;
+            let delete_width = if deletable {
+                TAP + ui.spacing().item_spacing.x
+            } else {
+                0.0
+            };
+            let name = if deletable {
+                pack.name.clone()
+            } else {
+                tr!("grooves-magenta-title")
+            };
             let heading = tr!(
                 "grooves-pack",
-                name = pack.name.as_str(),
+                name = name.as_str(),
                 count = pack.grooves.len()
             );
             let width = (ui.available_width() - delete_width).max(TAP);
@@ -158,27 +180,74 @@ pub(crate) fn list(
             if focused {
                 response.scroll_to_me(Some(egui::Align::TOP));
             }
-            if ui
-                .add(widgets::button(icons::TRASH, ""))
-                .on_hover_text(tr!("grooves-delete"))
-                .clicked()
+            if deletable
+                && ui
+                    .add(widgets::button(icons::TRASH, ""))
+                    .on_hover_text(tr!("grooves-delete"))
+                    .clicked()
             {
                 *ask = Some(Ask::DeletePack {
-                    key: key.clone(),
+                    key: key.to_owned(),
                     name: pack.name.clone(),
                 });
             }
         });
         state.store(ui.ctx());
         if state.is_open() {
+            if !deletable {
+                ui.label(RichText::new(tr!("grooves-magenta-credits")).small());
+            }
             let names = short_names(&pack.grooves);
             for (index, groove) in pack.grooves.iter().enumerate() {
-                let playing = view.playing == Some((key.as_str(), index));
-                groove_row(ui, key, index, groove, &names[index], playing, ask, events);
+                let playing = view.playing == Some((key, index));
+                groove_row(
+                    ui,
+                    key,
+                    index,
+                    groove,
+                    &names[index],
+                    playing,
+                    deletable.then_some(&mut *ask),
+                    (&tr!("grooves-add"), &tr!("grooves-add-tip")),
+                    events,
+                );
             }
         }
     }
     *focus = None;
+}
+
+/// The grooves that come with the app, from the Ready-made styles dialog: what they are and
+/// where they are from, with links to the dataset and its licence, then each groove with Play
+/// and Load. Load sends [`GrooveEvent::Add`], which the menu turns into starting a new project
+/// from the groove, as a ready-made style does. They cannot be deleted.
+pub(crate) fn magenta_list(ui: &mut egui::Ui, view: &GroovesView, events: &mut Vec<GrooveEvent>) {
+    if let Some(note) = view.note {
+        ui.label(big(note).color(ui.visuals().warn_fg_color));
+    }
+    ui.label(tr!("grooves-magenta-intro"));
+    ui.label(RichText::new(tr!("grooves-magenta-credits")).small());
+    ui.horizontal_wrapped(|ui| {
+        ui.hyperlink_to(tr!("grooves-magenta-page"), MAGENTA_PAGE)
+            .on_hover_text(MAGENTA_PAGE);
+        ui.hyperlink_to(tr!("grooves-magenta-license"), MAGENTA_LICENSE)
+            .on_hover_text(MAGENTA_LICENSE);
+    });
+    ui.separator();
+    for (index, groove) in view.magenta.grooves.iter().enumerate() {
+        let playing = view.playing == Some((MAGENTA_KEY, index));
+        groove_row(
+            ui,
+            MAGENTA_KEY,
+            index,
+            groove,
+            &groove.name,
+            playing,
+            None,
+            (&tr!("menu-start"), &tr!("grooves-magenta-load-tip")),
+            events,
+        );
+    }
 }
 
 /// The grooves' names without the words they all start with, so a phone shows what tells them
@@ -212,7 +281,8 @@ pub(crate) fn short_names(grooves: &[Groove]) -> Vec<String> {
 
 /// One groove: Play or Stop, its short name with its folder and length below, then Add and
 /// Delete. Everything fits on one line on a phone; a long name is cut short, and the full name
-/// shows on hover.
+/// shows on hover. Without `ask` there is no Delete, as for the grooves that come with the app.
+/// `add` is the Add button's word and its hover text.
 #[allow(clippy::too_many_arguments)]
 fn groove_row(
     ui: &mut egui::Ui,
@@ -221,7 +291,8 @@ fn groove_row(
     groove: &Groove,
     name: &str,
     playing: bool,
-    ask: &mut Option<Ask>,
+    ask: Option<&mut Option<Ask>>,
+    add: (&str, &str),
     events: &mut Vec<GrooveEvent>,
 ) {
     ui.horizontal(|ui| {
@@ -245,10 +316,11 @@ fn groove_row(
             });
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .add(widgets::button(icons::TRASH, ""))
-                .on_hover_text(tr!("grooves-delete"))
-                .clicked()
+            if let Some(ask) = ask
+                && ui
+                    .add(widgets::button(icons::TRASH, ""))
+                    .on_hover_text(tr!("grooves-delete"))
+                    .clicked()
             {
                 *ask = Some(Ask::DeleteGroove {
                     key: key.to_owned(),
@@ -257,8 +329,8 @@ fn groove_row(
                 });
             }
             if ui
-                .add(widgets::button(icons::PLUS, &tr!("grooves-add")))
-                .on_hover_text(tr!("grooves-add-tip"))
+                .add(widgets::button(icons::PLUS, add.0))
+                .on_hover_text(add.1)
                 .clicked()
             {
                 events.push(GrooveEvent::Add {
@@ -418,6 +490,16 @@ pub(crate) fn add_refused(refused: dm_project::Refused) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_grooves_that_come_with_the_app_load() {
+        let pack = magenta_pack();
+        assert_eq!(pack.grooves.len(), 25);
+        for groove in &pack.grooves {
+            assert!((1..=4).contains(&groove.bars.len()), "{}", groove.name);
+            assert!(groove.bars.iter().any(|bar| !bar.is_empty()), "{}", groove.name);
+        }
+    }
 
     #[test]
     fn short_names_drop_the_words_all_grooves_share() {

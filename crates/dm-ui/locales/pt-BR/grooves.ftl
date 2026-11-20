@@ -7,7 +7,6 @@
 grooves-add-from-file = Adicionar grooves de um arquivo
 grooves-title = Grooves
 grooves-intro = Toque em Tocar para ouvir um groove. Adicionar coloca o groove no projeto como um padrão novo.
-grooves-empty = Nenhum groove ainda.
 grooves-pack = { $name } ({ $count })
 grooves-bars = { $count ->
     [one] 1 compasso
@@ -96,8 +95,13 @@ grooves-drums-left-out = { $count } peças ficaram de fora: o projeto não tem e
 grooves-no-room = Não há espaço para outro padrão: um projeto comporta 26.
 grooves-add-failed = O groove não foi adicionado.
 grooves-sources = Grooves grátis
-grooves-source-magenta-add = Adicionar agora o Groove MIDI Dataset do Google (3 MB)
 grooves-sources-hint = Estas páginas abrem no navegador. Copie lá um link de download e cole acima.
 grooves-source-magenta-page = Groove MIDI Dataset (Google Magenta)
 grooves-source-groove-monkee = Groove Monkee: loops MIDI grátis
 grooves-source-beat-farm = Groove Monkee: Beat Farm
+grooves-magenta-title = Grooves de bateristas de verdade
+grooves-magenta-intro = Batidas tocadas por bateristas numa bateria eletrônica, algumas de cada estilo. Toque em Tocar para ouvir uma; Carregar começa uma batida nova com ela, como um estilo pronto.
+grooves-magenta-credits = Do Groove MIDI Dataset, do Google Magenta (Gillick, Roberts, Engel, Eck e Bamman, 2019), sob a licença CC BY 4.0. Escolhidos e alterados para o TickTapDrum: os primeiros compassos de cada gravação, com as notas colocadas na grade de 16 passos.
+grooves-magenta-page = O Groove MIDI Dataset
+grooves-magenta-license = A licença CC BY 4.0
+grooves-magenta-load-tip = Começar uma batida nova com este groove
