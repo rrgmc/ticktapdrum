@@ -164,6 +164,8 @@ impl BarStrip {
                     events.push(BarEvent::PlayFrom(bar));
                 }
             }
+            // A line between the buttons and the bars they act on.
+            ui.separator();
             // A solid scroll bar takes its own room under the thumbnails; the default floating
             // one is drawn over them.
             ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
