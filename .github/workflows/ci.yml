@@ -48,8 +48,17 @@ jobs:
       - name: Anything besides documentation?
         id: diff
         env:
-          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.before }}
         run: |
+          # A pull request's checkout is GitHub's test merge commit. Its first parent is the master
+          # commit it was merged onto. The event's base.sha is not always that commit: when master
+          # moves just as the pull request is opened or updated, it is the older one, and the diff
+          # would then include whatever else reached master in between.
+          if [ "$EVENT" = pull_request ]; then
+            BASE=$(git rev-parse HEAD^1)
+          fi
+
           # No usable base (a new branch, or history rewritten): build everything.
           if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             echo "code=true" >> "$GITHUB_OUTPUT"
