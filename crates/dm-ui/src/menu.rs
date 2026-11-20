@@ -740,7 +740,9 @@ impl Menu {
         }
         if closed || done {
             self.ask = None;
-        } else {
+        } else if self.dialog.is_none() {
+            // Put back, unless the dialog opened another, as Ready-made styles opens the
+            // grooves that come with the app.
             self.dialog = Some(dialog);
         }
         events
