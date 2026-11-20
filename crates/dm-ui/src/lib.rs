@@ -712,6 +712,7 @@ impl DrumApp {
                 shown.clone(),
                 playing_bar,
                 self.follow,
+                self.mode == Mode::Pattern,
             );
             ui.add_space(4.0);
             events

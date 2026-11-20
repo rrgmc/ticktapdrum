@@ -1304,13 +1304,16 @@ while following the music. Until the person chooses, it is on for a desktop and 
 whose short side is at least 600 points (a tablet), and off for a phone, which needs the room
 for the grid. Basic mode, with one bar, never shows it.
 
-- **The line starts with the Follow button,** which stays put while the thumbnails scroll.
-  Moving to another bar by hand while playing stops following; this button, or the one in the
-  bar pop-up, turns it back on.
-- **While the line shows, the bar pop-up leaves its thumbnails out** and keeps the commands.
-- **The bar pop-up offers "Play from bar N",** N being the first bar the grid shows. It plays
-  the pattern from that bar's first step, loops the whole pattern after, and follows it. A song
-  plays from its start, so the button is offered only for a pattern.
+- **The line starts with two buttons the size of a thumbnail,** which stay put while the
+  thumbnails scroll: Follow (a crosshair), and a play icon with a bar number, which plays the
+  pattern from the first bar the grid shows (offered for a pattern only). Moving to another bar
+  by hand while playing stops following; Follow, here or in the bar pop-up, turns it back on.
+  The line's scroll bar takes its own room under the thumbnails instead of floating over them.
+- **While the line shows, the bar pop-up leaves its thumbnails out,** and with them "Play from
+  bar N", which the line offers instead.
+- **Otherwise the bar pop-up offers "Play from bar N",** N being the first bar the grid shows.
+  It plays the pattern from that bar's first step, loops the whole pattern after, and follows
+  it. A song plays from its start, so it is offered only for a pattern.
 - **The window's title names the project** once it has one: "Name - TickTapDrum".
 
 ## Open questions
