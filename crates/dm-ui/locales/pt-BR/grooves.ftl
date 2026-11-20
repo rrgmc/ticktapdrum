@@ -1,13 +1,13 @@
-# A lista de levadas e a importação de levadas. Os ids começam com "grooves-".
-# Uma levada é um trecho curto de bateria que se repete, vindo de um arquivo MIDI. Um pacote é
+# A lista de grooves e a importação de grooves. Os ids começam com "grooves-".
+# Um groove é um trecho curto de bateria que se repete, vindo de um arquivo MIDI. Um pacote é
 # um zip com muitos desses arquivos, ou um arquivo só.
 
-## Os itens do menu ☰ e a janela da lista de levadas.
+## Os itens do menu ☰ e a janela da lista de grooves.
 
-grooves-add-from-file = Juntar levadas de um arquivo
-grooves-title = Levadas
-grooves-intro = Toque em Tocar para ouvir uma levada. Juntar coloca a levada no projeto como um padrão novo.
-grooves-empty = Nenhuma levada ainda.
+grooves-add-from-file = Adicionar grooves de um arquivo
+grooves-title = Grooves
+grooves-intro = Toque em Tocar para ouvir um groove. Adicionar coloca o groove no projeto como um padrão novo.
+grooves-empty = Nenhum groove ainda.
 grooves-pack = { $name } ({ $count })
 grooves-bars = { $count ->
     [one] 1 compasso
@@ -15,19 +15,19 @@ grooves-bars = { $count ->
 }
 grooves-play = Tocar
 grooves-stop = Parar
-grooves-add = Juntar
-grooves-add-tip = Juntar como um padrão novo
+grooves-add = Adicionar
+grooves-add-tip = Adicionar como um padrão novo
 grooves-delete = Apagar
 grooves-keep = Cancelar
-grooves-delete-pack-question = Apagar todas as levadas de { $name }?
-grooves-delete-groove-question = Apagar a levada { $name }?
+grooves-delete-pack-question = Apagar todos os grooves de { $name }?
+grooves-delete-groove-question = Apagar o groove { $name }?
 grooves-delete-failed = Não foi apagado: { $reason }
 grooves-file-kind = Arquivos MIDI e zips
 
-## A janela Juntar levadas de um link.
+## A janela Adicionar grooves de um link.
 
-grooves-add-from-link = Juntar levadas de um link
-grooves-link-hint = Cole um link para um arquivo de levada (.mid) ou um pacote (.zip).
+grooves-add-from-link = Adicionar grooves de um link
+grooves-link-hint = Cole um link para um arquivo de groove (.mid) ou um pacote (.zip).
 grooves-link-add = Adicionar
 grooves-link-downloading-kb = Baixando... { $kb } KB
 grooves-link-downloading-mb = Baixando... { $mb } MB
@@ -35,14 +35,14 @@ grooves-link-not-a-link = Isto não é um link.
 grooves-link-failed = O download falhou. Confira o link e a conexão.
 grooves-link-status = O servidor respondeu com um erro ({ $code }).
 grooves-link-too-large = O arquivo é grande demais.
-grooves-link-web-page = Isto é uma página da web, não um arquivo de levada. Copie o link do próprio download, muitas vezes tocando e segurando o botão de download.
-grooves-link-share-refused = Só links para arquivos de levadas podem ser compartilhados com o TickTapDrum.
+grooves-link-web-page = Isto é uma página da web, não um arquivo de groove. Copie o link do próprio download, muitas vezes tocando e segurando o botão de download.
+grooves-link-share-refused = Só links para arquivos de grooves podem ser compartilhados com o TickTapDrum.
 
 ## O que uma importação fez.
 
 grooves-added = { $count ->
-    [one] 1 levada adicionada de { $name }.
-   *[other] { $count } levadas adicionadas de { $name }.
+    [one] 1 groove adicionado de { $name }.
+   *[other] { $count } grooves adicionados de { $name }.
 }
 grooves-left-out = { $refused ->
     [one] 1 arquivo ficou de fora: { $reasons }.
@@ -51,16 +51,16 @@ grooves-left-out = { $refused ->
 grooves-only-general-midi = Só a versão General MIDI foi usada.
 grooves-not-added = { $name } não foi adicionado: { $reason }.
 grooves-none-added = Nada foi adicionado de { $name }. { $refused } arquivos ficaram de fora: { $reasons }.
-grooves-none-found = Nada foi adicionado de { $name }: não há levadas nele.
+grooves-none-found = Nada foi adicionado de { $name }: não há grooves nele.
 grooves-reason-count = { $reason } ({ $count })
 grooves-read-failed = Não deu para ler { $name }: { $reason }
-grooves-not-saved = As levadas não foram guardadas: { $reason }
+grooves-not-saved = Os grooves não foram guardados: { $reason }
 
-## Por que um arquivo não é uma levada que o app aceita, em palavras simples.
+## Por que um arquivo não é um groove que o app aceita, em palavras simples.
 
 grooves-refusal-not-midi = não é um arquivo MIDI
 grooves-refusal-no-notes = não tem notas
-grooves-refusal-several-channels = é uma música inteira, não uma levada
+grooves-refusal-several-channels = é uma música inteira, não um groove
 grooves-refusal-not-four-four = não está em 4/4
 grooves-refusal-tempo-changes = o andamento muda
 grooves-refusal-too-long = tem mais de 16 compassos
@@ -74,7 +74,7 @@ grooves-error-too-large = { $name } é grande demais.
 grooves-error-broken-zip = { $name } é um zip danificado.
 grooves-error-no-midi-files = { $name } não tem arquivos MIDI.
 
-## O que juntar uma levada ao projeto fez.
+## O que adicionar um groove ao projeto fez.
 
 grooves-added-pattern = { $bars ->
     [one] Padrão { $pattern } criado: { $name }, 1 compasso.
@@ -94,4 +94,4 @@ grooves-rows-added = { $count ->
 }
 grooves-drums-left-out = { $count } peças ficaram de fora: o projeto não tem espaço para mais linhas.
 grooves-no-room = Não há espaço para outro padrão: um projeto comporta 26.
-grooves-add-failed = A levada não foi adicionada.
+grooves-add-failed = O groove não foi adicionado.

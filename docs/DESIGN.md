@@ -1266,7 +1266,7 @@ as a song import. Copying a few bars of a beat from a tab is still worth having.
 started behind an experimental setting, off by default; after trying it on the desktop, the
 author made it a plain menu item.
 
-- **The ☰ menu's Grooves section offers "Paste a drum tab"**, outside basic mode: a text box,
+- **The ☰ menu's Import section offers "Paste a drum tab"**, outside basic mode: a text box,
   and "Add as pattern". Text shared to the app that is not a link opens the same dialog.
 - **The paste becomes one new pattern** after the existing ones, at most 16 bars; the rest is
   left out and the message says how many bars. The pattern uses rows that already play each
@@ -1290,7 +1290,7 @@ author made it a plain menu item.
 
 ## The ☰ menu's sections
 
-The menu grew past a screen, so two groups fold open in place: **Grooves** (add from a file, add
+The menu grew past a screen, so two groups fold open in place: **Import** (add from a file, add
 from a link, paste a drum tab, the groove list), hidden in basic mode, and **Settings**. Both
 start closed and stay as left while the app runs. A section folds open inside the one scrolling
 list instead of opening a submenu beside it, which works the same with a finger and a mouse.

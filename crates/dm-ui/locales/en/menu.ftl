@@ -117,7 +117,7 @@ menu-export-place = Exports are saved in { $place }.
 
 menu-settings = Settings
 # A heading in the menu that opens to show the items for adding grooves and drum tabs.
-menu-grooves-section = { grooves-title }
+menu-import = Import
 # How each row is labelled in the grid: by its name, a picture of the drum, or both.
 menu-rows-names = Rows: names
 menu-rows-pictures-and-names = Rows: pictures and names

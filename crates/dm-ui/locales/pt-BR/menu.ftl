@@ -117,7 +117,7 @@ menu-export-place = Local das exportações: { $place }.
 ## O grupo Ajustes no fim do menu.
 
 menu-settings = Ajustes
-menu-grooves-section = { grooves-title }
+menu-import = Importar
 # Como cada linha aparece na grade: pelo nome, por um desenho da peça, ou pelos dois.
 menu-rows-names = Linhas: nomes
 menu-rows-pictures-and-names = Linhas: desenhos e nomes
@@ -126,6 +126,6 @@ menu-rows-pictures = Linhas: desenhos
 ## A janela Colar uma tablatura de bateria. O título dela é menu-paste-tab.
 
 menu-paste-tab-hint = Cole alguns compassos de uma tablatura de bateria, com o nome da peça no começo de cada linha.
-# Junta a tablatura colada ao projeto como um padrão novo.
-menu-paste-tab-add = Juntar como padrão
+# Adiciona a tablatura colada ao projeto como um padrão novo.
+menu-paste-tab-add = Adicionar como padrão
 menu-paste-tab-skip-odd-bars = Deixar de fora os compassos que não cabem

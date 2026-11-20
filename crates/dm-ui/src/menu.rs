@@ -118,7 +118,7 @@ pub(crate) struct Menu {
     tab_options: dm_tab::Options,
     /// Which of the pop-up's sections are open. They start closed and stay as left while the
     /// app runs.
-    grooves_section: bool,
+    import_section: bool,
     settings_section: bool,
 }
 
@@ -379,9 +379,9 @@ impl Menu {
         // for them and no section.
         if !p.basic {
             ui.separator();
-            section(ui, &mut self.grooves_section, &tr!("menu-grooves-section"));
-            if self.grooves_section {
-                self.grooves_items(ui, view, &mut events);
+            section(ui, &mut self.import_section, &tr!("menu-import"));
+            if self.import_section {
+                self.import_items(ui, view, &mut events);
             }
         }
         // The settings belong to the device, not to the beat.
@@ -393,9 +393,9 @@ impl Menu {
         events
     }
 
-    /// The Grooves section: adding grooves from a file or a link, pasting a drum tab, and the groove
+    /// The Import section: adding grooves from a file or a link, pasting a drum tab, and the groove
     /// list.
-    fn grooves_items(&mut self, ui: &mut egui::Ui, view: &MenuView, events: &mut Vec<MenuEvent>) {
+    fn import_items(&mut self, ui: &mut egui::Ui, view: &MenuView, events: &mut Vec<MenuEvent>) {
         let p = &view.projects;
         // A file can be chosen on a desktop and where the host has a picker.
         if p.file_items
