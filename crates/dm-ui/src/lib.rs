@@ -943,6 +943,9 @@ impl DrumApp {
                     let now = ui.input(|i| i.time);
                     self.add_offered(engine, key, now);
                 }
+                grid::GridEvent::RemoveOffered { key } => {
+                    self.offered.remove(key);
+                }
                 grid::GridEvent::Set {
                     row,
                     step,

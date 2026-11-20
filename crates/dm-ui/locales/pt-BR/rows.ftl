@@ -23,3 +23,4 @@ rows-badge-solo = S
 
 # Dica numa linha inativa: uma peça tocada no teclado MIDI que ainda não tem linha.
 rows-add-offered = Adicionar esta peça
+rows-remove-offered = Remover esta peça

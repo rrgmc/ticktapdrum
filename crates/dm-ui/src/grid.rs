@@ -37,6 +37,8 @@ const NAME_UNDER_ROW: f32 = 44.0;
 const TWO_LINE_ROW: f32 = 64.0;
 /// Room beside a name for the mute or solo badge.
 const BADGE_ROOM: f32 = 14.0;
+/// The width of the area at the right of a drum on offer that takes it away.
+const REMOVE_WIDTH: f32 = 24.0;
 /// The size of a name beside or under its picture.
 const PICTURE_NAME_SIZE: f32 = 12.0;
 /// How long a row's name stays lit after its key is played on the MIDI keyboard, in seconds.
@@ -111,6 +113,8 @@ pub(crate) enum GridEvent {
     OpenRow { row: usize, rect: Rect },
     /// Add the drum on offer with this key as a row.
     AddOffered { key: u8 },
+    /// Take the drum on offer with this key away, with the notes recorded on it.
+    RemoveOffered { key: u8 },
 }
 
 /// Which steps the grid shows.
@@ -373,7 +377,7 @@ impl Grid {
     }
 
     /// The names of the drums on offer, under the project's `first` rows: faded, with a plus
-    /// sign. A click adds the drum as a row.
+    /// sign and a cross. A click on the cross takes the drum away; anywhere else adds it as a row.
     fn offered_labels(
         &mut self,
         ui: &mut egui::Ui,
@@ -385,14 +389,33 @@ impl Grid {
     ) {
         for (i, drum) in offered.rows().iter().enumerate() {
             let rect = layout.label_rect(first + i);
+            let width = REMOVE_WIDTH.min(rect.width() / 2.0);
+            let remove_rect = Rect::from_min_max(
+                egui::pos2(rect.right() - width, rect.top()),
+                rect.right_bottom(),
+            );
+            let add_rect = Rect::from_min_max(
+                rect.left_top(),
+                egui::pos2(remove_rect.left(), rect.bottom()),
+            );
             let id = egui::Id::unique(("dm-grid-offered", drum.key));
             let response = ui
-                .interact(rect, id, Sense::click())
+                .interact(add_rect, id, Sense::click())
                 .on_hover_text(tr!("rows-add-offered"));
+            let remove = ui
+                .interact(
+                    remove_rect,
+                    egui::Id::unique(("dm-grid-offered-remove", drum.key)),
+                    Sense::click(),
+                )
+                .on_hover_text(tr!("rows-remove-offered"));
             if !self.names_blocked && response.clicked() {
                 events.push(GridEvent::AddOffered { key: drum.key });
             }
-            let hovered = !self.names_blocked && response.hovered();
+            if !self.names_blocked && remove.clicked() {
+                events.push(GridEvent::RemoveOffered { key: drum.key });
+            }
+            let hovered = !self.names_blocked && (response.hovered() || remove.hovered());
             let family = crate::widgets::family_colour(
                 dm_project::drum_family(drum.key),
                 ui.visuals().dark_mode,
@@ -421,24 +444,44 @@ impl Grid {
                 fade(family),
                 text_color,
                 self.row_labels,
-                BADGE_ROOM,
+                BADGE_ROOM + width,
             );
-            // The plus sign sits where a mute badge would, or in the corner over a picture
-            // alone.
-            let (at, align) = if self.row_labels == RowLabels::Pictures {
-                (rect.right_top() + Vec2::new(-3.0, 1.0), Align2::RIGHT_TOP)
-            } else {
-                (
-                    rect.right_center() - Vec2::new(6.0, 0.0),
-                    Align2::RIGHT_CENTER,
-                )
-            };
+            // The cross takes the right edge; the plus sign sits left of it. Over a picture
+            // alone they go in the top and bottom right corners.
+            let (plus_at, plus_align, cross_at, cross_align) =
+                if self.row_labels == RowLabels::Pictures {
+                    (
+                        rect.right_top() + Vec2::new(-3.0, 1.0),
+                        Align2::RIGHT_TOP,
+                        rect.right_bottom() + Vec2::new(-3.0, -1.0),
+                        Align2::RIGHT_BOTTOM,
+                    )
+                } else {
+                    (
+                        egui::pos2(remove_rect.left() - 2.0, rect.center().y),
+                        Align2::RIGHT_CENTER,
+                        remove_rect.center(),
+                        Align2::CENTER_CENTER,
+                    )
+                };
             ui.painter().text(
-                at,
-                align,
+                plus_at,
+                plus_align,
                 crate::icons::PLUS,
                 FontId::proportional(13.0),
                 text_color,
+            );
+            let cross_color = if remove.hovered() && !self.names_blocked {
+                ui.visuals().strong_text_color()
+            } else {
+                text_color
+            };
+            ui.painter().text(
+                cross_at,
+                cross_align,
+                crate::icons::X,
+                FontId::proportional(13.0),
+                cross_color,
             );
         }
     }

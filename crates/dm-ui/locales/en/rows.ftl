@@ -30,3 +30,5 @@ rows-badge-solo = S
 
 # Hover text on an inactive row: a drum played on the MIDI keyboard that has no row yet.
 rows-add-offered = Add this drum
+# Hover text on the cross of a faded drum row: takes the drum away, with what was recorded on it.
+rows-remove-offered = Remove this drum
