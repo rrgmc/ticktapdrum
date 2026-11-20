@@ -513,7 +513,14 @@ impl DrumApp {
         if let Some(program) = chosen {
             self.notice = None;
             self.notice_kit = None;
+            // The notice comes after the editor, which records the frame's undo step, so this
+            // change records its own.
+            let before = self.project.clone();
             self.handle_sounds(engine, vec![sounds::SoundEvent::Kit(program)]);
+            if self.project != before {
+                self.history.record(&before, Group::Single, now);
+                self.unsaved_since = Some(now);
+            }
         }
     }
 

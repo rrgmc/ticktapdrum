@@ -1602,6 +1602,13 @@ there; see "Android, later".
 - **The kit already chosen is not known.** The keyboard sends nothing for the voice already
   selected, and MIDI has no way to ask for it. Until the next voice change, keys follow the rule
   above.
+- **Checked over the loopback port** (2026-11-20), with the exact messages the SX720 sent for
+  ElectroKit: the notice read "Kit do teclado: ElectroKit" with "Usar Electro", and the button
+  switched the project's kit. Program 0 offered "Usar Standard 1" the same way. Choosing a kit
+  from a notice now records an undo step; before, the style import's button did not either,
+  because the notice runs after the editor has recorded the frame. Not checked: picking kits on
+  the keyboard itself, and a melodic voice, which reports nothing, so its keys then count as
+  drums again under the rule above.
 - **Playing a pattern records.** While MIDI input is on and the keyboard connected, each run of the
   pattern being edited, from Play to Stop, is a take. Playing the song records nothing, and
   neither does a key pressed while stopped: it only flashes its row. A small red dot on Play, by
