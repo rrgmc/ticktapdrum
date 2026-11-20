@@ -1,19 +1,25 @@
-//! The sender thread and its connections to the output, and to the input of the same name,
-//! through `midir`. Not built on Android.
+//! The sender thread and its connections to the output, to the input of the same name, and to
+//! a second input for drum hits when one is chosen, through `midir`. Not built on Android.
+//!
+//! The input of the output's name serves the switch-off check, the replies during a style
+//! transfer and, when the input choice points at it, drum hits. Windows lets only one connection
+//! hold a port, so it is opened once for all three. An input chosen by another name gets a
+//! connection of its own.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use dm_audio::MidiEvents;
+use dm_audio::{LiveHits, MidiEvents};
 use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 
+use crate::input::Notes;
 use crate::liveness::{Action, Presence, Watch};
 use crate::schedule::{Pending, Sounding, output_list, should_send};
 use crate::transfer::{self, Fault, Link, REPLY_TIMEOUT, show};
-use crate::{KeyboardTarget, MidiStatus, SendHook, TransferError, TransferStatus};
+use crate::{InputChoice, KeyboardTarget, MidiStatus, SendHook, TransferError, TransferStatus};
 
 /// The name the app gives itself as a MIDI client.
 const CLIENT_NAME: &str = "TickTapDrum";
@@ -45,6 +51,7 @@ const VIRTUAL: Option<&str> = None;
 /// A request from the interface to the thread.
 enum Control {
     Select(Option<String>),
+    SelectInput(InputChoice),
     SendStyle(Job),
     Stop,
 }
@@ -69,6 +76,10 @@ pub(crate) struct Handle {
     thread: Option<JoinHandle<()>>,
     /// The output last passed to [`Handle::select`].
     chosen: Option<String>,
+    input_status: Arc<Mutex<MidiStatus>>,
+    tap: Arc<Tap>,
+    /// The input last passed to [`Handle::select_input`].
+    chosen_input: InputChoice,
 }
 
 impl Handle {
@@ -77,6 +88,8 @@ impl Handle {
         let (reply_sender, replies) = mpsc::channel();
         let status = Arc::new(Mutex::new(MidiStatus::Off));
         let transfer = Arc::new(Mutex::new((0, TransferStatus::Idle)));
+        let input_status = Arc::new(Mutex::new(MidiStatus::Off));
+        let tap = Arc::new(Tap::default());
         let worker = Worker {
             events,
             requests,
@@ -89,7 +102,15 @@ impl Handle {
             connection: None,
             is_virtual: false,
             input: None,
+            input_id: 0,
+            input_fault: None,
             heard: Arc::new(Heard::default()),
+            tap: Arc::clone(&tap),
+            input_status: Arc::clone(&input_status),
+            input_choice: InputChoice::default(),
+            note_input: None,
+            note_fault: None,
+            last_id: 0,
             replies,
             reply_sender,
             watch: Watch::default(),
@@ -118,6 +139,9 @@ impl Handle {
             transfer,
             thread,
             chosen: None,
+            input_status,
+            tap,
+            chosen_input: InputChoice::default(),
         }
     }
 
@@ -136,6 +160,30 @@ impl Handle {
 
     pub(crate) fn status(&self) -> MidiStatus {
         self.status
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(crate) fn listen(&mut self, hits: LiveHits) {
+        *self.tap.hits.lock().unwrap_or_else(PoisonError::into_inner) = Some(hits);
+    }
+
+    pub(crate) fn select_input(&mut self, choice: InputChoice) {
+        if choice == self.chosen_input {
+            return;
+        }
+        self.chosen_input = choice.clone();
+        // As for the output: the old status must not stand for the new choice.
+        *self
+            .input_status
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = MidiStatus::Off;
+        let _ = self.control.send(Control::SelectInput(choice));
+    }
+
+    pub(crate) fn input_status(&self) -> MidiStatus {
+        self.input_status
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -188,6 +236,25 @@ pub(crate) fn outputs() -> Vec<String> {
     output_list(names, VIRTUAL)
 }
 
+/// The input names the system reports now, sorted, without the app's own virtual port.
+pub(crate) fn inputs() -> Vec<String> {
+    let mut names: Vec<String> = match MidiInput::new(CLIENT_NAME) {
+        Ok(input) => input
+            .ports()
+            .iter()
+            .filter_map(|port| input.port_name(port).ok())
+            .filter(|name| VIRTUAL != Some(name.as_str()))
+            .collect(),
+        Err(e) => {
+            log::warn!("MIDI in: cannot list the inputs: {e}");
+            Vec::new()
+        }
+    };
+    names.sort();
+    names.dedup();
+    names
+}
+
 fn port_names(output: &MidiOutput) -> Vec<String> {
     output
         .ports()
@@ -215,6 +282,86 @@ impl Heard {
     }
 }
 
+/// What the inputs' callbacks share for drum hits.
+#[derive(Default)]
+struct Tap {
+    /// Where hits go, once the interface has given a queue. Locked by a callback for each hit,
+    /// and otherwise only by [`Handle::listen`]; neither holds it for longer than a push.
+    hits: Mutex<Option<LiveHits>>,
+    /// Which connection's notes count, by the number the thread gave it; 0 for none.
+    source: AtomicU64,
+    /// Whether the app should sound the hits: false when they come from the output's device.
+    sound: AtomicBool,
+    /// Moves on each change of source or choice. A callback that sees it move forgets its
+    /// channel.
+    epoch: AtomicU64,
+}
+
+/// The part of an input's callback that turns notes into hits.
+struct Listener {
+    /// The number of the connection this callback belongs to.
+    id: u64,
+    tap: Arc<Tap>,
+    notes: Notes,
+    /// The `tap.epoch` the channel was taken in.
+    epoch: u64,
+}
+
+impl Listener {
+    fn new(id: u64, tap: Arc<Tap>) -> Self {
+        let epoch = tap.epoch.load(Ordering::Acquire);
+        Listener {
+            id,
+            tap,
+            notes: Notes::new(Instant::now()),
+            epoch,
+        }
+    }
+
+    /// Handles a message on midir's thread. Never waits for more than a push into the queue.
+    fn hear(&mut self, timestamp: u64, message: &[u8]) {
+        let now = Instant::now();
+        if self.tap.source.load(Ordering::Acquire) != self.id {
+            // Still learn the clock, so that it is ready if this input becomes the source.
+            self.notes.read(&[], timestamp, now, false);
+            return;
+        }
+        let epoch = self.tap.epoch.load(Ordering::Acquire);
+        if epoch != self.epoch {
+            self.epoch = epoch;
+            self.notes.release_channel();
+        }
+        let sound = self.tap.sound.load(Ordering::Acquire);
+        let Some(hit) = self.notes.read(message, timestamp, now, sound) else {
+            return;
+        };
+        let mut hits = self.tap.hits.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(hits) = hits.as_mut()
+            && hits.push(hit).is_err()
+        {
+            log::debug!("MIDI in: the hit queue is full; dropped key {}", hit.key);
+        }
+    }
+}
+
+/// An input opened for drum hits alone, because it is not the output's device.
+struct NoteInput {
+    connection: MidiInputConnection<()>,
+    name: String,
+    id: u64,
+}
+
+/// Where the drum hits come from, by the choices made.
+#[derive(Debug, PartialEq, Eq)]
+enum Route {
+    /// From nowhere.
+    Off,
+    /// From the input of the output's name, which the switch-off check also uses.
+    Shared,
+    /// From an input of their own, with this name.
+    Own(String),
+}
+
 /// The thread's state. It owns the queue and the connections.
 struct Worker {
     events: MidiEvents,
@@ -235,7 +382,21 @@ struct Worker {
     /// The input with the same name as the chosen output, if there is one. It tells whether the
     /// keyboard is switched on, and carries its replies during a transfer.
     input: Option<MidiInputConnection<()>>,
+    /// The number of `input`'s connection, or 0.
+    input_id: u64,
+    /// Why `input` would not open, the last time it was tried.
+    input_fault: Option<String>,
     heard: Arc<Heard>,
+    tap: Arc<Tap>,
+    input_status: Arc<Mutex<MidiStatus>>,
+    /// The input the interface chose for drum hits.
+    input_choice: InputChoice,
+    /// The input for drum hits when it is not `input`.
+    note_input: Option<NoteInput>,
+    /// Why the input for drum hits would not open, the last time it was tried.
+    note_fault: Option<String>,
+    /// The number given to the latest input connection.
+    last_id: u64,
     /// The SysEx messages from the input, while `heard.collecting` is set.
     replies: Receiver<Vec<u8>>,
     /// Cloned into each input's callback.
@@ -288,9 +449,11 @@ impl Worker {
     fn obey(&mut self, control: Control) -> bool {
         match control {
             Control::Select(name) => self.select(name),
+            Control::SelectInput(choice) => self.select_input(choice),
             Control::SendStyle(job) => self.job = Some(job),
             Control::Stop => {
                 self.disconnect();
+                self.close_note_input();
                 return false;
             }
         }
@@ -337,11 +500,158 @@ impl Worker {
         self.disconnect();
         self.watch = Watch::default();
         self.wanted = name;
+        // Before the output's input opens: an input of its own for drum hits must close first if
+        // it has the new output's name, since only one connection may hold a port.
+        self.follow_notes(true);
         if self.wanted.is_some() {
             self.connect();
         } else {
             self.set_status(MidiStatus::Off);
         }
+        self.follow_notes(false);
+    }
+
+    fn select_input(&mut self, choice: InputChoice) {
+        if choice == self.input_choice {
+            return;
+        }
+        self.input_choice = choice;
+        // A new choice takes a channel afresh, even on the same connection.
+        self.tap.epoch.fetch_add(1, Ordering::AcqRel);
+        self.follow_notes(true);
+    }
+
+    /// Where the drum hits should come from now.
+    fn route(&self) -> Route {
+        let output = self.wanted.as_deref().filter(|&name| VIRTUAL != Some(name));
+        match &self.input_choice {
+            InputChoice::None => Route::Off,
+            InputChoice::SameAsOutput if output.is_some() => Route::Shared,
+            InputChoice::SameAsOutput => Route::Off,
+            InputChoice::Named(name) if output == Some(name.as_str()) => Route::Shared,
+            InputChoice::Named(name) => Route::Own(name.clone()),
+        }
+    }
+
+    /// Opens and closes the inputs for drum hits to match the choices, points the callbacks at
+    /// the right one, and sets the input status. Cheap unless `open` is set: only then may an
+    /// input be opened, or its presence checked.
+    fn follow_notes(&mut self, open: bool) {
+        let route = self.route();
+        if let Some(note_input) = &self.note_input {
+            let wanted = matches!(&route, Route::Own(name) if *name == note_input.name);
+            if !wanted {
+                self.close_note_input();
+            } else if open && !input_listed(&mut self.input_lister, &note_input.name) {
+                log::info!("MIDI in: {:?} is gone", note_input.name);
+                self.close_note_input();
+            }
+        }
+        if open {
+            match &route {
+                Route::Own(name) if self.note_input.is_none() => {
+                    let name = name.clone();
+                    self.open_note_input(&name);
+                }
+                Route::Shared if self.input.is_none() => {
+                    if let Some(name) = self.wanted.clone() {
+                        self.open_input(&name);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let (source, sound, status) = match &route {
+            Route::Off => (0, true, MidiStatus::Off),
+            Route::Shared => (
+                self.input_id,
+                false,
+                input_state(self.input.is_some(), &self.input_fault),
+            ),
+            Route::Own(_) => {
+                let id = self.note_input.as_ref().map_or(0, |input| input.id);
+                (
+                    id,
+                    true,
+                    input_state(self.note_input.is_some(), &self.note_fault),
+                )
+            }
+        };
+        self.tap.sound.store(sound, Ordering::Release);
+        if self.tap.source.swap(source, Ordering::AcqRel) != source {
+            self.tap.epoch.fetch_add(1, Ordering::AcqRel);
+        }
+        self.set_input_status(status, &route);
+    }
+
+    fn set_input_status(&self, status: MidiStatus, route: &Route) {
+        let mut current = self
+            .input_status
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if *current != status {
+            let name = match route {
+                Route::Own(name) => Some(name.as_str()),
+                _ => self.wanted.as_deref(),
+            };
+            match &status {
+                MidiStatus::Off => log::info!("MIDI in: off"),
+                MidiStatus::Connected => log::info!("MIDI in: listening to {name:?}"),
+                MidiStatus::Missing => log::info!("MIDI in: {name:?} is not there"),
+                MidiStatus::Failed(reason) => {
+                    log::warn!("MIDI in: cannot open {name:?}: {reason}")
+                }
+            }
+            *current = status;
+        }
+    }
+
+    /// Opens an input of its own for drum hits.
+    fn open_note_input(&mut self, name: &str) {
+        self.note_fault = None;
+        let mut input = match MidiInput::new(CLIENT_NAME) {
+            Ok(input) => input,
+            Err(e) => {
+                self.note_fault = Some(e.to_string());
+                return;
+            }
+        };
+        input.ignore(Ignore::SysexAndTime);
+        let Some(port) = input
+            .ports()
+            .into_iter()
+            .find(|port| input.port_name(port).is_ok_and(|n| n == name))
+        else {
+            return;
+        };
+        let id = self.next_id();
+        let mut listener = Listener::new(id, Arc::clone(&self.tap));
+        let callback = move |timestamp: u64, message: &[u8], _: &mut ()| {
+            listener.hear(timestamp, message);
+        };
+        match input.connect(&port, CLIENT_NAME, callback, ()) {
+            Ok(connection) => {
+                self.note_input = Some(NoteInput {
+                    connection,
+                    name: name.to_owned(),
+                    id,
+                });
+            }
+            Err(e) => self.note_fault = Some(e.to_string()),
+        }
+    }
+
+    fn close_note_input(&mut self) {
+        if let Some(input) = self.note_input.take() {
+            input.connection.close();
+        }
+    }
+
+    /// A number for a new input connection, never 0.
+    fn next_id(&mut self) -> u64 {
+        self.last_id += 1;
+        self.last_id
     }
 
     /// Tries to open the chosen output, and the input of the same name if it is not open yet,
@@ -407,10 +717,12 @@ impl Worker {
     /// the sender works as before, and a transfer reports [`TransferError::NoInput`].
     fn open_input(&mut self, name: &str) {
         self.close_input();
+        self.input_fault = None;
         let mut input = match MidiInput::new(CLIENT_NAME) {
             Ok(input) => input,
             Err(e) => {
                 log::debug!("MIDI out: no input client: {e}");
+                self.input_fault = Some(e.to_string());
                 return;
             }
         };
@@ -425,22 +737,31 @@ impl Worker {
         };
         let heard = Arc::clone(&self.heard);
         let replies = self.reply_sender.clone();
-        let callback = move |_: u64, message: &[u8], _: &mut ()| match message.first() {
-            Some(&ACTIVE_SENSING) => {
-                *heard.sensing.lock().unwrap_or_else(PoisonError::into_inner) =
-                    Some(Instant::now());
+        let id = self.next_id();
+        let mut listener = Listener::new(id, Arc::clone(&self.tap));
+        let callback = move |timestamp: u64, message: &[u8], _: &mut ()| {
+            match message.first() {
+                Some(&ACTIVE_SENSING) => {
+                    *heard.sensing.lock().unwrap_or_else(PoisonError::into_inner) =
+                        Some(Instant::now());
+                }
+                Some(0xF0) if heard.collecting.load(Ordering::Relaxed) => {
+                    let _ = replies.send(message.to_vec());
+                }
+                _ => {}
             }
-            Some(0xF0) if heard.collecting.load(Ordering::Relaxed) => {
-                let _ = replies.send(message.to_vec());
-            }
-            _ => {}
+            listener.hear(timestamp, message);
         };
         match input.connect(&port, CLIENT_NAME, callback, ()) {
             Ok(connection) => {
                 log::debug!("MIDI out: listening to {name:?}");
                 self.input = Some(connection);
+                self.input_id = id;
             }
-            Err(e) => log::debug!("MIDI out: cannot open the input {name:?}: {e}"),
+            Err(e) => {
+                log::debug!("MIDI out: cannot open the input {name:?}: {e}");
+                self.input_fault = Some(e.to_string());
+            }
         }
     }
 
@@ -449,6 +770,7 @@ impl Worker {
         if let Some(input) = self.input.take() {
             input.close();
         }
+        self.input_id = 0;
         self.heard.take_sensing();
         self.watch.input_closed();
     }
@@ -467,6 +789,12 @@ impl Worker {
         if check {
             self.next_check = now + PORT_CHECK;
         }
+        self.watch_output(check, now);
+        self.follow_notes(check);
+    }
+
+    /// The part of [`Worker::keep_watch`] for the output and the input of the same name.
+    fn watch_output(&mut self, check: bool, now: Instant) {
         let Some(name) = self.wanted.clone() else {
             return;
         };
@@ -510,16 +838,7 @@ impl Worker {
     }
 
     fn input_listed(&mut self, name: &str) -> bool {
-        if self.input_lister.is_none() {
-            self.input_lister = MidiInput::new(CLIENT_NAME).ok();
-        }
-        match &self.input_lister {
-            Some(lister) => lister
-                .ports()
-                .iter()
-                .any(|port| lister.port_name(port).is_ok_and(|n| n == name)),
-            None => true,
-        }
+        input_listed(&mut self.input_lister, name)
     }
 
     /// Moves the messages from the engine's queue into the pending list, or discards them while
@@ -639,6 +958,7 @@ impl Worker {
                     }
                     self.later.push(Control::Select(name));
                 }
+                Ok(Control::SelectInput(choice)) => self.later.push(Control::SelectInput(choice)),
                 Ok(Control::SendStyle(job)) => self.job = Some(job),
                 Ok(Control::Stop) | Err(TryRecvError::Disconnected) => {
                     self.later.push(Control::Stop);
@@ -689,6 +1009,30 @@ impl Link for Worker {
                 return Err(Fault::Cancelled);
             }
         }
+    }
+}
+
+/// Whether an input with this name is listed, through a client kept for the purpose. True when
+/// no client can be made, since then the list cannot be read.
+fn input_listed(lister: &mut Option<MidiInput>, name: &str) -> bool {
+    if lister.is_none() {
+        *lister = MidiInput::new(CLIENT_NAME).ok();
+    }
+    match lister {
+        Some(lister) => lister
+            .ports()
+            .iter()
+            .any(|port| lister.port_name(port).is_ok_and(|n| n == name)),
+        None => true,
+    }
+}
+
+/// The status of an input for drum hits that should be open: whether it is, and if not, why.
+fn input_state(open: bool, fault: &Option<String>) -> MidiStatus {
+    match (open, fault) {
+        (true, _) => MidiStatus::Connected,
+        (false, Some(reason)) => MidiStatus::Failed(reason.clone()),
+        (false, None) => MidiStatus::Missing,
     }
 }
 
