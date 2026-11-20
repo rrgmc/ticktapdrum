@@ -1585,8 +1585,18 @@ there; see "Android, later".
 - **Velocity sets the level.** A light hit makes a soft step, a middling one a normal step, and a
   hard one a loud step. The step levels button moves up to show the levels the take used, as a
   beat to start from does. The thresholds are set by ear on a real keyboard.
-- **A key with no row adds one,** with that drum, at the bottom. The app never asks which row a key
-  belongs to.
+- **A key flashes its row,** recording or not: the row's name lights up for a moment, so the
+  player sees which drum each key is.
+- **A key with no row is offered, not added.** It shows as an inactive row under the others: faded,
+  with the drum's name and picture and a plus sign. It flashes like the others. Clicking it adds
+  the drum as a row at the bottom, as one undo step. The app never asks which row a key belongs
+  to.
+- **At most 3 inactive rows,** the drums most recently played that have no row. A fourth pushes
+  out the oldest. They belong to this session, not to the project, and are not saved.
+- **Hits recorded on an inactive row wait in it** as faint steps of the pattern they were played
+  in. Adding the row keeps them, at the levels played. They are dropped when the row is pushed
+  out, when another project opens or a new one starts, and on Undo or Redo, which work on the
+  project alone. They do not play: only the keyboard sounded them.
 - **A keyboard that disappears** stops recording, keeps what was recorded, and shows one line.
 - **Checked on a real target:** the PSR-SX720 over Bluetooth on Windows, with a drum kit on its
   right-hand part. Record what was heard, how far off hits landed, and what was not checked.
@@ -1642,7 +1652,7 @@ beat at the app's tempo into the pair's other port, on channel 1.
   (`InputChoice`). The app uses neither: its input is always the output's device, which sounds
   its own keys.
 - **Record showed beside Play** once the loopback input connected, and turned red while recording.
-- **The take landed as played.** Loud kicks on every beat, normal snares on beats 2 and 4, soft
+- **The take landed as played** (before inactive rows; see below). Loud kicks on every beat, normal snares on beats 2 and 4, soft
   closed hi-hats on every second step, all evenly spaced, with no hit doubled or moved by jitter.
   A cowbell, which had no row, got a Cowbell row at the bottom. A crash sent on channel 10 after
   the channel 1 notes was ignored, and so was a key outside the drum range sent first. The step
