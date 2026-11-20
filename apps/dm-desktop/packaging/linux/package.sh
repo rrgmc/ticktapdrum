@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds TickTapDrum for Linux (x86_64) and packages it into dist/:
 #   ticktapdrum-<version>-linux-x86_64.tar.gz  (the program, its icon and a desktop file)
-#   ticktapdrum_<debian version>_amd64.deb     (for Debian and Ubuntu; a pre-release such as
-#                                                0.2.0-rc.1 becomes 0.2.0~rc.1)
+#   ticktapdrum_<version>_amd64.deb            (for Debian and Ubuntu; inside, a pre-release such
+#                                                as 0.2.0-rc.1 takes the Debian version 0.2.0~rc.1)
 # Build on the oldest system the app should run on (the release uses Ubuntu 22.04), since the
 # program links against that system's C library.
 # The build needs the ALSA headers (libasound2-dev on Debian and Ubuntu) for the audio output.
@@ -27,8 +27,10 @@ cp "$HERE/ticktapdrum.desktop" "$TAR/"
 tar -C "$STAGE" -czf "dist/ticktapdrum-$VERSION-linux-x86_64.tar.gz" "ticktapdrum-$VERSION"
 
 # The Debian package. A Debian version sorts "~" before anything, so 0.2.0~rc.1 comes before 0.2.0.
+# The file name keeps the plain version: GitHub turns "~" into "." in uploaded file names, so a "~"
+# there would not match the name in SHA256SUMS.txt.
 DEB_VERSION="$(printf '%s' "$VERSION" | sed 's/-/~/g')"
-DEB="dist/ticktapdrum_${DEB_VERSION}_amd64.deb"
+DEB="dist/ticktapdrum_${VERSION}_amd64.deb"
 ROOT="$STAGE/deb"
 install -D -m 0755 "$BIN" "$ROOT/usr/bin/ticktapdrum"
 install -D -m 0644 "$HERE/ticktapdrum.desktop" "$ROOT/usr/share/applications/ticktapdrum.desktop"
