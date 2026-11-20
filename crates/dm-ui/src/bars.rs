@@ -298,3 +298,31 @@ fn thumbnail(
     );
     response
 }
+
+/// How tall the bar indicator at the bottom of the screen is.
+pub(crate) const INDICATOR_HEIGHT: f32 = 4.0;
+/// The space between the grid and the bar indicator.
+pub(crate) const INDICATOR_GAP: f32 = 6.0;
+
+/// Paints the bar indicator in `rect`: one short line per bar of the pattern, side by side, with
+/// the bars the grid shows in the accent colour. It shows where the grid is in a long pattern
+/// in a few points of height.
+pub(crate) fn indicator(ui: &egui::Ui, rect: Rect, total: usize, shown: std::ops::Range<usize>) {
+    let total = total.max(1);
+    let visuals = ui.visuals();
+    // The other bars are a faint shade of the text colour, so they show against the background
+    // in both themes; a button's grey is too close to it. The shown bars have the selection's
+    // outline colour: dark blue on a light theme, light blue on a dark one.
+    let off = visuals.text_color().gamma_multiply(0.3);
+    let on = visuals.selection.stroke.color;
+    let gap = (rect.width() / total as f32 * 0.2).min(3.0);
+    let width = (rect.width() - gap * (total - 1) as f32) / total as f32;
+    for bar in 0..total {
+        let left = rect.left() + bar as f32 * (width + gap);
+        let segment =
+            Rect::from_min_size(Pos2::new(left, rect.top()), Vec2::new(width, rect.height()));
+        let colour = if shown.contains(&bar) { on } else { off };
+        ui.painter()
+            .rect_filled(segment, CornerRadius::same(2), colour);
+    }
+}

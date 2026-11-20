@@ -127,6 +127,8 @@ const ICONS_ONLY: Metrics = Metrics {
 struct Texts {
     play: RichText,
     play_word: String,
+    /// The play button shows a shorter word than `play_word`.
+    play_short: bool,
     pattern: RichText,
     bar: RichText,
     tempo: RichText,
@@ -136,12 +138,19 @@ struct Texts {
     menu: RichText,
 }
 
-fn texts(ui: &egui::Ui, state: &StripState, words: bool) -> Texts {
+/// `short_play` shows the plain play word in song mode, which is shorter than "Play song".
+fn texts(ui: &egui::Ui, state: &StripState, words: bool, short_play: bool) -> Texts {
     let word = |w: String| if words { w } else { String::new() };
     let play_word = match (state.playing, state.mode) {
         (true, _) => tr!("strip-stop"),
         (false, Mode::Song) => tr!("strip-play-song"),
         (false, Mode::Pattern) => tr!("strip-play"),
+    };
+    let play_short = short_play && !state.playing && state.mode == Mode::Song;
+    let play_shown = if play_short {
+        tr!("strip-play")
+    } else {
+        play_word.clone()
     };
     let play_icon = if state.playing {
         icons::STOP
@@ -166,8 +175,9 @@ fn texts(ui: &egui::Ui, state: &StripState, words: bool) -> Texts {
         RichText::new(LEVELS_ROOM_ICON_ONLY).size(ICON_SIZE)
     };
     Texts {
-        play: widgets::label(play_icon, &word(play_word.clone())),
+        play: widgets::label(play_icon, &word(play_shown)),
         play_word,
+        play_short,
         pattern: RichText::new(pattern).size(ICON_SIZE - 2.0),
         bar: RichText::new(bar_text(&state.bars, words)).size(bar_size),
         tempo: widgets::label(icons::METRONOME, &format!("{:.0}", state.bpm)),
@@ -226,11 +236,16 @@ fn row_width(ui: &egui::Ui, t: &Texts, m: Metrics, hidden: Hidden) -> f32 {
 
 /// Picks the first way of drawing the row that fits `available` points.
 fn plan(ui: &egui::Ui, state: &StripState, available: f32) -> (Metrics, Texts, Hidden) {
-    let full = texts(ui, state, true);
+    let full = texts(ui, state, true, false);
     if row_width(ui, &full, WITH_WORDS, Hidden::default()) <= available {
         return (WITH_WORDS, full, Hidden::default());
     }
-    let icons = texts(ui, state, false);
+    // In song mode "Play song" can be all that keeps the words from fitting.
+    let short = texts(ui, state, true, true);
+    if short.play_short && row_width(ui, &short, WITH_WORDS, Hidden::default()) <= available {
+        return (WITH_WORDS, short, Hidden::default());
+    }
+    let icons = texts(ui, state, false, false);
     let steps = [
         Hidden::default(),
         Hidden {
@@ -284,7 +299,13 @@ pub(crate) fn ui(ui: &mut egui::Ui, state: &StripState) -> StripOutput {
                 .min_size(size)
                 .selected(state.playing),
         );
-        if hover(play, &t.play_word).clicked() || space {
+        // A shortened word gets the full one as hover text.
+        let play = if t.play_short {
+            play.on_hover_text(&t.play_word)
+        } else {
+            hover(play, &t.play_word)
+        };
+        if play.clicked() || space {
             events.push(if state.playing {
                 StripEvent::Stop
             } else {
