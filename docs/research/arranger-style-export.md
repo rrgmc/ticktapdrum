@@ -94,6 +94,45 @@ writing code: export MIDI from TickTapDrum, convert it, load it. How it divides 
 sections, and whether it handles a drum-only file, is *unverified*: its manual refused to
 download.
 
+### What the installed converter shows
+
+Findings from 2026-11-20 on an installed copy of MIDI Song to Style, version 1.1.1 for Windows.
+They come from reading its files and the text inside the program, without running it. Its manual
+was not available.
+
+- **It is a Qt 6 program,** one 70 MB executable. Beside it are a licence file and
+  `MarkerTemplate.mid`, which the menu item "Export Marker Template" also writes.
+- **The template shows how a person marks sections in a MIDI file** before converting it:
+  - It is a format-1 file at 960 ticks per beat, 4/4, 120 BPM, with 9 tracks.
+  - The first track holds the section names as **lyric events** (meta event 6), not markers,
+    each at the start of its first bar: `Intro I`, `Fill A`, `Main A`, `Fill B`, `Main B`,
+    `Fill C`, `Main C`, `Fill D`, `Main D`, `Break`, `Ending I`, `Intro II`, `Ending II`,
+    `Intro III`, `Ending III`, then `End of Section` after the last one. Bar 1 is left for setup.
+  - The program also accepts other spellings, such as `Fill AA`, `Intro 1`, `Ending 2` and
+    `Fill BA`.
+  - The other eight tracks are named Rhythm1, Rhythm2, Bass, Chord1, Chord2, Pad, Phrase1 and
+    Phrase2, on channels 9 to 16. Rhythm1 (channel 9) and Rhythm2 (channel 10) select bank
+    MSB 127, LSB 0, program 0, the standard drum kit.
+- **The program can do more than convert a song:**
+  - It opens an existing style ("Open SFF") and can save its music as a plain MIDI file
+    ("ExportSEQ"). This is a way to inspect the SX720's own styles.
+  - It can send a style straight to a connected keyboard over MIDI ("TransferSTY").
+  - It refuses to save a style that has no Main section.
+  - It has a size limit ("style file size over!").
+- **It writes three versions of the setup marker:** `SFF1`, `SFF2` and `SFF4`. `SFF4` is not in
+  Wierzba's document. It is probably the marker of the SFF GE format the SX720 uses (*unverified*).
+- **It writes the CASM block itself,** with Ctab or Ctb2 entries for the eight parts. Drum parts
+  are assigned as "Main Drum" (Rhythm2) and "Add Drum" (Rhythm1).
+- The only voice list built in is the Genos2's. Other keyboards' lists are added with "Import
+  Voice List".
+
+**What this means for the app:**
+
+- **A low-effort first step:** export MIDI with the section names as lyric events, in the
+  template's layout, and let MIDI Song to Style make the style for each keyboard model.
+- **A style the converter saves for the SX720 is the best reference** for a direct export. Its
+  bytes show the SX720's setup marker, ticks per beat, the setup bar and the CASM block.
+
 ## Korg Pa
 
 - The Pa keyboards (Pa300, Pa800, Pa3X, Pa4X and others) import a **format-0 MIDI file** into a
@@ -133,8 +172,17 @@ possible mapping:
 
 ## Suggested next steps
 
-1. **Test without code.** Export MIDI from the app, convert it with MIDI Song to Style, and load
-   it on the SX720. This shows whether the keyboard accepts a drum-only style.
+1. **Make one style with the converter and try it on the SX720.** This shows whether the keyboard
+   accepts a drum-only style. The `.sty` file it produces is the reference for a direct export.
+   1. Export a beat from the app as MIDI.
+   2. Add the section names as lyric events, in the layout of `MarkerTemplate.mid` (see "What the
+      installed converter shows"). A small script can do this from the exported file.
+   3. Open the result in MIDI Song to Style, check the sections it finds, and save the style for
+      the SX720.
+   4. Load the style on the SX720 from a USB stick and play it.
+   5. Analyse the saved `.sty` file byte by byte. It shows what a direct export must write: the
+      setup marker (`SFF1`, `SFF2` or `SFF4`), ticks per beat, the setup bar, the drum kit's bank
+      and program, and the CASM block.
 2. **Write a test file by hand or with a small example program:** SFF1, no CASM, 1920 ticks per
    beat, Main A and Fill In AA only. Load it on the SX720. If it is refused, try SFF2.
 3. **Read the SX720 Data List** for its drum kit bank and program numbers.
