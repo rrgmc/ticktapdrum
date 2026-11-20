@@ -1672,11 +1672,35 @@ beat at the app's tempo into the pair's other port, on channel 1.
   loopback ports are "Loopback Padrão de Aplicativo (". Choosing by name takes the first. The
   same was true of outputs before.
 
+**The MIDI in button, flashes and inactive rows** were checked the same way, by screenshot:
+
+- With MIDI in off, a beat played into the loopback changed nothing.
+- With it on and the pattern stopped, Play showed its red dot, the kick and closed hi-hat names
+  flashed in their colours, and the cowbell, which has no row, showed as a faded row with a plus
+  sign. Nothing was recorded.
+- With the pattern playing, the take landed as before. The cowbell's hit waited as a faint step
+  in its faded row. Clicking the row added Cowbell with that note. Undo took back the add alone,
+  then the take.
+- The user played the PSR-SX720 into the first build and found it worked.
+
+**What the PSR-SX720 sends when a voice changes** (2026-11-20, over its Bluetooth adapter). The
+right-hand part sent its notes on channel 3. Switching it from StandardKit to ElectroKit sent, at
+once: the XG message `F0 43 10 4C 08 02 07 01 F7` (part 3's mode is Drum), bank select 127 and 0,
+program 70, then the part's volume, reverb and two more XG settings. Nothing is sent for the
+voice already chosen, and General MIDI has no way to ask for it. So the app could tell drums
+from a melody at each change, but only from the next change on. Program 70 is Yamaha's own
+number, not XG's Electro kit (24), so matching the keyboard's kit to an app kit would need a
+table of the SX720's kits. Neither is built.
+
 Not checked:
 
-- **A real keyboard.** The PSR-SX720 behind its Bluetooth adapter: whether its right-hand part
-  arrives with a drum kit selected, whether the channel rule keeps its style's drums out, how late
-  hits land over Bluetooth, and the soft and loud thresholds by ear.
+- **The real keyboard, in detail.** The user found the first build worked on the PSR-SX720, but
+  these were not looked at closely: whether the channel rule keeps its style's drums out, how late
+  hits land over Bluetooth, the soft and loud thresholds by ear, and the MIDI in button, flashes
+  and inactive rows with the keyboard.
+- **The strip on a 375-point phone,** with the MIDI in button. The other strip buttons fit there.
+- **Idle redraws.** While MIDI in is on, the app redraws 20 times a second when nothing plays, so
+  a flash shows at once (`INPUT_POLL`). Its CPU cost was not measured.
 - **The "gone" line,** shown when the keyboard disappears during a take.
 - **Hits at the very start of the first loop.** A hit a fraction of a frame before play starts
   has no position and is dropped.
