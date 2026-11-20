@@ -172,10 +172,17 @@ possible mapping:
 
 ## Suggested next steps
 
-1. **Test without code.** Export MIDI from the app, add the section names as lyric events (see
-   "What the installed converter shows"), convert it with MIDI Song to Style, and load it on the
-   SX720. This shows whether the keyboard accepts a drum-only style. Keep the `.sty` file as the
-   reference for a direct export.
+1. **Make one style with the converter and try it on the SX720.** This shows whether the keyboard
+   accepts a drum-only style. The `.sty` file it produces is the reference for a direct export.
+   1. Export a beat from the app as MIDI.
+   2. Add the section names as lyric events, in the layout of `MarkerTemplate.mid` (see "What the
+      installed converter shows"). A small script can do this from the exported file.
+   3. Open the result in MIDI Song to Style, check the sections it finds, and save the style for
+      the SX720.
+   4. Load the style on the SX720 from a USB stick and play it.
+   5. Analyse the saved `.sty` file byte by byte. It shows what a direct export must write: the
+      setup marker (`SFF1`, `SFF2` or `SFF4`), ticks per beat, the setup bar, the drum kit's bank
+      and program, and the CASM block.
 2. **Write a test file by hand or with a small example program:** SFF1, no CASM, 1920 ticks per
    beat, Main A and Fill In AA only. Load it on the SX720. If it is refused, try SFF2.
 3. **Read the SX720 Data List** for its drum kit bank and program numbers.
