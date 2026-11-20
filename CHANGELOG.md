@@ -9,6 +9,26 @@ move into this file when a version is released.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-20
+
+### Added
+
+- The README explains how to use MIDI out, and how to connect a Bluetooth MIDI device on macOS
+  and Windows.
+- Export, Keyboard style: saves the beat as a style for a Yamaha arranger keyboard, such as the PSR-SX720. You choose which pattern plays each part of the style: Intro, Main A to D with their fills, Break and Ending.
+- Export, Send to keyboard: puts the style straight into a Yamaha keyboard's User styles through the MIDI output, with no USB stick. Sending again replaces the style of the same name.
+- A small piano-keys badge on Play while the drums go to a MIDI output. Its hover text names the output.
+- A Volume slider in the MIDI output dialog sets how loud the chosen device plays the drums.
+
+### Changed
+
+- The line of bars at the bottom of the screen marks the bar being played. While the pattern is
+  stopped, it marks the bars on screen.
+
+### Fixed
+
+- A keyboard switched off while it is the MIDI output is noticed within a second or two, and the drums play on this device again.
+
 ## [1.2.0] - 2026-11-20
 
 ### Added
@@ -68,7 +88,8 @@ move into this file when a version is released.
   export, MIDI out on desktops and iOS, pictures for the drums, and English and Brazilian
   Portuguese.
 
-[Unreleased]: https://github.com/rrgmc/ticktapdrum/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/rrgmc/ticktapdrum/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.0.0-rc.1...v1.0.0
