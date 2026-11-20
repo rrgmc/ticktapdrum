@@ -5,6 +5,8 @@ patterns-delete = Apagar
 patterns-keep = Cancelar
 patterns-new = Novo
 patterns-copy = Copiar
+patterns-rename = Renomear
+patterns-rename-question = Escolha uma nova letra para o padrão { $name }. Se outro padrão tiver essa letra, os dois trocam de letra.
 
 ## O que adicionar uma tablatura colada fez, no menu, e por que uma tablatura não entrou, na janela
 ## Colar uma tablatura de bateria.
