@@ -972,6 +972,40 @@ switches.
   been compiled. On Linux, ALSA port names include client numbers, which may change when a device
   is plugged in again and break reconnecting by name.
 
+### MIDI out volume (2026-11-20)
+
+Each row's volume already reaches MIDI out, because it scales the velocity of every note the row
+sends. Nothing set the level of the device as a whole, so it played at whatever level it was left
+at.
+
+**The MIDI output dialog has a Volume slider**, 0 to 100%, shown while an output is chosen. The app
+sends it as controller 7 ("channel volume") on channel 10. That is the General MIDI way to set a
+channel's level.
+
+- **Why controller 7, and not lower velocities.** Velocity scaling would work on any device, but
+  many kits play a different sample for soft and hard hits. Lower velocities would change how the
+  drums sound, not only how loud they are. Controller 7 changes only the level. Some devices
+  ignore it; on those the slider does nothing.
+- **Mapping.** 100% is 127, the controller's top, and the default. 0% is 0. Values between are
+  rounded, so 79% is 100, the General MIDI reset value.
+- **When it is sent.** When MIDI out turns on, right after the kit's program change, and each time
+  the slider moves. A device keeps the last value it got, from any program, so the app sends it
+  again on every connect.
+- **Where it lives.** `Engine::set_midi_volume` in `dm-audio` (the renderer keeps the value and
+  resends it); the setting in `dm-ui` (`src/midi.rs`), kept in the data folder as `midi.volume`
+  while it is not 100. It belongs to the device, not to a project. The internal synthesizer
+  ignores it.
+
+**What was checked.** Unit tests cover the bytes sent, the resend on enable, the synthesizer
+staying unchanged, the percent mapping and the stored setting. On Windows, the `engine` example
+(which now halves the volume halfway through) sent `[127, 64]` to the Microsoft GS Wavetable Synth
+with the beat, on time.
+
+**Not checked.** Nobody has listened to the volume change on any device. The slider was not seen in
+the desktop app or on iOS. Choosing a second output while another is connected sends neither the
+kit nor the volume to the new one, because the sender goes from connected to connected with no
+gap the interface sees. That gap was already there for the kit.
+
 ### Android, later
 
 Android's native MIDI API (AMidi, Android 10 and later) can send only to a device that Java code
