@@ -4,11 +4,6 @@
 //! The row never wraps and never scrolls. It measures what fits: first an icon and a word on
 //! every button, then icons only. If the icons still do not fit, Redo, then the tempo, then Undo
 //! leave the row, and the menu offers them instead. The step levels button always stays.
-//!
-//! In basic mode there is no pattern button, no step levels button, no Undo and no Redo, and
-//! the bar button shows only
-//! when the grid cannot show the whole pattern at once, such as half a bar on a phone. Its label
-//! then opens nothing.
 
 use egui::{CornerRadius, Response, RichText, Vec2};
 
@@ -76,27 +71,6 @@ pub(crate) struct StripState {
     pub(crate) can_redo: bool,
     /// Which loudness levels a tap on a step goes through.
     pub(crate) step_levels: StepLevels,
-    /// Basic mode: one pattern, no bar pop-up, no Undo or Redo.
-    pub(crate) basic: bool,
-}
-
-impl StripState {
-    fn shows_pattern(&self) -> bool {
-        !self.basic
-    }
-
-    fn shows_undo(&self) -> bool {
-        !self.basic
-    }
-
-    fn shows_levels(&self) -> bool {
-        !self.basic
-    }
-
-    /// Basic mode keeps the bar button only to reach steps that are off screen.
-    fn shows_bars(&self) -> bool {
-        !self.basic || self.bars.can_prev || self.bars.can_next
-    }
 }
 
 /// The buttons that did not fit. The menu offers them instead.
@@ -109,10 +83,10 @@ pub(crate) struct Hidden {
 
 pub(crate) struct StripOutput {
     pub(crate) events: Vec<StripEvent>,
-    /// The pattern button, to anchor the pattern pop-up. `None` in basic mode.
-    pub(crate) pattern: Option<Response>,
-    /// The middle of the bar button, to anchor the bar pop-up. `None` in basic mode.
-    pub(crate) bar_label: Option<Response>,
+    /// The pattern button, to anchor the pattern pop-up.
+    pub(crate) pattern: Response,
+    /// The middle of the bar button, to anchor the bar pop-up.
+    pub(crate) bar_label: Response,
     /// The tempo button, to anchor the tempo pop-up. `None` when it did not fit.
     pub(crate) tempo: Option<Response>,
     /// The menu button, to anchor the menu pop-up.
@@ -229,25 +203,21 @@ fn width(ui: &egui::Ui, text: &RichText, min: f32) -> f32 {
 }
 
 /// How wide the row is when drawn with these texts and sizes, leaving out what is hidden.
-fn row_width(ui: &egui::Ui, state: &StripState, t: &Texts, m: Metrics, hidden: Hidden) -> f32 {
-    let mut widths = vec![width(ui, &t.play, m.min_width)];
-    if state.shows_pattern() {
-        widths.push(width(ui, &t.pattern, m.min_width));
-    }
-    if state.shows_bars() {
+fn row_width(ui: &egui::Ui, t: &Texts, m: Metrics, hidden: Hidden) -> f32 {
+    let mut widths = vec![
+        width(ui, &t.play, m.min_width),
+        width(ui, &t.pattern, m.min_width),
         // The bar button's three parts touch, so they count as one.
-        widths.push(2.0 * m.arrow_width + width(ui, &t.bar, m.min_width - 4.0));
-    }
+        2.0 * m.arrow_width + width(ui, &t.bar, m.min_width - 4.0),
+    ];
     if !hidden.tempo {
         widths.push(width(ui, &t.tempo, m.min_width));
     }
-    if state.shows_levels() {
-        widths.push(width(ui, &t.levels, m.min_width));
-    }
-    if state.shows_undo() && !hidden.undo {
+    widths.push(width(ui, &t.levels, m.min_width));
+    if !hidden.undo {
         widths.push(width(ui, &t.undo, m.min_width));
     }
-    if state.shows_undo() && !hidden.redo {
+    if !hidden.redo {
         widths.push(width(ui, &t.redo, m.min_width));
     }
     widths.push(width(ui, &t.menu, m.min_width));
@@ -256,16 +226,8 @@ fn row_width(ui: &egui::Ui, state: &StripState, t: &Texts, m: Metrics, hidden: H
 
 /// Picks the first way of drawing the row that fits `available` points.
 fn plan(ui: &egui::Ui, state: &StripState, available: f32) -> (Metrics, Texts, Hidden) {
-    let (m, t, mut hidden) = plan_all(ui, state, available);
-    // Without Undo there is no Undo or Redo to offer in the menu either.
-    hidden.redo &= state.shows_undo();
-    hidden.undo &= state.shows_undo();
-    (m, t, hidden)
-}
-
-fn plan_all(ui: &egui::Ui, state: &StripState, available: f32) -> (Metrics, Texts, Hidden) {
     let full = texts(ui, state, true);
-    if row_width(ui, state, &full, WITH_WORDS, Hidden::default()) <= available {
+    if row_width(ui, &full, WITH_WORDS, Hidden::default()) <= available {
         return (WITH_WORDS, full, Hidden::default());
     }
     let icons = texts(ui, state, false);
@@ -282,7 +244,7 @@ fn plan_all(ui: &egui::Ui, state: &StripState, available: f32) -> (Metrics, Text
         },
     ];
     for hidden in steps {
-        if row_width(ui, state, &icons, ICONS_ONLY, hidden) <= available {
+        if row_width(ui, &icons, ICONS_ONLY, hidden) <= available {
             return (ICONS_ONLY, icons, hidden);
         }
     }
@@ -331,7 +293,7 @@ pub(crate) fn ui(ui: &mut egui::Ui, state: &StripState) -> StripOutput {
         }
 
         // The pattern. A dot marks it when it is the one being heard.
-        let pattern = state.shows_pattern().then(|| {
+        let pattern = {
             let pattern = ui.add(egui::Button::new(t.pattern.clone()).min_size(size));
             if state.pattern_heard {
                 let color = ui.visuals().warn_fg_color;
@@ -342,19 +304,16 @@ pub(crate) fn ui(ui: &mut egui::Ui, state: &StripState) -> StripOutput {
                 );
             }
             hover(pattern, &tr!("strip-patterns"))
-        });
+        };
 
-        let bar_label = state
-            .shows_bars()
-            .then(|| bar_button(ui, state, &t, m, &mut events))
-            .filter(|_| !state.basic);
+        let bar_label = bar_button(ui, state, &t, m, &mut events);
 
         let tempo = (!hidden.tempo).then(|| {
             ui.add(egui::Button::new(t.tempo.clone()).min_size(size))
                 .on_hover_text(tr!("strip-tempo-tip"))
         });
 
-        if state.shows_levels() {
+        {
             let levels = ui.add(egui::Button::new(t.levels.clone()).min_size(size));
             paint_levels(ui, &levels, state.step_levels, m.words);
             let explained = match state.step_levels {
@@ -368,7 +327,7 @@ pub(crate) fn ui(ui: &mut egui::Ui, state: &StripState) -> StripOutput {
             }
         }
 
-        if state.shows_undo() && !hidden.undo {
+        if !hidden.undo {
             let undo = ui.add_enabled(
                 state.can_undo,
                 egui::Button::new(t.undo.clone()).min_size(size),
@@ -377,7 +336,7 @@ pub(crate) fn ui(ui: &mut egui::Ui, state: &StripState) -> StripOutput {
                 events.push(StripEvent::Undo);
             }
         }
-        if state.shows_undo() && !hidden.redo {
+        if !hidden.redo {
             let redo = ui.add_enabled(
                 state.can_redo,
                 egui::Button::new(t.redo.clone()).min_size(size),
@@ -458,17 +417,10 @@ fn bar_button(
         {
             events.push(StripEvent::PrevPage);
         }
-        // In basic mode the label opens nothing, so it takes no taps.
-        let sense = if state.basic {
-            egui::Sense::hover()
-        } else {
-            egui::Sense::click()
-        };
         let label = ui.add(
             egui::Button::new(t.bar.clone())
                 .min_size(Vec2::new(m.min_width - 4.0, TAP))
-                .corner_radius(CornerRadius::ZERO)
-                .sense(sense),
+                .corner_radius(CornerRadius::ZERO),
         );
         if let Some(half) = bars.half {
             half_dots(ui, &label, half, bars.playing_half);

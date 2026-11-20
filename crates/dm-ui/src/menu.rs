@@ -217,13 +217,6 @@ impl Menu {
         }
     }
 
-    /// Closes the link dialog, once its download has finished.
-    pub(crate) fn close_link(&mut self) {
-        if self.link_open() {
-            self.dialog = None;
-            self.ask = None;
-        }
-    }
 
     /// Opens the groove list, showing the pack with key `focus` if there is one.
     pub(crate) fn open_grooves(&mut self, focus: Option<String>) {
@@ -375,14 +368,10 @@ impl Menu {
             self.open(Shown::Export);
             ui.close();
         }
-        // Grooves and tabs become new patterns, so basic mode, with its one pattern, has no use
-        // for them and no section.
-        if !p.basic {
-            ui.separator();
-            section(ui, &mut self.import_section, &tr!("menu-import"));
-            if self.import_section {
-                self.import_items(ui, view, &mut events);
-            }
+        ui.separator();
+        section(ui, &mut self.import_section, &tr!("menu-import"));
+        if self.import_section {
+            self.import_items(ui, view, &mut events);
         }
         // The settings belong to the device, not to the beat.
         ui.separator();
@@ -440,7 +429,7 @@ impl Menu {
     }
 }
 
-/// The Settings section. `open` opens a dialog. Basic mode always comes last.
+/// The Settings section. `open` opens a dialog.
 fn settings_items(
     ui: &mut egui::Ui,
     view: &MenuView,
@@ -466,14 +455,13 @@ fn settings_items(
             p.row_labels.next(),
         )));
     }
-    // Outside basic mode, which has one bar only. It stays open, so the change can be seen.
-    if !p.basic
-        && ui
-            .add(
-                widgets::toggle_button(p.bar_line, icons::DOTS_THREE, &tr!("menu-bar-line"))
-                    .min_size(Vec2::new(ITEM_WIDTH, TAP)),
-            )
-            .clicked()
+    // It stays open, so the change can be seen.
+    if ui
+        .add(
+            widgets::toggle_button(p.bar_line, icons::DOTS_THREE, &tr!("menu-bar-line"))
+                .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+        )
+        .clicked()
     {
         events.push(MenuEvent::Project(ProjectEvent::BarLine(!p.bar_line)));
     }
@@ -509,16 +497,6 @@ fn settings_items(
             events.push(MenuEvent::ListMidiOutputs);
             ui.close();
         }
-    }
-    // Basic mode always comes last.
-    if ui
-        .add(
-            widgets::toggle_button(p.basic, icons::SLIDERS_HORIZONTAL, &tr!("menu-basic"))
-                .min_size(Vec2::new(ITEM_WIDTH, TAP)),
-        )
-        .clicked()
-    {
-        events.push(MenuEvent::Project(ProjectEvent::Basic(!p.basic)));
     }
 }
 

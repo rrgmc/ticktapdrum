@@ -2,8 +2,6 @@
 //! drum, move up or down, fills for the pattern being edited, and remove. See "One control strip"
 //! in `docs/DESIGN.md`.
 //!
-//! In basic mode it leaves out the drum, the fills and remove.
-//!
 //! Tapping a row's name opens it. A tap outside closes it. On a short screen its contents
 //! scroll. Choosing a drum shows the drum list in place of the settings, because a drop-down list
 //! opened inside a pop-up closes the pop-up when an item is tapped.
@@ -109,14 +107,12 @@ impl RowPopup {
     }
 
     /// Shows the pop-up while it is open, beside the row's name as the grid last drew it. Call it
-    /// after [`Grid::ui`] each frame. A row that moves takes the pop-up with it. In basic mode
-    /// it leaves out the drum, the fills and remove.
+    /// after [`Grid::ui`] each frame. A row that moves takes the pop-up with it.
     pub(crate) fn show(
         &mut self,
         ctx: &egui::Context,
         project: &Project,
         grid: &Grid,
-        basic: bool,
     ) -> Vec<RowEvent> {
         let mut events: Vec<RowEvent> = self.kept_rename.take().into_iter().collect();
         if let Some(row) = self.asking_remove.filter(|&r| r < project.rows().len()) {
@@ -150,10 +146,6 @@ impl RowPopup {
         if row >= project.rows().len() {
             self.close();
             return events;
-        }
-        if basic {
-            // Basic mode may have been turned on while the drum list was open.
-            self.page = Page::Settings;
         }
         let anchor = grid.label_rect(row).unwrap_or(rect);
         self.open = Some((row, anchor));
@@ -198,7 +190,7 @@ impl RowPopup {
                 .max_height(max_height)
                 .min_scrolled_height(max_height)
                 .show(ui, |ui| match self.page {
-                    Page::Settings => self.settings(ui, project, row, basic, &mut events),
+                    Page::Settings => self.settings(ui, project, row, &mut events),
                     Page::Drums => self.drums(ui, project, row, grid.row_labels(), &mut events),
                 });
         });
@@ -218,7 +210,6 @@ impl RowPopup {
         ui: &mut egui::Ui,
         project: &Project,
         row: usize,
-        basic: bool,
         events: &mut Vec<RowEvent>,
     ) {
         let info = &project.rows()[row];
@@ -318,22 +309,21 @@ impl RowPopup {
         });
 
         // The drum: opens the list in place of the settings.
-        if !basic
-            && ui
-                .add(
-                    egui::Button::new(
-                        RichText::new(format!(
-                            "{} {} {}",
-                            icons::WAVEFORM,
-                            drum_name(info.key),
-                            icons::CARET_RIGHT
-                        ))
-                        .size(TEXT_SIZE),
-                    )
-                    .wrap()
-                    .min_size(Vec2::new(ui.available_width(), TAP)),
+        if ui
+            .add(
+                egui::Button::new(
+                    RichText::new(format!(
+                        "{} {} {}",
+                        icons::WAVEFORM,
+                        drum_name(info.key),
+                        icons::CARET_RIGHT
+                    ))
+                    .size(TEXT_SIZE),
                 )
-                .clicked()
+                .wrap()
+                .min_size(Vec2::new(ui.available_width(), TAP)),
+            )
+            .clicked()
         {
             self.page = Page::Drums;
             self.more_drums = false;
@@ -356,10 +346,6 @@ impl RowPopup {
                 self.follow(row + 1);
             }
         });
-
-        if basic {
-            return;
-        }
 
         // Fills for the pattern being edited.
         ui.separator();

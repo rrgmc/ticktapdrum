@@ -83,9 +83,6 @@ pub struct DrumApp {
     half: usize,
     /// While playing, the grid shows what is being heard.
     follow: bool,
-    /// Basic mode: the first pattern only, no pattern or bar pop-up, no song, and a shorter row
-    /// pop-up. A device setting, kept in the store.
-    basic: bool,
     /// How row names show: names, pictures and names, or pictures. A device setting.
     row_labels: pictures::RowLabels,
     /// Whether the bar thumbnails show under the strip, or `None` until the person chooses,
@@ -176,7 +173,6 @@ impl DrumApp {
         let store = store::Store::new(&data_dir);
         let (project, name) = store.restore().unwrap_or((Project::new(), None));
         let saved = name.as_deref().and_then(|n| store.load(n).ok());
-        let basic = store.basic();
         let language_choice = store.language();
         let system_language = i18n::system_language();
         let row_labels = store.row_labels();
@@ -193,7 +189,6 @@ impl DrumApp {
             view_bar: 0,
             half: 0,
             follow: true,
-            basic,
             row_labels,
             bar_line,
             grid: grid::Grid::default(),
@@ -643,10 +638,6 @@ impl DrumApp {
             }
         }
         self.current = self.current.min(self.project.patterns().len() - 1);
-        if self.basic {
-            self.current = 0;
-            self.mode = Mode::Pattern;
-        }
 
         // Which steps the grid shows. A short screen, such as a phone in landscape, allows
         // narrower steps, so a whole bar fits and the short rows are not split again.
@@ -698,13 +689,12 @@ impl DrumApp {
             can_undo: self.history.can_undo(),
             can_redo,
             step_levels: self.project.step_levels(),
-            basic: self.basic,
         };
         let strip = strip::ui(ui, &state);
         ui.add_space(4.0);
-        // The bar thumbnails, all the time, when the setting says so. Basic mode has one bar.
+        // The bar thumbnails, all the time, when the setting says so.
         let bar_line = self.bar_line.unwrap_or_else(|| bar_line_default(ui.ctx()));
-        let line_shown = bar_line && !self.basic;
+        let line_shown = bar_line;
         let line_events = if line_shown {
             let events = self.bar_strip.line(
                 ui,
@@ -724,45 +714,35 @@ impl DrumApp {
         // The pattern pop-up edits the patterns and the song: what Play plays at the top, the
         // patterns in the middle, the song's play order at the end.
         let playing_entry = playhead.and_then(|p| p.song_index);
-        let (pattern_events, song_events) = strip
-            .pattern
-            .as_ref()
-            .and_then(|button| {
-                widgets::popup(button, |ui| {
-                    ui.set_width(patterns::popup_width(ui, patterns::POPUP_MAX_WIDTH));
-                    let mut song = self.song_row.mode_contents(ui, self.mode);
-                    ui.separator();
-                    let patterns =
-                        self.tabs
-                            .popup_contents(ui, &self.project, self.current, playing_index);
-                    ui.separator();
-                    song.extend(self.song_row.order_contents(
-                        ui,
-                        &self.project,
-                        self.current,
-                        playing_entry,
-                    ));
-                    (patterns, song)
-                })
-            })
-            .unwrap_or_default();
-        let bar_events = strip
-            .bar_label
-            .as_ref()
-            .and_then(|button| {
-                widgets::popup(button, |ui| {
-                    self.bar_strip.popup_contents(
-                        ui,
-                        &self.project.patterns()[self.current],
-                        shown.clone(),
-                        playing_bar,
-                        self.follow,
-                        !line_shown,
-                        self.mode == Mode::Pattern,
-                    )
-                })
-            })
-            .unwrap_or_default();
+        let (pattern_events, song_events) = widgets::popup(&strip.pattern, |ui| {
+            ui.set_width(patterns::popup_width(ui, patterns::POPUP_MAX_WIDTH));
+            let mut song = self.song_row.mode_contents(ui, self.mode);
+            ui.separator();
+            let patterns = self
+                .tabs
+                .popup_contents(ui, &self.project, self.current, playing_index);
+            ui.separator();
+            song.extend(self.song_row.order_contents(
+                ui,
+                &self.project,
+                self.current,
+                playing_entry,
+            ));
+            (patterns, song)
+        })
+        .unwrap_or_default();
+        let bar_events = widgets::popup(&strip.bar_label, |ui| {
+            self.bar_strip.popup_contents(
+                ui,
+                &self.project.patterns()[self.current],
+                shown.clone(),
+                playing_bar,
+                self.follow,
+                !line_shown,
+                self.mode == Mode::Pattern,
+            )
+        })
+        .unwrap_or_default();
         let tempo_events = strip
             .tempo
             .as_ref()
@@ -801,7 +781,6 @@ impl DrumApp {
                 can_render: self.bank.soundfont().is_some(),
                 export_place: export_place.as_deref(),
                 landscape: self.orientation.is_some().then(|| self.store.landscape()),
-                basic: self.basic,
                 row_labels: self.row_labels,
                 bar_line,
             },
@@ -860,12 +839,7 @@ impl DrumApp {
             .set_blocked(other_open || self.row_popup.is_open(), other_open);
         self.grid.set_highlight(self.row_popup.row());
         self.grid.set_row_labels(self.row_labels);
-        // Basic mode has no step levels button, so a tap there only turns a step on or off.
-        self.grid.set_step_levels(if self.basic {
-            dm_project::StepLevels::OnOff
-        } else {
-            self.project.step_levels()
-        });
+        self.grid.set_step_levels(self.project.step_levels());
         let grid_playhead = playhead.filter(|_| heard).map(|p| p.step);
         let grid_events = self.grid.ui(
             ui,
@@ -879,9 +853,7 @@ impl DrumApp {
                 self.row_popup.open(*row, *rect);
             }
         }
-        let row_events = self
-            .row_popup
-            .show(ui.ctx(), &self.project, &self.grid, self.basic);
+        let row_events = self.row_popup.show(ui.ctx(), &self.project, &self.grid);
 
         // Apply everything the user did this frame.
         for event in grid_events {
@@ -1245,21 +1217,6 @@ impl DrumApp {
                         log::warn!("the landscape setting was not saved: {e}");
                     }
                 }
-                ProjectEvent::Basic(on) => {
-                    self.basic = on;
-                    if on {
-                        // Basic mode plays and edits the first pattern only.
-                        if self.mode == Mode::Song {
-                            self.set_mode(engine, Mode::Pattern);
-                        }
-                        if self.current != 0 {
-                            self.select_pattern(engine, 0);
-                        }
-                    }
-                    if let Err(e) = self.store.set_basic(on) {
-                        log::warn!("the basic mode setting was not saved: {e}");
-                    }
-                }
                 ProjectEvent::PasteTab(text, options) => self.paste_tab(engine, &text, options),
                 ProjectEvent::BarLine(on) => {
                     self.bar_line = Some(on);
@@ -1508,8 +1465,7 @@ impl DrumApp {
     ///
     /// Every way a file arrives ends here: the menu's file item, a file dropped on a desktop
     /// window, and files a host hands in through [`DrumApp::incoming_files`], such as a share on
-    /// Android or a download from a link. In basic mode the list does not open, since it adds
-    /// patterns that basic mode does not show; a notice says what was kept instead.
+    /// Android or a download from a link. The groove list then opens on the new pack.
     pub(crate) fn import_grooves(&mut self, name: &str, bytes: Vec<u8>) {
         let result = if bytes.len() > grooves::MAX_FILE {
             Err(dm_groove::ImportError::TooLarge)
@@ -1536,12 +1492,8 @@ impl DrumApp {
         };
         self.has_grooves = true;
         self.message = Some(message.clone());
-        if self.basic {
-            self.show_notice_text(message);
-        } else {
-            self.groove_note = Some(message);
-            self.open_groove_list(Some(key));
-        }
+        self.groove_note = Some(message);
+        self.open_groove_list(Some(key));
     }
 
     /// Says why an import added nothing: in the menu's message, in the groove list's note or the
@@ -1564,13 +1516,9 @@ impl DrumApp {
         self.ctx.request_repaint();
     }
 
-    /// Imports the files dropped on a desktop's window, except in basic mode, which has no
-    /// grooves. Each file is read from its path.
+    /// Imports the files dropped on a desktop's window. Each file is read from its path.
     fn dropped_files(&mut self, ctx: &egui::Context) {
         let dropped = ctx.input(|i| i.raw.dropped_files.clone());
-        if self.basic {
-            return;
-        }
         for file in dropped {
             let target = files::Target::Path(file.path().to_path_buf());
             let name = target.file_name();
@@ -1674,9 +1622,9 @@ impl DrumApp {
 
     /// Text a host handed in, such as a link shared to the app. A link opens the link dialog and
     /// downloads at once, so a share needs no further tap. Other text goes to the Paste a drum
-    /// tab dialog, outside basic mode. Anything else is refused with a notice.
+    /// tab dialog. Anything else is refused with a notice.
     fn incoming_text(&mut self, text: &str) {
-        match link::shared_text(text, self.basic) {
+        match link::shared_text(text) {
             link::SharedText::Download(address) => {
                 self.menu.open_link(address.clone());
                 self.start_download(address);
@@ -1707,8 +1655,7 @@ impl DrumApp {
 
     /// Takes the result of the download from a link, once it has finished. Closing the link
     /// dialog stops the download. A file goes to the import, which opens the groove list on it.
-    /// A failure stays in the dialog, with the link, to be fixed or tried again. Basic mode keeps
-    /// no dialog open: the import or the failure shows in a notice.
+    /// A failure stays in the dialog, with the link, to be fixed or tried again.
     fn poll_link(&mut self) {
         if self.link_job.is_some() && !self.menu.link_open() {
             self.stop_download();
@@ -1717,12 +1664,9 @@ impl DrumApp {
             return;
         };
         self.link_job = None;
-        if self.basic {
-            self.menu.close_link();
-        }
         match result {
-            // Outside basic mode the groove list replaces the link dialog, or the dialog shows
-            // why the file was not taken.
+            // The groove list replaces the link dialog, or the dialog shows why the file was not
+            // taken.
             Ok((name, bytes)) => self.import_grooves(&name, bytes),
             Err(error) => self.import_failed(link::error_text(&error)),
         }

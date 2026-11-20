@@ -24,8 +24,6 @@ const AUTOSAVE: &str = "autosave";
 const AUTOSAVE_NAME: &str = "autosave.name";
 /// Exists while the screen is kept in landscape.
 const LANDSCAPE: &str = "landscape.lock";
-/// Exists while the app is in basic mode.
-const BASIC: &str = "basic.mode";
 /// Holds the tag of the language the person chose. Missing while the app follows the system.
 const LANGUAGE: &str = "language";
 /// Holds the name of the chosen MIDI output. Missing while none is chosen.
@@ -209,15 +207,6 @@ impl Store {
     pub(crate) fn set_bar_strip(&self, on: bool) -> Result<(), String> {
         fs::create_dir_all(&self.dir).map_err(folder_error)?;
         fs::write(self.dir.join(BAR_STRIP), if on { "on" } else { "off" }).map_err(write_error)
-    }
-
-    /// Whether the app is in basic mode. A device setting, not part of any project.
-    pub(crate) fn basic(&self) -> bool {
-        self.flag(BASIC)
-    }
-
-    pub(crate) fn set_basic(&self, on: bool) -> Result<(), String> {
-        self.set_flag(BASIC, on)
     }
 
     /// The language the person chose, or `None` to follow the system. A device setting, not
@@ -594,17 +583,6 @@ mod tests {
     }
 
     #[test]
-    fn the_basic_setting_is_kept_apart_from_landscape() {
-        let store = temp_store("basic");
-        assert!(!store.basic());
-        store.set_basic(true).unwrap();
-        assert!(store.basic());
-        assert!(!store.landscape());
-        store.set_basic(false).unwrap();
-        assert!(!store.basic());
-    }
-
-    #[test]
     fn the_language_follows_the_system_until_one_is_chosen() {
         let store = temp_store("language");
         assert_eq!(store.language(), None);
@@ -625,7 +603,7 @@ mod tests {
         let name = " Microsoft GS Wavetable Synth ";
         store.set_midi_output(Some(name)).unwrap();
         assert_eq!(store.midi_output().as_deref(), Some(name));
-        assert!(!store.basic() && store.language().is_none());
+        assert!(store.language().is_none());
         store.set_midi_output(None).unwrap();
         store.set_midi_output(None).unwrap();
         assert_eq!(store.midi_output(), None);

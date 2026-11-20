@@ -137,13 +137,11 @@ pub(crate) enum SharedText {
     Refuse,
 }
 
-/// Chooses what to do with shared text. A link is downloaded, even in basic mode, whose import
-/// keeps the grooves without opening the list. Other text is a drum tab, outside basic mode, as
-/// in the menu.
-pub(crate) fn shared_text(text: &str, basic: bool) -> SharedText {
+/// Chooses what to do with shared text: a link is downloaded, and other text is a drum tab.
+pub(crate) fn shared_text(text: &str) -> SharedText {
     if let Some(link) = dm_groove::link_address(text) {
         SharedText::Download(link)
-    } else if !basic && !text.trim().is_empty() {
+    } else if !text.trim().is_empty() {
         SharedText::PasteTab
     } else {
         SharedText::Refuse
@@ -173,24 +171,19 @@ mod tests {
     #[test]
     fn a_link_downloads_whatever_the_settings() {
         let link = "https://example.com/Beat.mid";
-        for basic in [false, true] {
-            assert_eq!(
-                shared_text(&format!("  {link}\n"), basic),
-                SharedText::Download(link.into())
-            );
-        }
+        assert_eq!(
+            shared_text(&format!("  {link}\n")),
+            SharedText::Download(link.into())
+        );
     }
 
     #[test]
-    fn other_text_is_a_tab_outside_basic_mode() {
+    fn other_text_is_a_tab() {
         let tab = "HH|x-x-x-x-|\nSD|----o---|";
-        assert_eq!(shared_text(tab, false), SharedText::PasteTab);
-        assert_eq!(shared_text(tab, true), SharedText::Refuse);
-        assert_eq!(shared_text("  ", false), SharedText::Refuse);
-        assert_eq!(
-            shared_text("ftp://example.com/a.mid", true),
-            SharedText::Refuse
-        );
+        assert_eq!(shared_text(tab), SharedText::PasteTab);
+        assert_eq!(shared_text("  "), SharedText::Refuse);
+        // Not a web link, so it goes to the tab dialog, which says why it is not a tab.
+        assert_eq!(shared_text("ftp://example.com/a.mid"), SharedText::PasteTab);
     }
 
     #[test]

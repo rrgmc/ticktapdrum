@@ -109,7 +109,6 @@ Deleting a pattern is a separate, explicit command.
   level the first step touched received.
 - Steps keep their loudness whichever choice is made, so changing it loses nothing.
 - A beat to start from picks the fewest levels that reach its notes.
-- In basic mode the button is not there, and a tap turns a step on or off.
 
 ### Rows
 
@@ -125,7 +124,7 @@ Deleting a pattern is a separate, explicit command.
   stripe beside its name and one on each drum in the drum list. Loud and soft steps still differ
   in shape as well, so the grid reads without colour vision.
 - **Rows can show pictures**, for children who cannot read yet. ☰ → "Rows: …" cycles through
-  three choices, a device setting like basic mode:
+  three choices, a device setting:
   - **Names** (the default): the name with the family's stripe.
   - **Pictures and names**: a picture with the name, the name under it on a tall row and beside
     it on a short one.
@@ -296,7 +295,7 @@ the beat.
 | **♩ 120** | Opens the tempo pop-up: large − and + buttons, a slider, and Swing. |
 | **▂▄▆** | Step levels: moves to the next choice of what a tap on a step does (see "Steps and loudness"). |
 | **↶** | Undo. Redo sits beside it when there is room. Either is in ☰ when it does not fit. |
-| **☰** | Opens the menu: Undo, Redo and the tempo on one line at the top when the strip has no room for them, then Save, Save as, Open, New, Load default style, Sounds, Export MIDI and Export WAV. Last, under "Settings": Rows (names or pictures), Keep in landscape, Language, and Basic mode, always the last item. Sounds opens the Sounds dialog: the drum kit and "Add a row". |
+| **☰** | Opens the menu: Undo, Redo and the tempo on one line at the top when the strip has no room for them, then Save, Save as, Open, New, Load default style, Sounds, Export MIDI and Export WAV. Last, under "Settings": Rows (names or pictures), Keep in landscape, and Language. Sounds opens the Sounds dialog: the drum kit and "Add a row". |
 
 - **The strip never wraps and never scrolls.** Each button shows an icon and a word when there is
   room, and only the icon when there is not. If the icons still do not fit, buttons move into ☰
@@ -324,33 +323,9 @@ the beat.
   and changed no step. Nobody has listened to it yet.
 - **Remove row always asks first.** For a row with notes the question says that its notes in
   every pattern go too.
-- **Basic mode** (☰ → Basic mode) is a simpler app for someone who only wants one beat. It is a
-  device setting, like Keep in landscape, and is off unless turned on.
-  - There is no pattern button: the app plays and edits the first pattern only, and plays
-    the pattern, never the song. Turning it on while the song plays switches to the pattern.
-  - The bar button is hidden whenever the grid shows the whole pattern, which for a new project
-    is bar 1 of 1. It stays where steps are off screen, such as half a bar on a phone in
-    portrait or a pattern with more bars than fit, so no step is out of reach. Its label then
-    opens nothing; only the arrows work.
-  - There is no Undo or Redo, in the strip or in ☰. Ctrl+Z and Ctrl+Y still work on a
-    keyboard. The strip is Play, the tempo and ☰.
-  - ☰ has no Song item.
-  - A row's pop-up has no drum choice, no "In this pattern" fills and no Remove row.
-  - Nothing in the project changes. Other patterns, bars and the song stay, and come back when
-    basic mode is turned off.
-  - **Checked on the Windows desktop build by screenshot:** turning it on and off from ☰, the
-    strip without the pattern and bar buttons, ☰ without Song, the short row pop-up, the
-    setting surviving a restart, and in a window 404 points wide the bar arrows paging to the
-    second half while a tap on the label opens nothing. Remove row asked first on an empty
-    row, and Keep kept it. Later, also by screenshot: the strip without Undo and Redo (Play,
-    tempo, ☰), ☰ without Redo in the narrow window, and in normal mode Sounds opening from ☰.
-  - **Checked on the Android phone by screenshot:** turning it on and off from ☰; in portrait,
-    where the grid shows half a bar, the strip is Play, the bar arrows, the tempo and ☰; ☰ has
-    no Song and no Redo; the short row pop-up. In normal mode, Remove row on a row with notes
-    asked first, with the line about notes in every pattern, and Keep kept it.
-  - **Not checked:** turning it on while pattern B is open or the song plays, and the iOS
-    build. The menu closes when basic mode is toggled,
-    because its button moves along the strip.
+- **Basic mode was removed** (2026-11-20). It hid the pattern button, Undo, Redo and the song
+  for someone who wanted one beat, but it kept getting in the way of new features, and the app
+  is simple enough without it. A `basic.mode` file left in the data folder is ignored.
 - **The song lives in the pattern pop-up** (changed from a Song dialog in ☰): the switch between
   playing the pattern and playing the song at the top, and the play order with move and take
   out, "Add" for the pattern being edited, and Repeat at the end. It is small enough to share
@@ -1266,7 +1241,7 @@ as a song import. Copying a few bars of a beat from a tab is still worth having.
 started behind an experimental setting, off by default; after trying it on the desktop, the
 author made it a plain menu item.
 
-- **The ☰ menu's Import section offers "Paste a drum tab"**, outside basic mode: a text box,
+- **The ☰ menu's Import section offers "Paste a drum tab"**: a text box,
   and "Add as pattern". Text shared to the app that is not a link opens the same dialog.
 - **The paste becomes one new pattern** after the existing ones, at most 16 bars; the rest is
   left out and the message says how many bars. The pattern uses rows that already play each
@@ -1291,7 +1266,7 @@ author made it a plain menu item.
 ## The ☰ menu's sections
 
 The menu grew past a screen, so two groups fold open in place: **Import** (add from a file, add
-from a link, paste a drum tab, the groove list), hidden in basic mode, and **Settings**. Both
+from a link, paste a drum tab, the groove list) and **Settings**. Both
 start closed and stay as left while the app runs. A section folds open inside the one scrolling
 list instead of opening a submenu beside it, which works the same with a finger and a mouse.
 
@@ -1302,7 +1277,7 @@ time, on one line under the strip that scrolls sideways. A tap on a thumbnail sh
 in the pop-up, and the line scrolls to the bars the grid shows whenever they change, such as
 while following the music. Until the person chooses, it is on for a desktop and for a screen
 whose short side is at least 600 points (a tablet), and off for a phone, which needs the room
-for the grid. Basic mode, with one bar, never shows it.
+for the grid.
 
 - **The line starts with two buttons the size of a thumbnail,** which stay put while the
   thumbnails scroll: Follow (a crosshair), and a play icon with a bar number, which plays the

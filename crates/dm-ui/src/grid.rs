@@ -124,7 +124,7 @@ impl Grid {
     }
 
     /// Sets which loudness levels a tap on a step goes through. The caller sets it every frame
-    /// before [`Grid::ui`]: the project's choice, or on and off alone in basic mode.
+    /// before [`Grid::ui`]: the project's choice.
     pub(crate) fn set_step_levels(&mut self, levels: StepLevels) {
         self.step_levels = levels;
     }
