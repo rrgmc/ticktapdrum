@@ -15,11 +15,13 @@ use std::time::{Duration, Instant};
 use dm_audio::{LiveHits, MidiEvents};
 use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 
-use crate::input::Notes;
+use crate::input::{KitChange, Notes};
 use crate::liveness::{Action, Presence, Watch};
 use crate::schedule::{Pending, Sounding, output_list, should_send};
 use crate::transfer::{self, Fault, Link, REPLY_TIMEOUT, show};
-use crate::{InputChoice, KeyboardTarget, MidiStatus, SendHook, TransferError, TransferStatus};
+use crate::{
+    InputChoice, InputKit, KeyboardTarget, MidiStatus, SendHook, TransferError, TransferStatus,
+};
 
 /// The name the app gives itself as a MIDI client.
 const CLIENT_NAME: &str = "TickTapDrum";
@@ -193,6 +195,14 @@ impl Handle {
             .clone()
     }
 
+    pub(crate) fn input_kit(&self) -> Option<InputKit> {
+        self.tap
+            .kit
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
     pub(crate) fn send_style(&mut self, target: KeyboardTarget, name: String, data: Vec<u8>) {
         let mut transfer = self.transfer.lock().unwrap_or_else(PoisonError::into_inner);
         transfer.0 += 1;
@@ -302,6 +312,9 @@ struct Tap {
     /// Whether hits go into the queue at all. Off by default. While off, a callback pushes
     /// nothing and takes no channel.
     listening: AtomicBool,
+    /// The latest kit the source's played channel switched to while listening. Locked by a
+    /// callback for each such program change, and by [`Handle::input_kit`] each frame.
+    kit: Mutex<Option<InputKit>>,
 }
 
 impl Tap {
@@ -310,6 +323,17 @@ impl Tap {
         if self.listening.swap(on, Ordering::AcqRel) != on && on {
             self.epoch.fetch_add(1, Ordering::AcqRel);
         }
+    }
+
+    /// Publishes a kit change, with the next change number.
+    fn report(&self, change: KitChange) {
+        let mut kit = self.kit.lock().unwrap_or_else(PoisonError::into_inner);
+        let number = kit.as_ref().map_or(0, |kit| kit.change) + 1;
+        *kit = Some(InputKit {
+            name: change.name,
+            similar: change.similar,
+            change: number,
+        });
     }
 }
 
@@ -337,18 +361,25 @@ impl Listener {
     /// Handles a message on midir's thread. Never waits for more than a push into the queue.
     fn hear(&mut self, timestamp: u64, message: &[u8]) {
         let now = Instant::now();
-        if self.tap.source.load(Ordering::Acquire) != self.id
-            || !self.tap.listening.load(Ordering::Acquire)
-        {
+        let counted = self.tap.source.load(Ordering::Acquire) == self.id
+            && self.tap.listening.load(Ordering::Acquire);
+        if counted {
+            let epoch = self.tap.epoch.load(Ordering::Acquire);
+            if epoch != self.epoch {
+                self.epoch = epoch;
+                self.notes.release_channel();
+            }
+        }
+        // The voices are followed either way, so they are known once the notes count.
+        let change = self.notes.follow(message);
+        if !counted {
             // Still learn the clock, so that it is ready if this input becomes the source or
             // listening turns on.
             self.notes.read(&[], timestamp, now, false);
             return;
         }
-        let epoch = self.tap.epoch.load(Ordering::Acquire);
-        if epoch != self.epoch {
-            self.epoch = epoch;
-            self.notes.release_channel();
+        if let Some(change) = change {
+            self.tap.report(change);
         }
         let sound = self.tap.sound.load(Ordering::Acquire);
         let Some(hit) = self.notes.read(message, timestamp, now, sound) else {
@@ -644,7 +675,8 @@ impl Worker {
                 return;
             }
         };
-        input.ignore(Ignore::SysexAndTime);
+        // SysEx comes through: a Yamaha keyboard's tells the notes to follow its kits.
+        input.ignore(Ignore::Time);
         let Some(port) = input
             .ports()
             .into_iter()
@@ -1183,5 +1215,42 @@ mod tests {
         tap.source.store(2, Ordering::Release);
         listener.hear(0, &[0x90, 36, 100]);
         assert!(heard.pop().is_err());
+    }
+
+    #[test]
+    fn a_kit_change_is_reported_only_while_listening() {
+        let (tap, mut listener, mut heard) = tapped();
+        let electro: [&[u8]; 4] = [
+            &[0xF0, 0x43, 0x10, 0x4C, 0x08, 0x02, 0x07, 0x01, 0xF7],
+            &[0xB2, 0x00, 0x7F],
+            &[0xB2, 0x20, 0x00],
+            &[0xC2, 0x46],
+        ];
+        // While off, the kit is learnt but not reported.
+        for message in electro {
+            listener.hear(0, message);
+        }
+        assert_eq!(tap.kit.lock().unwrap().clone(), None);
+
+        tap.set_listening(true);
+        listener.hear(1000, &[0x92, 24, 100]);
+        assert_eq!(heard.pop().map(|hit| hit.key), Ok(36));
+        for message in electro {
+            listener.hear(2000, message);
+        }
+        let kit = tap.kit.lock().unwrap().clone();
+        assert_eq!(
+            kit,
+            Some(InputKit {
+                name: Some("ElectroKit"),
+                similar: Some(24),
+                change: 1,
+            })
+        );
+        // Other messages leave the report alone; the next program change moves it on.
+        listener.hear(3000, &[0xB2, 0x07, 0x64]);
+        assert_eq!(tap.kit.lock().unwrap().as_ref().map(|k| k.change), Some(1));
+        listener.hear(4000, &[0xC2, 0x46]);
+        assert_eq!(tap.kit.lock().unwrap().as_ref().map(|k| k.change), Some(2));
     }
 }

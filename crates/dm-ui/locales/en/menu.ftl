@@ -60,6 +60,12 @@ menu-midi-gone = { $device } is gone. Playing on this device again.
 menu-midi-in-use = { $device } is in use by another program.
 # A one-line message when the MIDI input goes away while recording. $device is its name.
 menu-midi-input-gone = { $device } is gone. Recording stopped.
+# A notice when the keyboard switches its drum kit while MIDI in is on. $kit is the kit's name
+# as the keyboard shows it, such as ElectroKit. The button grooves-use-kit may follow.
+menu-midi-kit = Keyboard kit: { $kit }
+# The same, for a keyboard that gives its kit a number but no name. The button grooves-use-kit
+# follows.
+menu-midi-kit-other = The keyboard switched its drum kit.
 # Where the drums played on a MIDI device come from. $device is the chosen input's name, as the
 # system reports it and shortened to fit, or menu-midi-input-same.
 menu-midi-input-choice = MIDI input: { $device }

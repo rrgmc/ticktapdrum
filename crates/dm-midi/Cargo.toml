@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 dm-audio = { workspace = true }
+dm-groove = { workspace = true }
 rtrb = { workspace = true }
 log = { workspace = true }
 

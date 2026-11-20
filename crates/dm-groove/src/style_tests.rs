@@ -243,6 +243,20 @@ fn kit_table_maps_keys_and_leaves_some_out() {
     assert_eq!(groove.similar_kit, Some(0));
 }
 
+/// The public view of the table gives a kit's name, its near app kit and its keys.
+#[test]
+fn a_yamaha_kit_is_found_by_bank_and_program() {
+    let kit = yamaha_kit(127, 70).unwrap();
+    assert_eq!(kit.name(), "ElectroKit");
+    assert_eq!(kit.similar(), Some(24));
+    assert_eq!(kit.key(24), Some(36));
+    assert_eq!(kit.key(27), Some(39));
+    assert_eq!(kit.key(74), None);
+    assert_eq!(yamaha_kit(127, 70), Some(kit));
+    // Bank 0 holds the melodic voices.
+    assert_eq!(yamaha_kit(0, 70), None);
+}
+
 /// A kit the table does not know keeps the keys 35 to 81 and leaves out the rest. So does a
 /// channel with no kit chosen.
 #[test]

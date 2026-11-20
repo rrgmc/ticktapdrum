@@ -53,6 +53,56 @@ impl YamahaKit {
     }
 }
 
+/// A drum kit of a Yamaha keyboard that the key map knows: the PSR-SX920 and PSR-SX720 kits.
+///
+/// The same table reads a style's kits. A live MIDI input uses it to follow the kit chosen on
+/// the keyboard. Cheap to copy.
+#[derive(Clone, Copy)]
+pub struct KeyboardKit(&'static YamahaKit);
+
+impl KeyboardKit {
+    /// The kit's name, as the keyboard shows it, such as `ElectroKit`.
+    pub fn name(&self) -> &'static str {
+        self.0.name
+    }
+
+    /// The General MIDI program of the nearest kit in the app's short list. `None` for
+    /// percussion and effect kits.
+    pub fn similar(&self) -> Option<u8> {
+        self.0.similar
+    }
+
+    /// The General MIDI key one of the kit's keys becomes, or `None` when the app has no row
+    /// for its sound.
+    pub fn key(&self, key: u8) -> Option<u8> {
+        self.0.key(key)
+    }
+}
+
+impl std::fmt::Debug for KeyboardKit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyboardKit")
+            .field("msb", &self.0.msb)
+            .field("program", &self.0.program)
+            .field("name", &self.0.name)
+            .finish()
+    }
+}
+
+impl PartialEq for KeyboardKit {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.0, other.0)
+    }
+}
+
+impl Eq for KeyboardKit {}
+
+/// The Yamaha drum kit a bank select MSB (controller 0) and a program change pick, if the key
+/// map knows it. The program is counted from 0.
+pub fn yamaha_kit(msb: u8, program: u8) -> Option<KeyboardKit> {
+    YamahaKit::find(msb, program).map(KeyboardKit)
+}
+
 /// The markers that start a section, spelled as Yamaha's keyboards write them.
 const SECTION_MARKERS: [&str; 17] = [
     "Intro A",

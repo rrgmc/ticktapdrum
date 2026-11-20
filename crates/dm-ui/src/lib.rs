@@ -460,7 +460,11 @@ impl DrumApp {
                 let text = note.text();
                 let until = ui.input(|i| i.time) + NOTICE_SECONDS;
                 self.notice = Some((text.clone(), until));
+                self.notice_kit = None;
                 self.message = Some(text);
+            }
+            if let Some(kit) = self.midi.new_input_kit() {
+                self.offer_input_kit(&engine, &kit);
             }
             self.show_notice(ui, &mut engine);
             // Sends changes that waited because the audio queue was full.
@@ -1849,30 +1853,58 @@ impl DrumApp {
         }
     }
 
-    /// Shows a notice over the grid for a few seconds.
     /// After a groove from a keyboard style is added: when the keyboard's kit has a near kit in
     /// the app and the project uses another one, a notice names the keyboard's kit and offers the
     /// near one. Nothing changes unless the button is tapped.
     fn offer_kit(&mut self, engine: &Engine, groove: &dm_groove::Groove) {
-        let (Some(kit), Some(similar)) = (&groove.kit, groove.similar_kit) else {
+        let Some(kit) = &groove.kit else {
             return;
         };
-        if similar == self.project.kit() {
-            return;
-        }
-        let Some(near) = engine.kits().iter().find(|k| k.program == similar) else {
+        let Some(offer) = self.kit_offer(engine, groove.similar_kit) else {
             return;
         };
-        self.show_notice_text(tr!("grooves-kit-notice", kit = kit.as_str()));
-        if let Some((_, until)) = &mut self.notice {
-            *until += KIT_NOTICE_EXTRA;
-        }
-        self.notice_kit = Some((tr!("grooves-use-kit", kit = near.name.as_str()), similar));
+        self.show_kit_notice(tr!("grooves-kit-notice", kit = kit.as_str()), Some(offer));
     }
 
+    /// When the keyboard switches its kit while MIDI in is on: a notice names the keyboard's
+    /// kit and, as for a style, offers the near app kit if the project uses another one. A
+    /// General MIDI kit has no name, so it shows only when there is a kit to offer.
+    fn offer_input_kit(&mut self, engine: &Engine, kit: &midi::InputKit) {
+        let offer = self.kit_offer(engine, kit.similar);
+        let text = match (kit.name, &offer) {
+            (Some(name), _) => tr!("menu-midi-kit", kit = name),
+            (None, Some(_)) => tr!("menu-midi-kit-other"),
+            (None, None) => return,
+        };
+        self.show_kit_notice(text, offer);
+    }
+
+    /// The button that switches the project to the app kit with this General MIDI program, and
+    /// the program: `None` when the engine has no such kit or the project already uses it.
+    fn kit_offer(&self, engine: &Engine, similar: Option<u8>) -> Option<(String, u8)> {
+        let similar = similar.filter(|&program| program != self.project.kit())?;
+        let near = engine.kits().iter().find(|k| k.program == similar)?;
+        Some((tr!("grooves-use-kit", kit = near.name.as_str()), similar))
+    }
+
+    /// Shows a notice about a kit, with the button `offer` makes if any. With a button it stays
+    /// a little longer, to leave time to tap it.
+    fn show_kit_notice(&mut self, text: String, offer: Option<(String, u8)>) {
+        self.show_notice_text(text);
+        if offer.is_some()
+            && let Some((_, until)) = &mut self.notice
+        {
+            *until += KIT_NOTICE_EXTRA;
+        }
+        self.notice_kit = offer;
+    }
+
+    /// Shows a notice over the grid for a few seconds. It replaces the one showing, and any
+    /// button that one had.
     fn show_notice_text(&mut self, text: String) {
         let until = self.ctx.input(|i| i.time) + NOTICE_SECONDS;
         self.notice = Some((text, until));
+        self.notice_kit = None;
         self.ctx.request_repaint();
     }
 
