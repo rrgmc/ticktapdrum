@@ -55,51 +55,42 @@ impl SoundsScreen {
             ui.label(egui::RichText::new(text).size(TEXT_SIZE).strong());
         };
 
-        // The kit: a short list first, and every kit the bank has on request.
+        // The kit: a short list first, one per line, and the bank's other kits on request.
         heading(ui, tr!("sounds-kit"));
-        ui.horizontal_wrapped(|ui| {
-            let short: Vec<&Kit> = SHORT_LIST
-                .iter()
-                .filter_map(|program| kits.iter().find(|k| k.program == *program))
-                .collect();
-            let current_listed = short.iter().any(|k| k.program == project.kit());
-            for kit in &short {
-                if ui
-                    .add(toggle_button(project.kit() == kit.program, "", &kit.name))
-                    .clicked()
-                {
+        let current = project.kit();
+        let short: Vec<&Kit> = SHORT_LIST
+            .iter()
+            .filter_map(|program| kits.iter().find(|k| k.program == *program))
+            .collect();
+        let in_short = |kit: &Kit| short.iter().any(|k| k.program == kit.program);
+        let mut listed = short.clone();
+        // A kit chosen from the others stays in sight while they are hidden.
+        if !self.all_kits
+            && let Some(kit) = kits.iter().find(|k| k.program == current && !in_short(k))
+        {
+            listed.push(kit);
+        }
+        for kit in listed {
+            if kit_row(ui, kit, current == kit.program).clicked() {
+                events.push(SoundEvent::Kit(kit.program));
+            }
+        }
+        if kits.len() > short.len() {
+            let (icon, word) = if self.all_kits {
+                (icons::MINUS, tr!("sounds-fewer-kits"))
+            } else {
+                (icons::PLUS, tr!("sounds-more-kits"))
+            };
+            if ui.add(crate::widgets::button(icon, &word)).clicked() {
+                self.all_kits = !self.all_kits;
+            }
+        }
+        if self.all_kits {
+            for kit in kits.iter().filter(|k| !in_short(k)) {
+                if kit_row(ui, kit, current == kit.program).clicked() {
                     events.push(SoundEvent::Kit(kit.program));
                 }
             }
-            let label = if current_listed || kits.is_empty() {
-                tr!("sounds-all-kits")
-            } else {
-                let name = kits
-                    .iter()
-                    .find(|k| k.program == project.kit())
-                    .map(|k| k.name.as_str())
-                    .unwrap_or("?");
-                tr!("sounds-all-kits-current", kit = name)
-            };
-            if ui
-                .add(toggle_button(self.all_kits, icons::DOTS_THREE, &label))
-                .clicked()
-            {
-                self.all_kits = !self.all_kits;
-            }
-        });
-        if self.all_kits {
-            ui.horizontal_wrapped(|ui| {
-                for kit in kits {
-                    let text = format!("{} {}", kit.program + 1, kit.name);
-                    if ui
-                        .add(toggle_button(project.kit() == kit.program, "", &text))
-                        .clicked()
-                    {
-                        events.push(SoundEvent::Kit(kit.program));
-                    }
-                }
-            });
         }
         ui.add_space(12.0);
 
@@ -128,6 +119,78 @@ impl SoundsScreen {
         }
         events
     }
+}
+
+/// One kit as a line of the kit list: its name, and below it a few words on how it sounds when
+/// [`kit_description`] has them. The line is as wide as the dialog and shows whether it is the
+/// project's kit.
+fn kit_row(ui: &mut egui::Ui, kit: &Kit, selected: bool) -> egui::Response {
+    use crate::widgets::{TAP, TEXT_SIZE};
+
+    let description = kit_description(kit);
+    let height = if description.is_some() { 60.0 } else { TAP };
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), height), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let visuals = ui.style().interact_selectable(&response, selected);
+        let painter = ui.painter();
+        painter.rect_filled(rect, visuals.corner_radius, visuals.weak_bg_fill);
+        let ink = visuals.text_color();
+        let left = rect.left() + ui.spacing().button_padding.x + 4.0;
+        let font = |size: f32| egui::FontId::proportional(size);
+        match description {
+            Some(words) => {
+                painter.text(
+                    egui::pos2(left, rect.top() + 8.0),
+                    egui::Align2::LEFT_TOP,
+                    &kit.name,
+                    font(TEXT_SIZE),
+                    ink,
+                );
+                painter.text(
+                    egui::pos2(left, rect.bottom() - 8.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    words,
+                    font(14.0),
+                    ink.gamma_multiply(0.7),
+                );
+            }
+            None => {
+                painter.text(
+                    egui::pos2(left, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    &kit.name,
+                    font(TEXT_SIZE),
+                    ink,
+                );
+            }
+        }
+    }
+    response
+}
+
+/// A few words on how a kit of the short list sounds. The words follow the General MIDI program
+/// number, so they show only when the kit's name says it is the kit they describe: another bank
+/// may put something else at that number.
+fn kit_description(kit: &Kit) -> Option<String> {
+    let (expected, id) = match kit.program {
+        0 => ("standard", "sounds-kit-standard"),
+        8 => ("room", "sounds-kit-room"),
+        9 => ("hip", "sounds-kit-hiphop"),
+        16 => ("power", "sounds-kit-power"),
+        24 => ("electr", "sounds-kit-electro"),
+        25 => ("808", "sounds-kit-808"),
+        26 => ("dance", "sounds-kit-dance"),
+        30 => ("909", "sounds-kit-909"),
+        32 => ("jazz", "sounds-kit-jazz"),
+        40 => ("brush", "sounds-kit-brush"),
+        48 => ("orch", "sounds-kit-orchestral"),
+        _ => return None,
+    };
+    kit.name
+        .to_lowercase()
+        .contains(expected)
+        .then(|| crate::i18n::tr(id))
 }
 
 /// Buttons for choosing a drum: the common ones, then "More drums" for the rest. `current` is
