@@ -4,7 +4,7 @@
 //! Everything opens with a tap; nothing depends on hover or a right click, so it works the same
 //! with a finger, a mouse and an iPad pencil.
 
-use dm_project::{MAX_PATTERNS, Project};
+use dm_project::{MAX_PATTERNS, Project, letter};
 use egui::{RichText, Vec2};
 
 use crate::{icons, widgets};
@@ -19,6 +19,8 @@ pub(crate) enum PatternEvent {
     Add,
     Copy,
     Delete,
+    /// Gives the pattern being edited this letter.
+    Rename(char),
 }
 
 #[derive(Default)]
@@ -26,11 +28,14 @@ pub(crate) struct PatternTabs {
     /// The pattern whose deletion is being asked about. The pop-up closes while the question
     /// shows in its own window (see [`PatternTabs::confirm`]).
     asking_delete: Option<usize>,
+    /// The pattern whose new letter is being chosen, in a window of its own like the deletion
+    /// question.
+    asking_rename: Option<usize>,
 }
 
 impl PatternTabs {
-    /// The patterns' part of the pattern pop-up: a large tile per pattern, then New, Copy and
-    /// Delete. `playing` is the index of the pattern being heard, if any; its tile carries a dot.
+    /// The patterns' part of the pattern pop-up: a large tile per pattern, then New, Copy,
+    /// Rename and Delete. `playing` is the index of the pattern being heard, if any; its tile carries a dot.
     /// Choosing a pattern leaves the pop-up open, so it can then go into the song below; New and
     /// Copy close it, to show the new pattern.
     pub(crate) fn popup_contents(
@@ -71,6 +76,17 @@ impl PatternTabs {
                 ui.close();
             }
             if ui
+                .add(widgets::button(
+                    icons::PENCIL_SIMPLE,
+                    &tr!("patterns-rename"),
+                ))
+                .clicked()
+            {
+                // Chosen in a window of its own, so the pop-up closes.
+                self.asking_rename = Some(current);
+                ui.close();
+            }
+            if ui
                 .add_enabled(
                     project.patterns().len() > 1,
                     widgets::button(icons::TRASH, &tr!("patterns-delete")),
@@ -85,16 +101,17 @@ impl PatternTabs {
         events
     }
 
-    /// The "Delete pattern?" question, in a window of its own. Call it every frame; it shows only
-    /// while the question is asked, and answers with [`PatternEvent::Delete`] for the pattern
-    /// being edited, `current`.
+    /// The "Delete pattern?" question and the choice of a new letter, each in a window of its
+    /// own. Call it every frame; each shows only while it is asked, and answers with
+    /// [`PatternEvent::Delete`] or [`PatternEvent::Rename`] for the pattern being edited,
+    /// `current`.
     pub(crate) fn confirm(
         &mut self,
         ctx: &egui::Context,
         project: &Project,
         current: usize,
     ) -> Vec<PatternEvent> {
-        let mut events = Vec::new();
+        let mut events = self.rename(ctx, project, current);
         // Only for the pattern still being edited, and never the last one.
         let Some(index) = self
             .asking_delete
@@ -118,6 +135,67 @@ impl PatternTabs {
             }
             Some(false) => self.asking_delete = None,
             None => {}
+        }
+        events
+    }
+}
+
+impl PatternTabs {
+    /// The window that chooses a new letter for the pattern being edited: a button per letter,
+    /// A to Z, with the pattern's own letter shown as chosen, and Cancel.
+    fn rename(
+        &mut self,
+        ctx: &egui::Context,
+        project: &Project,
+        current: usize,
+    ) -> Vec<PatternEvent> {
+        let mut events = Vec::new();
+        let Some(name) = self
+            .asking_rename
+            .filter(|&i| i == current)
+            .and_then(|i| project.pattern(i))
+            .map(|p| p.name())
+        else {
+            self.asking_rename = None;
+            return events;
+        };
+        let screen = widgets::safe_area(ctx);
+        let whole = ctx.content_rect();
+        let id = egui::Id::unique("dm-rename-pattern");
+        let area = egui::Modal::default_area(id).anchor(
+            egui::Align2::CENTER_CENTER,
+            screen.center() - whole.center(),
+        );
+        let mut done = false;
+        let response = egui::Modal::new(id).area(area).show(ctx, |ui| {
+            ui.set_width((screen.width() - 32.0).clamp(200.0, 400.0));
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 12.0);
+            ui.label(
+                RichText::new(tr!("patterns-rename-question", name = name.to_string()))
+                    .size(widgets::TEXT_SIZE + 2.0),
+            );
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::splat(6.0);
+                for chosen in (0..MAX_PATTERNS).map(letter) {
+                    let button = crate::toggle(
+                        chosen == name,
+                        RichText::new(chosen.to_string()).size(22.0).strong(),
+                    )
+                    .min_size(Vec2::splat(widgets::TAP));
+                    if ui.add(button).clicked() {
+                        if chosen != name {
+                            events.push(PatternEvent::Rename(chosen));
+                        }
+                        done = true;
+                    }
+                }
+            });
+            if ui.add(widgets::button("", &tr!("patterns-keep"))).clicked() {
+                done = true;
+            }
+        });
+        if done || response.should_close() {
+            self.asking_rename = None;
         }
         events
     }

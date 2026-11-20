@@ -1047,6 +1047,11 @@ impl DrumApp {
                     }
                     self.finish(engine, result);
                 }
+                // Only the letters change; nothing that plays does.
+                patterns::PatternEvent::Rename(name) => {
+                    let result = self.project.rename_pattern(self.current, name);
+                    self.finish(engine, result.map(|()| Vec::new()));
+                }
             }
         }
         for event in song_events {

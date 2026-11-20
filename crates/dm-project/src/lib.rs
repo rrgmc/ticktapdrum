@@ -302,10 +302,13 @@ impl Row {
     }
 }
 
-/// One pattern. Its slot is a fixed position in the audio engine, and also its letter.
+/// One pattern. Its slot is a fixed position in the audio engine. Its letter is what the user
+/// sees; it starts as the slot's letter but can be changed ([`Project::rename_pattern`]), and no
+/// two patterns share one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
     slot: usize,
+    name: char,
     bars: usize,
     /// One array per row, covering every possible step. Steps at and beyond `bars *
     /// STEPS_PER_BAR` are the hidden bars.
@@ -313,9 +316,10 @@ pub struct Pattern {
 }
 
 impl Pattern {
-    fn new(slot: usize, rows: usize) -> Self {
+    fn new(slot: usize, name: char, rows: usize) -> Self {
         Self {
             slot,
+            name,
             bars: 1,
             steps: vec![[0; MAX_STEPS]; rows],
         }
@@ -328,7 +332,7 @@ impl Pattern {
 
     /// The pattern's letter, A to Z.
     pub fn name(&self) -> char {
-        slot_name(self.slot)
+        self.name
     }
 
     /// The number of bars that play.
@@ -391,9 +395,9 @@ impl Pattern {
     }
 }
 
-/// The letter of a pattern slot.
-pub fn slot_name(slot: usize) -> char {
-    (b'A' + (slot % MAX_PATTERNS) as u8) as char
+/// The letter at a position in the alphabet, 0 for A to 25 for Z.
+pub fn letter(index: usize) -> char {
+    (b'A' + (index % MAX_PATTERNS) as u8) as char
 }
 
 /// A whole project.
@@ -426,7 +430,7 @@ impl Project {
             .iter()
             .map(|(name, key)| Row::new(name, *key))
             .collect();
-        let patterns = vec![Pattern::new(0, rows.len())];
+        let patterns = vec![Pattern::new(0, 'A', rows.len())];
         Self {
             rows,
             patterns,
@@ -635,6 +639,15 @@ impl Project {
         self.patterns.iter().position(|p| p.slot == slot)
     }
 
+    /// The letter of the pattern in `slot`, such as a song entry's, or `?` if no pattern is
+    /// there.
+    pub fn slot_name(&self, slot: usize) -> char {
+        self.patterns
+            .iter()
+            .find(|p| p.slot == slot)
+            .map_or('?', |p| p.name)
+    }
+
     /// The song, as pattern slots in play order.
     pub fn song(&self) -> &[usize] {
         &self.song
@@ -743,23 +756,26 @@ impl Project {
         Ok(diff(&before, pattern))
     }
 
-    /// Adds an empty one-bar pattern in the first free slot. Returns its index and the changes.
+    /// Adds an empty one-bar pattern in the first free slot, named with the first free letter.
+    /// Returns its index and the changes.
     pub fn add_pattern(&mut self) -> Result<(usize, Vec<Change>), Refused> {
         let slot = self.free_slot().ok_or(Refused::TooManyPatterns)?;
-        let pattern = Pattern::new(slot, self.rows.len());
+        let pattern = Pattern::new(slot, self.free_name(), self.rows.len());
         let mut changes = Vec::new();
         pattern.full_sync(&mut changes);
         self.patterns.push(pattern);
         Ok((self.patterns.len() - 1, changes))
     }
 
-    /// Adds a copy of a pattern, hidden bars included, in the first free slot. The copy goes right
-    /// after the original. Returns its index and the changes.
+    /// Adds a copy of a pattern, hidden bars included, in the first free slot, named with the
+    /// first free letter. The copy goes right after the original. Returns its index and the
+    /// changes.
     pub fn copy_pattern(&mut self, index: usize) -> Result<(usize, Vec<Change>), Refused> {
         let original = self.patterns.get(index).ok_or(Refused::OutOfRange)?;
         let slot = self.free_slot().ok_or(Refused::TooManyPatterns)?;
         let mut copy = original.clone();
         copy.slot = slot;
+        copy.name = self.free_name();
         let mut changes = Vec::new();
         copy.full_sync(&mut changes);
         self.patterns.insert(index + 1, copy);
@@ -780,7 +796,7 @@ impl Project {
         // Leave the engine slot empty, so a later pattern in the same slot starts clean.
         diff_into(
             &removed,
-            &Pattern::new(removed.slot, self.rows.len()),
+            &Pattern::new(removed.slot, removed.name, self.rows.len()),
             &mut changes,
         );
         let before = self.song.len();
@@ -789,6 +805,22 @@ impl Project {
             changes.push(Change::Song(self.song.clone()));
         }
         Ok(changes)
+    }
+
+    /// Gives a pattern another letter, A to Z. If another pattern has that letter, the two swap
+    /// letters. Only the names change: the song keeps its patterns, so nothing changes in the
+    /// sound. Refused with [`Refused::OutOfRange`] for a bad index or a character that is not
+    /// a capital letter.
+    pub fn rename_pattern(&mut self, index: usize, name: char) -> Result<(), Refused> {
+        if index >= self.patterns.len() || !name.is_ascii_uppercase() {
+            return Err(Refused::OutOfRange);
+        }
+        let old = self.patterns[index].name;
+        if let Some(other) = self.patterns.iter_mut().find(|p| p.name == name) {
+            other.name = old;
+        }
+        self.patterns[index].name = name;
+        Ok(())
     }
 
     /// Adds a pattern to the end of the song.
@@ -822,6 +854,14 @@ impl Project {
 
     fn free_slot(&self) -> Option<usize> {
         (0..MAX_PATTERNS).find(|slot| self.patterns.iter().all(|p| p.slot != *slot))
+    }
+
+    /// The first letter no pattern has. Call it only when there is room for another pattern.
+    fn free_name(&self) -> char {
+        (0..MAX_PATTERNS)
+            .map(letter)
+            .find(|&name| self.patterns.iter().all(|p| p.name != name))
+            .unwrap_or('?')
     }
 }
 

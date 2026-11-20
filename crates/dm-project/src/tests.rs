@@ -400,3 +400,75 @@ fn drums_fall_into_the_families_their_names_suggest() {
     assert_eq!(drum_family(56), DrumFamily::Percussion);
     assert_eq!(drum_family(81), DrumFamily::Percussion);
 }
+
+fn letters(p: &Project) -> String {
+    p.patterns().iter().map(Pattern::name).collect()
+}
+
+fn song_letters(p: &Project) -> String {
+    p.song().iter().map(|&slot| p.slot_name(slot)).collect()
+}
+
+#[test]
+fn renaming_to_a_free_letter_changes_only_the_name() {
+    let mut p = Project::new();
+    let (b, _) = p.add_pattern().unwrap();
+    p.song_append(b).unwrap();
+    on(&mut p, b, 0, 4);
+    let slot = p.pattern(b).unwrap().slot();
+    p.rename_pattern(b, 'Q').unwrap();
+    assert_eq!(letters(&p), "AQ");
+    assert_eq!(song_letters(&p), "AQ");
+    assert_eq!(p.pattern(b).unwrap().slot(), slot);
+    assert_eq!(p.pattern(b).unwrap().velocity(0, 4), DEFAULT_VELOCITY);
+}
+
+#[test]
+fn renaming_to_a_letter_in_use_swaps_the_two() {
+    let mut p = Project::new();
+    let (b, _) = p.add_pattern().unwrap();
+    p.add_pattern().unwrap();
+    p.song_append(b).unwrap();
+    p.rename_pattern(0, 'C').unwrap();
+    assert_eq!(letters(&p), "CBA");
+    // The song still plays the same patterns, now under their new letters.
+    assert_eq!(song_letters(&p), "CB");
+    p.rename_pattern(0, 'C').unwrap();
+    assert_eq!(letters(&p), "CBA");
+}
+
+#[test]
+fn a_new_pattern_takes_the_first_letter_no_pattern_has() {
+    let mut p = Project::new();
+    p.rename_pattern(0, 'B').unwrap();
+    let (a, _) = p.add_pattern().unwrap();
+    assert_eq!(p.pattern(a).unwrap().name(), 'A');
+    let (c, _) = p.copy_pattern(0).unwrap();
+    assert_eq!(p.pattern(c).unwrap().name(), 'C');
+    assert_eq!(letters(&p), "BCA");
+}
+
+#[test]
+fn renaming_refuses_what_is_not_a_capital_letter() {
+    let mut p = Project::new();
+    assert_eq!(p.rename_pattern(0, 'a'), Err(Refused::OutOfRange));
+    assert_eq!(p.rename_pattern(0, '1'), Err(Refused::OutOfRange));
+    assert_eq!(p.rename_pattern(1, 'B'), Err(Refused::OutOfRange));
+    assert_eq!(letters(&p), "A");
+}
+
+#[test]
+fn renamed_letters_survive_saving_and_loading() {
+    let mut p = Project::new();
+    let (b, _) = p.add_pattern().unwrap();
+    on(&mut p, b, 1, 2);
+    p.song_append(b).unwrap();
+    p.rename_pattern(b, 'Z').unwrap();
+    p.rename_pattern(0, 'M').unwrap();
+    let loaded = from_json(&to_json(&p)).unwrap();
+    assert_eq!(letters(&loaded), "MZ");
+    assert_eq!(song_letters(&loaded), "MZ");
+    assert_eq!(loaded.pattern(1).unwrap().velocity(1, 2), DEFAULT_VELOCITY);
+    // Loading puts each pattern in its letter's slot.
+    assert_eq!(loaded.pattern(1).unwrap().slot(), 25);
+}

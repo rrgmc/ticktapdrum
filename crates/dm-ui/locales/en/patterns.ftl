@@ -9,6 +9,10 @@ patterns-keep = Cancel
 patterns-new = New
 # Adds a copy of the pattern being edited.
 patterns-copy = Copy
+# Gives the pattern being edited another letter.
+patterns-rename = Rename
+# $name is the pattern's letter, such as A. Shown above one button per letter, A to Z.
+patterns-rename-question = Choose a new letter for pattern { $name }. If another pattern has that letter, the two swap letters.
 
 ## What adding a pasted drum tab did, shown in the menu, and why a tab was not added, shown in the
 ## Paste a drum tab dialog. A tab's bars are its measures.

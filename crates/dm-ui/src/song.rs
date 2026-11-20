@@ -7,7 +7,7 @@
 //! pattern and playing the song at the top ([`SongRow::mode_contents`]), the play order at the
 //! end ([`SongRow::order_contents`]).
 
-use dm_project::{Project, slot_name};
+use dm_project::Project;
 use egui::{RichText, Vec2};
 
 use crate::patterns::tile;
@@ -116,7 +116,7 @@ impl SongRow {
             }
             for (entry, &slot) in song.iter().enumerate() {
                 let selected = self.selected == Some(entry);
-                let response = tile(ui, selected, &slot_name(slot).to_string());
+                let response = tile(ui, selected, &project.slot_name(slot).to_string());
                 if playing_entry == Some(entry) {
                     ui.painter().rect_stroke(
                         response.rect,
@@ -132,7 +132,7 @@ impl SongRow {
         });
 
         if let Some(entry) = self.selected {
-            let name = slot_name(song[entry]).to_string();
+            let name = project.slot_name(song[entry]).to_string();
             ui.label(text(tr!("song-take-out-keeps", name = name)));
             ui.horizontal_wrapped(|ui| {
                 if ui

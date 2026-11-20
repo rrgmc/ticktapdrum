@@ -294,7 +294,7 @@ the beat.
 | Button | What a tap does |
 |---|---|
 | **Play** | Starts and stops. In song mode it reads "Play song". |
-| **A ▾** | Opens the pattern pop-up, which edits the patterns and the song: the switch between playing the pattern and playing the song; one large tile per pattern, "New", "Copy" and "Delete"; then the song's play order, "Add A" and Repeat. Choosing a pattern leaves it open. |
+| **A ▾** | Opens the pattern pop-up, which edits the patterns and the song: the switch between playing the pattern and playing the song; one large tile per pattern, "New", "Copy", "Rename" and "Delete"; then the song's play order, "Add A" and Repeat. Choosing a pattern leaves it open. |
 | **◀ Bar 1 of 4 ▶** | The arrows move one screen of steps back or forward. The label opens the bar pop-up: the bar thumbnails, add a bar, remove the last bar (it asks first), copy the bar, and Follow. |
 | **♩ 120** | Opens the tempo pop-up: large − and + buttons, a slider, and Swing. |
 | **▂▄▆** | Step levels: moves to the next choice of what a tap on a step does (see "Steps and loudness"). |
@@ -335,6 +335,13 @@ the beat.
   out, "Add" for the pattern being edited, and Repeat at the end. It is small enough to share
   the pop-up with the patterns. While the song plays, the pattern button shows the pattern being
   heard. Checked on the Android phone by screenshot, in Portuguese.
+- **A pattern's letter can be changed** (2026-11-20). "Rename" in the pattern pop-up opens a
+  window with a button per letter, A to Z. Choosing a letter another pattern has swaps the two
+  letters. The letter is kept apart from the pattern's engine slot, so renaming changes nothing
+  that plays and the song keeps its patterns under their new letters. New and Copy take the
+  first letter no pattern has. A saved file still names patterns by letter, and loading puts
+  each pattern in its letter's slot. Checked on the Android emulator by screenshot: renaming A
+  to B swapped the two in the tiles and in the song, and Undo brought them back.
 - **Two kinds of pop-up, both from egui 0.37 itself.** A small pop-up opens under its button
   (`egui::Popup`): patterns, bars, tempo, a row's settings. A larger dialog sits in the middle
   of the screen over a dimmed grid (`egui::Modal`): Sounds, and the menu's Save as, Open,

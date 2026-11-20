@@ -269,7 +269,7 @@ fn zero_or_too_many_patterns_are_refused() {
         "the project has no patterns",
     );
     let patterns: Vec<Value> = (0..27)
-        .map(|i| serde_json::json!({ "id": slot_name(i).to_string() }))
+        .map(|i| serde_json::json!({ "id": crate::letter(i).to_string() }))
         .collect();
     assert_invalid(
         &example_with("patterns", patterns.into()),
