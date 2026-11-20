@@ -45,6 +45,8 @@ const PICTURE_NAME_SIZE: f32 = 12.0;
 const FLASH_SECONDS: f64 = 0.3;
 /// How faded a drum on offer is drawn.
 const OFFERED_FADE: f32 = 0.45;
+/// How strong the highlight behind a drum on offer is.
+const OFFERED_BAND: f32 = 0.22;
 
 /// The width of the column of row names for this way of labelling `project`'s rows and the
 /// drums on offer, `offered`, in a grid `width` points wide with rows `row_height` points tall
@@ -389,6 +391,17 @@ impl Grid {
     ) {
         for (i, drum) in offered.rows().iter().enumerate() {
             let rect = layout.label_rect(first + i);
+            // A faint highlight behind the whole row, name and steps, drawn first so both sit
+            // on it. It sets the drums on offer apart from the project's rows.
+            let band = Rect::from_min_max(
+                Pos2::new(layout.labels.min.x, rect.min.y - GAP / 2.0),
+                Pos2::new(layout.cells.max.x, rect.max.y + GAP / 2.0),
+            );
+            ui.painter().rect_filled(
+                band,
+                CornerRadius::same(6),
+                ui.visuals().selection.bg_fill.gamma_multiply(OFFERED_BAND),
+            );
             let width = REMOVE_WIDTH.min(rect.width() / 2.0);
             let remove_rect = Rect::from_min_max(
                 egui::pos2(rect.right() - width, rect.top()),
