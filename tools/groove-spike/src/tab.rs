@@ -233,12 +233,8 @@ fn add_system(
         let same = column.iter().all(|&w| w == width);
         let mut fixed = width;
         if same && !STANDARD.contains(&width) {
-            let all = |f: &dyn Fn(&Vec<char>) -> bool| {
-                system
-                    .iter()
-                    .filter_map(|l| l.bars.get(b))
-                    .all(|bar| f(bar))
-            };
+            let all =
+                |f: &dyn Fn(&Vec<char>) -> bool| system.iter().filter_map(|l| l.bars.get(b)).all(f);
             if STANDARD.contains(&(width - 1)) && all(&|bar| is_rest(bar[0])) {
                 for line in &mut system {
                     if let Some(bar) = line.bars.get_mut(b) {
@@ -860,6 +856,9 @@ impl TabReport {
     }
 }
 
+/// A summary line: its name, and which tabs it counts.
+type Check<'a> = (&'a str, &'a dyn Fn(&TabReport) -> bool);
+
 /// Prints totals over many tabs.
 pub fn print_summary(results: &[TabReport], failed: &[(PathBuf, String)]) {
     let n = results.len();
@@ -873,7 +872,7 @@ pub fn print_summary(results: &[TabReport], failed: &[(PathBuf, String)]) {
         let c = count(&|r| r.verdict() == v);
         println!("  {v:?}: {c} ({:.1}%)", pct(c));
     }
-    let lines: [(&str, &dyn Fn(&TabReport) -> bool); 13] = [
+    let lines: [Check; 13] = [
         ("no system found", &|r| r.systems == 0),
         ("with guitar systems skipped", &|r| r.guitar_systems > 0),
         ("with misaligned systems", &|r| r.misaligned > 0),
