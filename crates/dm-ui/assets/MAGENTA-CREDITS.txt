@@ -1,0 +1,14 @@
+magenta-grooves.json holds 25 drum grooves from the Groove MIDI Dataset.
+
+Groove MIDI Dataset, by Google Magenta.
+Jon Gillick, Adam Roberts, Jesse Engel, Douglas Eck and David Bamman. "Learning to Groove with
+Inverse Sequence Transformations." International Conference on Machine Learning (ICML), 2019.
+https://magenta.tensorflow.org/datasets/groove
+
+Licensed under the Creative Commons Attribution 4.0 International licence (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+
+Changes made for TickTapDrum: only some beats were chosen, up to three per style; each keeps at
+most its first four bars; the drummers' timing was moved onto a grid of 16 steps per bar, and
+the Roland TD-11 drum keys were mapped to General MIDI. The choice is made by
+crates/dm-groove/examples/curate_magenta.rs.

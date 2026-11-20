@@ -119,3 +119,25 @@ fn import_leaves_out_drums_without_room_for_a_row() {
     assert_eq!(added.drums_left_out, 1);
     assert_eq!(p.rows().len(), MAX_ROWS);
 }
+
+#[test]
+fn a_new_project_from_imported_bars_has_them_as_pattern_a() {
+    let bars = vec![bar(&[(42, 2)]), bar(&[(42, 2), (36, 8)])];
+    let (project, imported) = Project::from_imported(&bars, 95.0).unwrap();
+    assert_eq!(imported.index, 0);
+    assert_eq!(imported.bars, 2);
+    assert_eq!(project.patterns().len(), 1);
+    let pattern = &project.patterns()[0];
+    assert_eq!(pattern.name(), 'A');
+    assert_eq!(pattern.bars(), 2);
+    assert_eq!(project.song(), &[pattern.slot()]);
+    assert_eq!(project.tempo, 95.0);
+    // The kick is row 0; it plays on 1 in both bars and on 3 in the second.
+    assert!(pattern.velocity(0, 0) > 0);
+    assert!(pattern.velocity(0, STEPS_PER_BAR + 8) > 0);
+    assert_eq!(pattern.velocity(0, 8), 0);
+    assert_eq!(
+        Project::from_imported(&[], 95.0).map(|_| ()),
+        Err(Refused::OutOfRange)
+    );
+}

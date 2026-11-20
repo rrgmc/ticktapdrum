@@ -142,4 +142,24 @@ impl Project {
             changes,
         ))
     }
+
+    /// A new project whose only pattern, A, holds `bars`, read as
+    /// [`Project::add_imported_pattern`] reads them, at `bpm`. Everything else is as in
+    /// [`Project::new`]. Refused with [`Refused::OutOfRange`] when there are no bars.
+    pub fn from_imported(bars: &[Vec<BarHit>], bpm: f32) -> Result<(Project, Imported), Refused> {
+        let mut project = Project::new();
+        let (imported, _) = project.add_imported_pattern(bars)?;
+        // The new pattern takes the place and the engine slot of the empty pattern A.
+        let mut pattern = project.patterns.remove(imported.index);
+        pattern.slot = project.patterns[0].slot;
+        project.patterns[0] = pattern;
+        project.tempo = bpm;
+        Ok((
+            project,
+            Imported {
+                index: 0,
+                ..imported
+            },
+        ))
+    }
 }
