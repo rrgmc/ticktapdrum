@@ -175,6 +175,12 @@ pub use offline::{OfflineRender, write_wav, write_wav_to};
 /// How long a drum hit may sound before the renderer sends its note-off.
 pub const RING_SECONDS: f32 = 4.0;
 
+/// How long after a hit MIDI out sends its note-off. Drum modules play the whole sound anyway,
+/// but some devices hold a voice until the note-off comes. A keyboard that got note-ons with no
+/// note-offs for a few seconds went silent while the beat played; see "Milestone 9: MIDI out" in
+/// `docs/DESIGN.md`.
+pub const MIDI_NOTE_SECONDS: f32 = 0.1;
+
 /// The most drum rows a project can have. All patterns share the rows.
 pub const MAX_ROWS: usize = 32;
 /// The most steps a pattern can loop over: 16 bars of 16 steps.
@@ -1149,9 +1155,13 @@ pub(crate) struct Renderer {
     read: usize,
     /// Frames rendered since the start, counted at block boundaries.
     clock: u64,
-    /// For each key, the frame at which its note-off is due, or `NO_NOTE_OFF`.
+    /// For each key, the frame at which the synthesizer's note-off is due, or `NO_NOTE_OFF`.
     note_off_at: [u64; 128],
     ring_frames: u64,
+    /// For each key, the frame at which MIDI out's note-off is due, or `NO_NOTE_OFF`. Kept apart
+    /// from `note_off_at` because MIDI notes end much sooner; see [`MIDI_NOTE_SECONDS`].
+    midi_off_at: [u64; 128],
+    midi_note_frames: u64,
     sample_rate: f64,
     /// The sending end of the MIDI queue.
     midi: rtrb::Producer<MidiEvent>,
@@ -1203,6 +1213,8 @@ impl Renderer {
             clock: 0,
             note_off_at: [NO_NOTE_OFF; 128],
             ring_frames: (RING_SECONDS * sample_rate as f32) as u64,
+            midi_off_at: [NO_NOTE_OFF; 128],
+            midi_note_frames: (MIDI_NOTE_SECONDS * sample_rate as f32) as u64,
             sample_rate: f64::from(sample_rate),
             midi,
             midi_events: Some(midi_events),
@@ -1297,6 +1309,8 @@ impl Renderer {
             synth,
             note_off_at,
             ring_frames,
+            midi_off_at,
+            midi_note_frames,
             midi,
             ..
         } = self;
@@ -1308,7 +1322,14 @@ impl Renderer {
                 synth.note_on(DRUM_CHANNEL, i32::from(key), i32::from(velocity));
                 note_off_at[usize::from(key.min(127))] = now + *ring_frames;
                 if let Some(at) = at {
-                    push_midi(midi, at, [MIDI_NOTE_ON, key, velocity], 3);
+                    midi_note_on(
+                        midi,
+                        midi_off_at,
+                        at,
+                        now + *midi_note_frames,
+                        key,
+                        velocity,
+                    );
                 }
             },
         );
@@ -1316,7 +1337,12 @@ impl Renderer {
             if *due <= now {
                 self.synth.note_off(DRUM_CHANNEL, key as i32);
                 *due = NO_NOTE_OFF;
-                if let Some(at) = at {
+            }
+        }
+        if let Some(at) = at {
+            for (key, due) in self.midi_off_at.iter_mut().enumerate() {
+                if *due <= now {
+                    *due = NO_NOTE_OFF;
                     push_midi(&mut self.midi, at, [MIDI_NOTE_OFF, key as u8, 0], 3);
                 }
             }
@@ -1358,7 +1384,8 @@ impl Renderer {
             self.send_midi([MIDI_PROGRAM_CHANGE, self.program, 0], 2);
         } else if self.midi_out {
             for key in 0..=127_u8 {
-                if self.note_off_at[usize::from(key)] != NO_NOTE_OFF {
+                if self.midi_off_at[usize::from(key)] != NO_NOTE_OFF {
+                    self.midi_off_at[usize::from(key)] = NO_NOTE_OFF;
                     self.send_midi([MIDI_NOTE_OFF, key, 0], 3);
                 }
             }
@@ -1387,13 +1414,43 @@ impl Renderer {
         }
     }
 
-    /// Starts a drum hit now and moves its key's note-off deadline.
+    /// Starts a drum hit now and moves its key's note-off deadlines.
     fn note_on(&mut self, key: u8, velocity: u8) {
         self.synth
             .note_on(DRUM_CHANNEL, i32::from(key), i32::from(velocity));
         self.note_off_at[usize::from(key.min(127))] = self.clock + self.ring_frames;
-        self.send_midi([MIDI_NOTE_ON, key, velocity], 3);
+        if self.midi_out {
+            let at = self.block_time();
+            let off = self.clock + self.midi_note_frames;
+            midi_note_on(
+                &mut self.midi,
+                &mut self.midi_off_at,
+                at,
+                off,
+                key,
+                velocity,
+            );
+        }
     }
+}
+
+/// Queues a MIDI note-on due at `at`, and sets the key's MIDI note-off to frame `off`. If the
+/// key's previous note has not ended yet, its note-off goes first, so the device never gets two
+/// note-ons for a key without a note-off between them.
+fn midi_note_on(
+    midi: &mut rtrb::Producer<MidiEvent>,
+    midi_off_at: &mut [u64; 128],
+    at: Instant,
+    off: u64,
+    key: u8,
+    velocity: u8,
+) {
+    let due = &mut midi_off_at[usize::from(key.min(127))];
+    if *due != NO_NOTE_OFF {
+        push_midi(midi, at, [MIDI_NOTE_OFF, key, 0], 3);
+    }
+    *due = off;
+    push_midi(midi, at, [MIDI_NOTE_ON, key, velocity], 3);
 }
 
 /// Queues the first `len` bytes of a MIDI message, due at `at`. The data bytes are kept in range
@@ -3104,6 +3161,39 @@ mod tests {
         events.iter().map(|e| e.message().to_vec()).collect()
     }
 
+    /// The bytes of each message that is not a note-off.
+    fn without_note_offs(events: &[MidiEvent]) -> Vec<Vec<u8>> {
+        messages(events)
+            .into_iter()
+            .filter(|m| m[0] != MIDI_NOTE_OFF)
+            .collect()
+    }
+
+    /// Checks that no key gets a second note-on before a note-off.
+    fn assert_note_offs_between(events: &[MidiEvent]) {
+        let mut sounding = [false; 128];
+        for (i, event) in events.iter().enumerate() {
+            let message = event.message();
+            let key = usize::from(message.get(1).copied().unwrap_or(0));
+            match message[0] {
+                MIDI_NOTE_ON => {
+                    assert!(
+                        !sounding[key],
+                        "message {i}: note-on for sounding key {key}"
+                    );
+                    sounding[key] = true;
+                }
+                MIDI_NOTE_OFF => sounding[key] = false,
+                _ => {}
+            }
+        }
+    }
+
+    /// How long MIDI out lets a note sound, as the renderer counts it.
+    fn midi_note(renderer: &Renderer) -> Duration {
+        Duration::from_secs_f64(renderer.midi_note_frames as f64 / f64::from(RATE))
+    }
+
     /// A renderer with the MIDI queue taken out, row 0 on `key` and pattern 0 four steps long.
     fn midi_renderer(font: &Arc<SoundFont>, key: u8) -> (Commands, Renderer, MidiEvents) {
         let (mut commands, mut renderer) = Renderer::new(font, RATE).unwrap();
@@ -3138,9 +3228,13 @@ mod tests {
         assert!(out.iter().all(|&s| s == 0.0));
 
         let sent = midi_sent(&mut events);
+        // Each note ends before the next step, which comes later than the MIDI note length.
         let velocities = [100, 90, 80, 100, 90, 80];
         let mut expected = vec![vec![0xC9, 0]];
-        expected.extend(velocities.iter().map(|&v| vec![0x99, 36, v]));
+        for &v in &velocities {
+            expected.push(vec![0x99, 36, v]);
+            expected.push(vec![0x89, 36, 0]);
+        }
         assert_eq!(messages(&sent), expected);
 
         // The first message is due when the first block is heard, after the latency.
@@ -3148,17 +3242,24 @@ mod tests {
         assert!(sent[0].at >= before + latency && sent[0].at <= after + latency);
         assert_eq!(sent[1].at, sent[0].at);
         // Each step is due at the start of the block it fires in: the block holding its frame.
+        // Its note-off follows one MIDI note length later.
         let first = sent[0].at;
-        for (event, step) in sent[1..].iter().zip([0_u64, 1, 3, 4, 5, 7]) {
+        let note = midi_note(&renderer);
+        for (pair, step) in sent[1..].chunks(2).zip([0_u64, 1, 3, 4, 5, 7]) {
             let frame = step * 6000 / BLOCK * BLOCK;
             let expected = first + Duration::from_secs_f64(frame as f64 / f64::from(RATE));
-            let error = event.at.max(expected) - event.at.min(expected);
+            let error = pair[0].at.max(expected) - pair[0].at.min(expected);
             assert!(error < Duration::from_micros(1), "step {step}: {error:?}");
+            let error = (pair[1].at - pair[0].at).abs_diff(note);
+            assert!(
+                error < Duration::from_micros(1),
+                "step {step} note-off: {error:?}"
+            );
         }
     }
 
     #[test]
-    fn midi_out_sends_note_offs_at_the_deadline() {
+    fn midi_out_sends_note_offs_after_the_midi_note_length() {
         let font = soundfont_or_skip!();
         let (mut commands, mut renderer, mut events) = midi_renderer(&font, 36);
         commands.send(Command::SetMidiOut { on: true });
@@ -3171,9 +3272,65 @@ mod tests {
             messages(&sent),
             [vec![0xC9, 0], vec![0x99, 42, 100], vec![0x89, 42, 0]]
         );
-        let ring = Duration::from_secs_f64(renderer.ring_frames as f64 / f64::from(RATE));
-        let error = (sent[2].at - sent[1].at).abs_diff(ring);
+        let error = (sent[2].at - sent[1].at).abs_diff(midi_note(&renderer));
         assert!(error < Duration::from_micros(1), "{error:?}");
+        // The synthesizer's own note-off still waits for the whole ring.
+        assert!(renderer.midi_note_frames < renderer.ring_frames);
+    }
+
+    #[test]
+    fn midi_out_ends_a_note_before_the_same_key_sounds_again() {
+        let font = soundfont_or_skip!();
+        let (mut commands, mut renderer, mut events) = midi_renderer(&font, 36);
+        commands.send(Command::SetMidiOut { on: true });
+        commands.hit(42, 100);
+        let mut out = vec![0.0_f32; 2 * 640];
+        renderer.render(&mut out, 2);
+        // Sooner than the MIDI note length: the first note is still sounding.
+        commands.hit(42, 90);
+        renderer.render(&mut out, 2);
+        let sent = midi_sent(&mut events);
+        assert_eq!(
+            messages(&sent),
+            [
+                vec![0xC9, 0],
+                vec![0x99, 42, 100],
+                vec![0x89, 42, 0],
+                vec![0x99, 42, 90],
+            ]
+        );
+        assert_eq!(sent[2].at, sent[3].at);
+        assert_note_offs_between(&sent);
+    }
+
+    #[test]
+    fn a_steady_beat_keeps_ending_its_midi_notes() {
+        let font = soundfont_or_skip!();
+        let (mut commands, mut renderer, mut events) = midi_renderer(&font, 42);
+        // A hi-hat on every step, sooner than the synthesizer's ring. Before the fix, MIDI out
+        // sent no note-off at all while this played.
+        for step in 0..4 {
+            commands.send(Command::step(0, 0, step, 80).unwrap());
+        }
+        commands.send(Command::SetMidiOut { on: true });
+        commands.send(Command::PlayPattern {
+            pattern: 0,
+            from: 0,
+        });
+        let mut out = vec![0.0_f32; 2 * 16 * 6000];
+        renderer.render(&mut out, 2);
+        let sent = midi_sent(&mut events);
+        let ons = sent
+            .iter()
+            .filter(|e| e.message()[0] == MIDI_NOTE_ON)
+            .count();
+        let offs = sent
+            .iter()
+            .filter(|e| e.message()[0] == MIDI_NOTE_OFF)
+            .count();
+        assert_eq!(ons, 16);
+        assert_eq!(offs, 16);
+        assert_note_offs_between(&sent);
     }
 
     #[test]
@@ -3216,7 +3373,8 @@ mod tests {
         commands.send(Command::SetMidiOut { on: true });
         commands.hit(42, 100);
         commands.hit(49, 100);
-        let mut out = vec![0.0_f32; 2 * 4800];
+        // Shorter than the MIDI note length, so both notes still sound.
+        let mut out = vec![0.0_f32; 2 * 2400];
         renderer.render(&mut out, 2);
         assert!(out.iter().all(|&s| s == 0.0));
         assert_eq!(midi_sent(&mut events).len(), 3);
@@ -3522,7 +3680,9 @@ mod tests {
         commands.send(Command::SetMidiOut { on: true });
         let mut out = vec![0.0_f32; 2 * 8 * 6000];
         renderer.render(&mut out, 2);
-        let sent = messages(&midi_sent(&mut events));
+        let sent = midi_sent(&mut events);
+        assert_note_offs_between(&sent);
+        let sent = without_note_offs(&sent);
         assert_eq!(
             sent,
             [

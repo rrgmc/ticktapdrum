@@ -856,8 +856,9 @@ switches.
   as a stub that offers no outputs, and the menu item does not show.
 - **The audio thread never calls a MIDI API**, because those calls can block. Where the sequencer
   calls `synth.note_on`, it also pushes the note into a second `rtrb` queue, with its frame time.
-  A MIDI thread reads that queue and sends each message when it falls due. Note-offs come from the
-  same deadlines the synthesizer uses (`note_off_at`).
+  A MIDI thread reads that queue and sends each message when it falls due. MIDI note-offs have
+  deadlines of their own, 100 ms after each hit (`midi_off_at`, `MIDI_NOTE_SECONDS`), apart from
+  the synthesizer's 4-second ring; see "Hits need their own note-offs" below.
 - **The frame time becomes a wall-clock time** from the audio stream's own timestamps (cpal
   reports when each block will be heard). Then MIDI and internal sound stay in step.
 - **The MIDI thread waits until each message is due.** midir sends at once on every platform: it
@@ -900,10 +901,23 @@ switches.
   GS Wavetable Synth: every message went out 0.08 to 0.71 ms after its due time (median 0.36 ms),
   and none early. The `send` example gave the same picture over 16 bars (maximum 0.84 ms). This
   measures when the message reaches WinMM, not when sound leaves the synthesizer.
-- **One note-off per key.** The engine keeps one note-off deadline per key, and a new hit on the
-  same key moves it. So a hi-hat on every step sends many note-ons and one note-off at the end.
-  General MIDI drum sounds ignore note-off, so this is fine for drum modules; a melodic patch on
-  channel 10 would hold the note.
+- **Hits need their own note-offs.** At first MIDI out used the synthesizer's note-off deadline:
+  one per key, 4 seconds after the key's last hit, moved by each new hit. So a sound played at
+  least every 4 seconds got no note-off while the beat played. That was assumed harmless, since
+  General MIDI drum sounds ignore note-off. It is not. A hardware arranger keyboard went fully
+  silent about 18 to 20 seconds into a beat, both from a Mac through a Bluetooth LE MIDI adapter
+  and from an iPad over a cable. A throwaway probe reproduced it on the Mac: the same beat with
+  note-offs 4 seconds late went silent at the same point while the messages kept going out, and
+  with a note-off 100 ms after every hit it played for a full minute. Probably the keyboard keeps
+  a voice for each note that has not ended, and runs out of them; that was not confirmed. Now
+  MIDI out sends each note-off 100 ms after its hit, and a repeat hit on a key whose note has not
+  ended sends that note-off first. The synthesizer keeps its 4-second ring.
+- **Listened to on macOS, after that fix.** The `engine` example played its beat through the real
+  audio engine to the same keyboard, through the Bluetooth adapter, for 90 seconds, and the user
+  heard it play throughout. It sent 542 note-ons, 542 note-offs and 2 program changes. Messages
+  went out a median of 0.37 ms after their due time (95th percentile 0.89 ms, worst 1.0 ms). Then
+  the user played the desktop app to the keyboard, and everything played well. A release build with the fix also worked from the
+  iPad over a cable.
 - **Notices.** Messages in the menu's status line are seen only when ☰ opens, so MIDI messages
   also show for four seconds as a line at the bottom of the screen.
 - **WinMM truncates port names** to 31 characters. Listing and connecting see the same truncated
@@ -925,10 +939,9 @@ switches.
   virtual port only when the port existed before the listener started, probably because it has
   no run loop to receive CoreMIDI's notifications. The app has an event loop, so its list should
   refresh, but that was not checked.
-- **Not checked:** an external MIDI device or another program as the output; unplugging and
-  replugging a USB device while connected; a port held by another program. On macOS: any sound,
-  the "MIDI output" dialog by hand, choosing None or another output, the IAC bus, and the list
-  picking up a port added while the app runs. iOS was compiled but not run. Linux has not even
+- **Not checked:** another program as the output; unplugging and
+  replugging a USB device while connected; a port held by another program. On macOS: the "MIDI output" dialog by hand, choosing None or another output, the IAC bus, and the list
+  picking up a port added while the app runs. On iOS, only a cable to the keyboard was tried. Linux has not even
   been compiled. On Linux, ALSA port names include client numbers, which may change when a device
   is plugged in again and break reconnecting by name.
 
