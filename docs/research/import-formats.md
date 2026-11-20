@@ -12,7 +12,9 @@ The app's model, from `DESIGN.md`, limits what any import can keep:
 
 - 4/4 only, 16 steps per bar. Triplets and finer timing have no place on the grid.
 - Rows are General MIDI drum sounds. One kit applies to the whole project.
-- A step is off, soft or loud. Velocity has three levels, not 128.
+- A tap sets a step off, soft or loud, but a step stores any velocity from 1 to 127, so an
+  import keeps velocities as they are. (Corrected by the
+  [groove import spike](groove-import-spike.md); this line first said velocity has three levels.)
 - A project holds named patterns (A, B, C) and a song, which is an ordered list of patterns.
 - One swing value applies to the whole song.
 
@@ -41,8 +43,9 @@ MIDI has the largest library by far. It comes in two kinds.
 
 - Google Magenta's **Groove MIDI Dataset (GMD)** holds 1,150 MIDI files, about 13.6 hours and
   22,000 bars, played by real drummers on an electronic kit. The MIDI-only download is about
-  3 MB. Its licence is CC BY 4.0 according to a mirror; the Magenta page was not read in full, so
-  this is *unverified*.
+  3 MB. Its licence is CC BY 4.0, confirmed on the Magenta page by the
+  [groove import spike](groove-import-spike.md). Its drum keys follow a Roland TD-11 layout, not
+  General MIDI.
   ([Magenta](https://magenta.tensorflow.org/datasets/groove),
   [TensorFlow catalogue](https://www.tensorflow.org/datasets/catalog/groove))
 - The **Expanded Groove MIDI Dataset (E-GMD)** has 444 hours of audio over 43 kits, with
@@ -68,7 +71,7 @@ Both GMD and E-GMD are free to use as test data under CC BY 4.0, with attributio
 
 - Notes on channel 10 use General MIDI drum numbers, which are already the app's rows. The app's
   MIDI export uses the same mapping in reverse.
-- Velocity maps to soft or loud by a threshold.
+- Velocity is kept as it is.
 - A program change on channel 10 picks the kit. Without one, keep the current kit.
 - Tempo comes from the first tempo event. Later tempo changes are dropped with a warning.
 - Notes snap to the nearest 16th. Notes that land far from any 16th (triplets, flams, rolls) are
@@ -172,7 +175,7 @@ share of real tabs would not parse cleanly. *Unverified*: no survey of tab style
 
 1. **MIDI import, aimed at groove packs first.** Short 4/4 loops in 16ths fit the grid as they
    are, the library is the largest, and the note mapping already exists in export. Use GMD as test
-   data.
+   data. The [groove import spike](groove-import-spike.md) tested this on about 2,000 files.
 2. **Then song MIDI**, with the bar split and pattern reuse above, and a report of what was
    rounded or dropped.
 3. **Guitar Pro 3 to 5 later**, if users want to play along with songs. It reuses the same
@@ -181,8 +184,8 @@ share of real tabs would not parse cleanly. *Unverified*: no survey of tab style
 
 ## Open questions
 
-- Where the soft and loud velocity threshold should sit, and whether it should adapt to each
-  file's velocity range.
+- Whether quiet files, such as GMD with 65% of notes below velocity 80, should be scaled up so
+  the grid does not draw most of their notes as soft.
 - Whether a song import with dozens of near-identical patterns is usable, or whether import should
   merge bars that differ by only a few steps.
 - How import is offered on Android, which has the file picker from milestone 10.

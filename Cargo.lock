@@ -1698,6 +1698,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "groove-spike"
+version = "1.0.0-rc.1"
+dependencies = [
+ "dm-audio",
+ "dm-project",
+ "midly",
+ "rustysynth",
+]
+
+[[package]]
 name = "guillotiere"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2143,6 +2153,12 @@ dependencies = [
  "web-sys",
  "windows",
 ]
+
+[[package]]
+name = "midly"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "207d755f4cb882d20c4da58d707ca9130a0c9bc5061f657a4f299b8e36362b7a"
 
 [[package]]
 name = "miniz_oxide"
