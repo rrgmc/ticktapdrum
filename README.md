@@ -77,6 +77,25 @@ The app keeps the bank, your projects and the autosave in its data folder:
 
 On iPhone and iPad, exported files appear in the Files app, under **On My iPhone > TickTapDrum**.
 
+## MIDI out
+
+Choose a device or program under **☰ > Settings > MIDI output**. The app's own sound goes quiet,
+and the beat plays on the device instead. Choose **None** to hear the app again.
+
+A device connected by cable shows in the list by itself. A Bluetooth MIDI device must first be
+connected through the system:
+
+- **macOS:** open **Audio MIDI Setup**, choose **Window > Show MIDI Studio**, click the Bluetooth
+  button, and connect the device.
+- **Windows 11:** Windows does not connect Bluetooth MIDI devices by itself yet. Install the
+  **Tools** and **Transports** downloads from Microsoft's
+  [Windows MIDI Services releases](https://github.com/microsoft/MIDI/releases). They are a
+  preview, and need Windows 11 version 25H2 or later. Then open **Windows MIDI Bluetooth Setup**
+  and click **Connect** next to your device.
+
+A Bluetooth MIDI device can talk to only one phone or computer at a time. If it does not appear,
+disconnect it from your phone or tablet first.
+
 ## Author
 
 Rangel Reale ([realerangel@gmail.com](mailto:realerangel@gmail.com))
