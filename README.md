@@ -8,6 +8,8 @@ at that moment. It runs on Windows, macOS, Linux, Android, iPhone and iPad.
   <img src="docs/images/android.png" alt="TickTapDrum on an Android phone, with the Rock beat in the grid" height="360">
 </p>
 
+![TickTapDrum on an iPad, with the Rock beat in the grid](docs/images/ipad.png)
+
 ## What it does
 
 - **A grid of steps.** Each row is a drum, such as kick, snare or hi-hat. Each box is a moment in
