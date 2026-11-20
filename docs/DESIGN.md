@@ -1588,9 +1588,10 @@ there; see "Android, later".
   (`dm-groove`, `snap`).
 - **Recording only adds notes.** A hit on a step already on keeps the louder of the two levels.
   Removing notes stays a tap on the grid. One take, from Play to Stop, undoes as one step.
-- **Velocity sets the level.** A light hit makes a soft step, a middling one a normal step, and a
-  hard one a loud step. The step levels button moves up to show the levels the take used, as a
-  beat to start from does. The thresholds are set by ear on a real keyboard.
+- **Velocity sets the level, soft or normal.** A hit below velocity 64 makes a soft step, any other
+  a normal one. Recording never makes a loud step: on the PSR-SX720 even hard hits seldom passed
+  100, so the user could not reach loud. Loud stays a tap on the grid, and a loud step stays loud.
+  The step levels button moves up to show soft when a take used it.
 - **A key flashes its row,** recording or not: the row's name lights up for a moment, so the
   player sees which drum each key is.
 - **A key with no row is offered, not added.** It shows as an inactive row under the others: faded,
