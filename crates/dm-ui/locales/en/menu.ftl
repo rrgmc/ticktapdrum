@@ -30,6 +30,8 @@ menu-song = Song
 menu-export = Export
 # Locks the screen in landscape orientation.
 menu-landscape = Keep in landscape
+# Shows the bars as small pictures under the buttons all the time.
+menu-bar-line = Show bars under the buttons
 # A simpler version of the app: one pattern, no song.
 menu-basic = Basic mode
 menu-language = Language

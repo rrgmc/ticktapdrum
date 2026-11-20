@@ -2,7 +2,8 @@
 //!
 //! The thumbnails and commands open in a pop-up from the bar label in the top strip. Tapping a
 //! thumbnail shows that bar in the grid and leaves the pop-up open. The thumbnails wrap onto
-//! more lines.
+//! more lines. A setting can also show the thumbnails all the time, under the strip, on one line
+//! that scrolls sideways.
 //!
 //! "Remove last bar" asks first, in a window of its own, and then deletes the bar with its
 //! notes. Nothing is kept hidden for later: a bar that is gone is gone, which is easier to
@@ -36,6 +37,9 @@ pub(crate) struct BarStrip {
     /// "Remove last bar" asks first, in a window of its own (see [`BarStrip::confirm`]). Holds
     /// the number of the bar asked about, counting from 1.
     asking_remove: Option<usize>,
+    /// The first bar the grid showed last frame, so the line of thumbnails scrolls to it only
+    /// when it changes and leaves a sideways scroll by hand alone otherwise.
+    last_shown: Option<usize>,
 }
 
 impl BarStrip {
@@ -53,22 +57,9 @@ impl BarStrip {
         let mut events = Vec::new();
         ui.set_width(crate::patterns::popup_width(ui, POPUP_MAX_WIDTH));
 
+        // The pop-up stays open, so several bars can be looked at in turn.
         ui.horizontal_wrapped(|ui| {
-            for bar in 0..pattern.bars() {
-                let selected = shown.contains(&bar);
-                let response = thumbnail(
-                    ui,
-                    pattern,
-                    bar,
-                    POPUP_THUMB,
-                    selected,
-                    playing_bar == Some(bar),
-                );
-                // The pop-up stays open, so several bars can be looked at in turn.
-                if response.clicked() {
-                    events.push(BarEvent::Select(bar));
-                }
-            }
+            thumbnails(ui, pattern, &shown, playing_bar, None, &mut events);
         });
         ui.separator();
 
@@ -113,6 +104,30 @@ impl BarStrip {
         events
     }
 
+    /// The thumbnails on one line under the strip, scrolling sideways when they do not fit. The
+    /// line scrolls to the bars the grid shows whenever those change, such as while following
+    /// the music.
+    pub(crate) fn line(
+        &mut self,
+        ui: &mut egui::Ui,
+        pattern: &Pattern,
+        shown: std::ops::Range<usize>,
+        playing_bar: Option<usize>,
+    ) -> Vec<BarEvent> {
+        let mut events = Vec::new();
+        let moved = self.last_shown.replace(shown.start) != Some(shown.start);
+        egui::ScrollArea::horizontal()
+            .id_salt("bar-line")
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let scroll_to = moved.then_some(shown.start);
+                    thumbnails(ui, pattern, &shown, playing_bar, scroll_to, &mut events);
+                });
+            });
+        events
+    }
+
     /// The "Remove bar?" question, in a window of its own. Call it every frame; it shows only
     /// while the question is asked, and only while `bars`, the pattern's bar count, still matches
     /// the bar asked about.
@@ -139,6 +154,34 @@ impl BarStrip {
         events
     }
 }
+/// One thumbnail per bar of `pattern`, laid out by `ui`. A tap on one sends [`BarEvent::Select`].
+/// `scroll_to` names a bar to scroll into view.
+fn thumbnails(
+    ui: &mut egui::Ui,
+    pattern: &Pattern,
+    shown: &std::ops::Range<usize>,
+    playing_bar: Option<usize>,
+    scroll_to: Option<usize>,
+    events: &mut Vec<BarEvent>,
+) {
+    for bar in 0..pattern.bars() {
+        let response = thumbnail(
+            ui,
+            pattern,
+            bar,
+            POPUP_THUMB,
+            shown.contains(&bar),
+            playing_bar == Some(bar),
+        );
+        if scroll_to == Some(bar) {
+            response.scroll_to_me(None);
+        }
+        if response.clicked() {
+            events.push(BarEvent::Select(bar));
+        }
+    }
+}
+
 /// One bar drawn small, `size` points: a dot per note, its number below.
 fn thumbnail(
     ui: &mut egui::Ui,

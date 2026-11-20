@@ -466,6 +466,17 @@ fn settings_items(
             p.row_labels.next(),
         )));
     }
+    // Outside basic mode, which has one bar only. It stays open, so the change can be seen.
+    if !p.basic
+        && ui
+            .add(
+                widgets::toggle_button(p.bar_line, icons::DOTS_THREE, &tr!("menu-bar-line"))
+                    .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+            )
+            .clicked()
+    {
+        events.push(MenuEvent::Project(ProjectEvent::BarLine(!p.bar_line)));
+    }
     if let Some(landscape) = p.landscape
         && ui
             .add(

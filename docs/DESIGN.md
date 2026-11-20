@@ -1295,6 +1295,15 @@ from a link, paste a drum tab, the groove list), hidden in basic mode, and **Set
 start closed and stay as left while the app runs. A section folds open inside the one scrolling
 list instead of opening a submenu beside it, which works the same with a finger and a mouse.
 
+## Bars under the buttons
+
+A setting, "Show bars under the buttons", shows the bar thumbnails from the bar pop-up all the
+time, on one line under the strip that scrolls sideways. A tap on a thumbnail shows that bar, as
+in the pop-up, and the line scrolls to the bars the grid shows whenever they change, such as
+while following the music. Until the person chooses, it is on for a desktop and for a screen
+whose short side is at least 600 points (a tablet), and off for a phone, which needs the room
+for the grid. Basic mode, with one bar, never shows it.
+
 ## Open questions
 
 None at present. The three earlier ones were researched in

@@ -88,6 +88,9 @@ pub struct DrumApp {
     basic: bool,
     /// How row names show: names, pictures and names, or pictures. A device setting.
     row_labels: pictures::RowLabels,
+    /// Whether the bar thumbnails show under the strip, or `None` until the person chooses,
+    /// when [`bar_line_default`] decides. A device setting.
+    bar_line: Option<bool>,
     grid: grid::Grid,
     bar_strip: bars::BarStrip,
     tabs: patterns::PatternTabs,
@@ -177,6 +180,7 @@ impl DrumApp {
         let language_choice = store.language();
         let system_language = i18n::system_language();
         let row_labels = store.row_labels();
+        let bar_line = store.bar_strip();
         let midi = midi::Midi::new(store.midi_output());
         // Only the names: reading the packs waits until the list opens.
         let has_grooves = !store.pack_keys().is_empty();
@@ -191,6 +195,7 @@ impl DrumApp {
             follow: true,
             basic,
             row_labels,
+            bar_line,
             grid: grid::Grid::default(),
             bar_strip: bars::BarStrip::default(),
             tabs: patterns::PatternTabs::default(),
@@ -691,6 +696,20 @@ impl DrumApp {
         };
         let strip = strip::ui(ui, &state);
         ui.add_space(4.0);
+        // The bar thumbnails, all the time, when the setting says so. Basic mode has one bar.
+        let bar_line = self.bar_line.unwrap_or_else(|| bar_line_default(ui.ctx()));
+        let line_events = if bar_line && !self.basic {
+            let events = self.bar_strip.line(
+                ui,
+                &self.project.patterns()[self.current],
+                shown.clone(),
+                playing_bar,
+            );
+            ui.add_space(4.0);
+            events
+        } else {
+            Vec::new()
+        };
 
         // The pop-ups under the strip's buttons.
         // The pattern pop-up edits the patterns and the song: what Play plays at the top, the
@@ -746,6 +765,7 @@ impl DrumApp {
         let mut pattern_events = pattern_events;
         pattern_events.extend(self.tabs.confirm(ui.ctx(), &self.project, self.current));
         let mut bar_events = bar_events;
+        bar_events.extend(line_events);
         let bars_now = self.project.patterns()[self.current].bars();
         bar_events.extend(self.bar_strip.confirm(ui.ctx(), bars_now));
         // With a picker, each export asks where to go, so there is no folder to name.
@@ -772,6 +792,7 @@ impl DrumApp {
                 landscape: self.orientation.is_some().then(|| self.store.landscape()),
                 basic: self.basic,
                 row_labels: self.row_labels,
+                bar_line,
             },
             hidden: strip.hidden,
             can_undo: self.history.can_undo(),
@@ -1225,6 +1246,12 @@ impl DrumApp {
                     }
                 }
                 ProjectEvent::PasteTab(text, options) => self.paste_tab(engine, &text, options),
+                ProjectEvent::BarLine(on) => {
+                    self.bar_line = Some(on);
+                    if let Err(e) = self.store.set_bar_strip(on) {
+                        log::warn!("the bar strip setting was not saved: {e}");
+                    }
+                }
                 ProjectEvent::RowLabels(labels) => {
                     self.row_labels = labels;
                     if let Err(e) = self.store.set_row_labels(labels) {
@@ -1723,4 +1750,15 @@ fn scaled(velocity: u8, percent: u8) -> u8 {
 /// frame, so it looks tappable when off.
 pub(crate) fn toggle<'a>(selected: bool, text: impl Into<egui::WidgetText>) -> egui::Button<'a> {
     egui::Button::new(text).selected(selected)
+}
+
+/// Whether the bar thumbnails show under the strip before the person chooses: on a desktop,
+/// and on a tablet, whose short side is at least 600 points. A phone keeps the room for the grid.
+fn bar_line_default(ctx: &egui::Context) -> bool {
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        let screen = ctx.content_rect();
+        screen.width().min(screen.height()) >= 600.0
+    } else {
+        true
+    }
 }

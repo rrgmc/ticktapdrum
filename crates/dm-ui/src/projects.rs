@@ -28,6 +28,8 @@ pub(crate) enum ProjectEvent {
     Basic(bool),
     /// Add the pasted drum tab as a new pattern, with what the person chose for reading it.
     PasteTab(String, dm_tab::Options),
+    /// Show the bar thumbnails under the strip all the time, or only in the bar pop-up.
+    BarLine(bool),
     /// Show row names as names, pictures and names, or pictures.
     RowLabels(crate::pictures::RowLabels),
 }
@@ -57,4 +59,6 @@ pub(crate) struct ProjectsView<'a> {
     pub(crate) basic: bool,
     /// How row names show in the grid.
     pub(crate) row_labels: crate::pictures::RowLabels,
+    /// Whether the bar thumbnails show under the strip.
+    pub(crate) bar_line: bool,
 }

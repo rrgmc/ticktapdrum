@@ -32,6 +32,9 @@ const LANGUAGE: &str = "language";
 const MIDI_OUTPUT: &str = "midi.output";
 /// Holds how row names show, when not as names.
 const ROW_LABELS: &str = "row.labels";
+/// Holds "on" or "off" for the bar strip under the buttons. Missing until the person chooses,
+/// when the screen's size decides.
+const BAR_STRIP: &str = "bar.strip";
 /// The extension of a pack's file in the groove list.
 const PACK_EXTENSION: &str = "json";
 /// A pack's file name when nothing is left of its own name once cleaned.
@@ -191,6 +194,21 @@ impl Store {
 
     pub(crate) fn set_landscape(&self, on: bool) -> Result<(), String> {
         self.set_flag(LANDSCAPE, on)
+    }
+
+    /// Whether the bar strip shows under the buttons, or `None` if the person has not chosen.
+    /// A device setting, not part of any project.
+    pub(crate) fn bar_strip(&self) -> Option<bool> {
+        match fs::read_to_string(self.dir.join(BAR_STRIP)).ok()?.trim() {
+            "on" => Some(true),
+            "off" => Some(false),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_bar_strip(&self, on: bool) -> Result<(), String> {
+        fs::create_dir_all(&self.dir).map_err(folder_error)?;
+        fs::write(self.dir.join(BAR_STRIP), if on { "on" } else { "off" }).map_err(write_error)
     }
 
     /// Whether the app is in basic mode. A device setting, not part of any project.
@@ -552,6 +570,16 @@ mod tests {
         assert_eq!(name.as_deref(), Some("Song 1"));
         store.autosave(&p, None).unwrap();
         assert_eq!(store.restore().unwrap().1, None);
+    }
+
+    #[test]
+    fn the_bar_strip_is_unchosen_until_set() {
+        let store = temp_store("bar-strip");
+        assert_eq!(store.bar_strip(), None);
+        store.set_bar_strip(false).unwrap();
+        assert_eq!(store.bar_strip(), Some(false));
+        store.set_bar_strip(true).unwrap();
+        assert_eq!(store.bar_strip(), Some(true));
     }
 
     #[test]

@@ -30,6 +30,7 @@ menu-song = Música
 menu-export = Exportar
 # Trava a tela na horizontal.
 menu-landscape = Manter na horizontal
+menu-bar-line = Mostrar compassos abaixo dos botões
 # Uma versão mais simples do app: um padrão, sem música.
 menu-basic = Modo básico
 menu-language = Idioma
