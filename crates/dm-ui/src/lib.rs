@@ -693,6 +693,7 @@ impl DrumApp {
             can_undo: self.history.can_undo(),
             can_redo,
             step_levels: self.project.step_levels(),
+            midi_device: self.midi.choice().filter(|_| self.midi.connected()),
         };
         let strip = strip::ui(ui, &state);
         ui.add_space(4.0);

@@ -6,6 +6,9 @@ strip-play = Tocar
 # Tocar no modo música: toca a música inteira em vez de um padrão.
 strip-play-song = Tocar música
 strip-stop = Parar
+# Dica no botão Tocar quando a bateria vai para uma saída MIDI em vez dos alto-falantes deste
+# aparelho. $device é o nome da saída, como o sistema informa.
+strip-midi-tip = A bateria toca em { $device }.
 strip-patterns = Padrões
 strip-tempo-tip = Andamento e swing
 strip-undo = Desfazer

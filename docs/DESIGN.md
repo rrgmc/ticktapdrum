@@ -838,6 +838,9 @@ switches.
 - **The internal sound follows the choice.** With an output chosen, the app's own synthesizer is
   silent, so the drums are not heard twice. With "None" it plays again. There is no separate
   switch.
+- **Play shows where the drums go.** While the chosen output is connected, a small blue badge with
+  piano keys sits in the corner of the Play button, and its hover text names the output. It takes
+  no room in the strip.
 - **The choice is remembered by name.** On the next start, or when the device is plugged in
   again, the app reconnects to it with no action from the user.
 - **Play sends the steps to that output** as note-on and note-off messages on channel 10, with

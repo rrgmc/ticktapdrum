@@ -12,6 +12,9 @@ use dm_project::StepLevels;
 use crate::icons;
 use crate::widgets::{self, ICON_SIZE, TAP, TEXT_SIZE};
 
+/// The size of the keyboard mark on Play while the drums go to a MIDI output.
+const MIDI_MARK_SIZE: f32 = 13.0;
+
 /// What Play plays.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Mode {
@@ -58,7 +61,7 @@ pub(crate) struct BarView {
 
 /// What the strip shows.
 #[derive(Clone, Copy)]
-pub(crate) struct StripState {
+pub(crate) struct StripState<'a> {
     pub(crate) playing: bool,
     pub(crate) mode: Mode,
     /// The letter of the pattern on the pattern button.
@@ -71,6 +74,8 @@ pub(crate) struct StripState {
     pub(crate) can_redo: bool,
     /// Which loudness levels a tap on a step goes through.
     pub(crate) step_levels: StepLevels,
+    /// The MIDI output the drums go to now, if any. Play then carries a small keyboard mark.
+    pub(crate) midi_device: Option<&'a str>,
 }
 
 /// The buttons that did not fit. The menu offers them instead.
@@ -304,6 +309,26 @@ pub(crate) fn ui(ui: &mut egui::Ui, state: &StripState) -> StripOutput {
             play.on_hover_text(&t.play_word)
         } else {
             hover(play, &t.play_word)
+        };
+        // While the drums go to a MIDI output, a small keyboard sits in Play's corner, so the
+        // silence of this device is not a surprise. It takes no room in the row.
+        let play = match state.midi_device {
+            Some(device) => {
+                // A filled badge, so it reads at a glance in light and dark themes.
+                let centre = play.rect.right_top() + Vec2::new(-10.0, 10.0);
+                let selection = ui.visuals().selection;
+                ui.painter()
+                    .circle_filled(centre, MIDI_MARK_SIZE / 2.0 + 1.5, selection.bg_fill);
+                ui.painter().text(
+                    centre,
+                    egui::Align2::CENTER_CENTER,
+                    icons::PIANO_KEYS,
+                    egui::FontId::proportional(MIDI_MARK_SIZE),
+                    selection.stroke.color,
+                );
+                play.on_hover_text(tr!("strip-midi-tip", device = device))
+            }
+            None => play,
         };
         if play.clicked() || space {
             events.push(if state.playing {
