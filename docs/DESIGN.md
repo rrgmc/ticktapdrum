@@ -946,6 +946,17 @@ switches.
   virtual port only when the port existed before the listener started, probably because it has
   no run loop to receive CoreMIDI's notifications. The app has an event loop, so its list should
   refresh, but that was not checked.
+- **Bluetooth MIDI on Windows is not reached (2026-11-20).** WinMM never lists Bluetooth LE MIDI
+  devices, so a spike tried midir's `winrt` feature, which swaps WinMM for the WinRT MIDI API. On
+  a Windows 11 PC with Windows MIDI Services (SDK 1.0.17-rc.4) installed, the `ports` example
+  listed exactly the same outputs with both backends: the GS Wavetable Synth and the service's
+  loopback ports. The keyboard's Bluetooth adapter was paired, and the keyboard was on, but
+  neither backend listed it. Windows MIDI Services sends both older APIs through its own service
+  (`midisrv`), and that service had no Bluetooth transport installed (only kernel-streaming,
+  loopback and virtual). So on such a PC the `winrt` feature gains nothing, and the spike was not
+  kept. Until the service gets a Bluetooth transport, the user needs a cable or a USB dongle that
+  presents itself as a USB MIDI device. A PC without Windows MIDI Services, where WinRT still has
+  its own Bluetooth path, was not tried.
 - **Not checked:** another program as the output; unplugging and
   replugging a USB device while connected; a port held by another program. On macOS: the "MIDI output" dialog by hand, choosing None or another output, the IAC bus, and the list
   picking up a port added while the app runs. On iOS, only a cable to the keyboard was tried. Linux has not even
