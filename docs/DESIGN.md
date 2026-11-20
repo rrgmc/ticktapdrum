@@ -1562,16 +1562,21 @@ there; see "Android, later".
 ### Definition of done
 
 - **MIDI input is off until the person turns it on.** A "MIDI in" button in the strip, after
-  Play, turns it on and off. It shows while a MIDI output is connected, and looks pressed while
-  on. It is a device setting, kept in the data folder as `midi.input`, so it survives a restart. While it is off, the app ignores the keyboard's keys. Turning it
-  off during a take ends the take. Off is the default
-  because people also play the keyboard over the drums: a melody's keys fall in the drum range,
-  and the app would take them for drums.
-- **The input is the MIDI output's own device.** The app listens to the input with the same name
-  as the chosen output, which Send to keyboard and the switch-off check already open. With no
-  output chosen, the app listens to nothing.
-- **The keyboard plays its own sound.** The app neither plays the hit nor sends it back, so
-  nothing sounds twice. The beat the app plays still goes to the keyboard as before.
+  Play, turns it on and off. It shows while the MIDI input is connected, and looks pressed while
+  on. It is a device setting, kept in the data folder as `midi.input`, so it survives a restart.
+  While it is off, the app ignores the input's keys. Turning it off during a take ends the take.
+  Off is the default because people also play the keyboard over the drums: a melody's keys fall
+  in the drum range, and the app would take them for drums.
+- **The input is the output's device unless chosen otherwise.** ☰ → Settings has "MIDI input:
+  Same as output", which a keyboard never needs to change. Its dialog lists "Same as output" and
+  the inputs the system reports, for drum pads or another device. It is a device setting, kept
+  as `midi.input.device` (missing means the same as the output). The input stays open whatever
+  the MIDI in button says, so the button knows whether the device is there; the button only
+  decides whether its hits count.
+- **The app sounds hits only from another device.** A keyboard that is also the output plays its
+  own keys, so the app neither plays the hit nor sends it back, and nothing sounds twice. Hits
+  from any other input play as tapping a row's name does: through the app's sound at the row's
+  volume, or sent to the MIDI output if one is chosen.
 - **One channel is taken.** The first channel that sends a note-on after the input opens is the
   one the app listens to, until the input opens again. A keyboard sends its right-hand part on its
   own channel, usually 1, and may send its style's drums on channel 10 at the same time; the rule
@@ -1644,11 +1649,6 @@ there; see "Android, later".
 
 ### Left out
 
-- **A choice of input.** Drum pads or a kit that only send, with no output of the same name, are
-  not reached. `dm-midi` can already open any input by name (`InputChoice`), so a setting can
-  follow if someone asks.
-- **The app sounding the hits.** The engine can play live hits at the row's volume, but with the
-  input always the output's device the keyboard does that itself.
 - **Step entry while stopped.** The grid has no cursor, so a hit has no obvious step to land on.
 - **A count-in** before recording. The loop already gives the beat; add one if people ask.
 - **Recording into the song**, across patterns.
