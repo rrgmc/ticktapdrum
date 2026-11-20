@@ -137,6 +137,7 @@ The reply should be ignored only if it is active sensing or a channel message.
 | Open a file | `F0 43 50 00 06 01 00 05`, file size (5 bytes), `05 00 00 00 00 00`, length (2 bytes), packed path such as `0:\STYLE\Name.sty`, `F7` | `F0 43 50 00 03 00 F7` |
 | Data | `F0 43 50 01`, length of the block (2 bytes), block, checksum, `F7`. The block is `02 02`, the packet number (counting from 0, modulo 128), then up to 210 bytes of the file, packed. The checksum makes the sum of the block's bytes a multiple of 128. | `F0 43 50 00 03 00 F7` after each packet. |
 | Close | `F0 43 50 00 03 02 F7` | `F0 43 50 00 03 03 F7` |
+| Delete a file | `F0 43 50 00 05 01 00 00`, length (2 bytes), packed path such as `0:\STYLE\Name.sty`, `F7` | `F0 43 50 00 05 7F 01 00 01 00 00 00 F7`. Tried on the SX720: the file is gone from the next listing. |
 | Connect off | `F0 43 50 00 00 01 00 00 F7` | `F0 43 50 00 00 01 02 00 F7` |
 
 - **The SX720's User drive** holds the folders `SONG`, `STYLE`, `VOICE`, `REGIST`, `MULTI PAD`,

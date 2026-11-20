@@ -1378,9 +1378,9 @@ for the grid.
   it. A song plays from its start, so it is offered only for a pattern.
 - **The window's title names the project** once it has one: "Name - TickTapDrum".
 
-## Export as a keyboard style (planned)
+## Export as a keyboard style
 
-Planned, not started. Arranger keyboards play a "style": a drum and band backing with several
+Built; "What the build found" below says what was checked. Arranger keyboards play a "style": a drum and band backing with several
 sections (main variations, fills, intros, endings) that follows the player's chords. A beat made
 in the app can become the drum part of such a style.
 [`research/arranger-style-export.md`](research/arranger-style-export.md) has the findings.
@@ -1451,8 +1451,8 @@ that also offers "None". This is an export, so asking is fine, unlike imports.
   one connection hold a port. Playback stops first. A progress bar shows while it runs; the test
   style took a second or two over Bluetooth.
 - **A style with the same name on the keyboard is replaced,** so sending again after an edit
-  updates it instead of filling the User list with copies. The file transfer's delete message
-  has not been tried yet.
+  updates it instead of filling the User list with copies. The app lists the `STYLE` folder,
+  deletes the old file, checks that it is gone, then writes the new one.
 - **When it ends**, one line says what happened:
   - "Saved on the keyboard as <name>. Choose it under Style, User."
   - "The keyboard did not answer. Sending works with Yamaha PSR-SX and Genos keyboards." This also
@@ -1472,23 +1472,40 @@ added without changing what is already there.
 - **The interface names no brand on its buttons.** The line under each button names the brand.
   With more than one kind, the section step gains a choice of brand at the top.
 
-### Build order
+### What the build found
 
-1. **The style writer** in `dm-project`, with tests. It shares the MIDI export's note timing.
-2. **The section step and the Keyboard style file** in `dm-ui`.
-3. **The file transfer** in `dm-midi`: the input, the transfer session on the MIDI thread, and
-   delete. It starts from `style_send`.
-4. **The Send to keyboard button.** Check it on the SX720 over Bluetooth, and over USB if a cable
-   is at hand.
+Checked on 2026-11-20 on Windows, with a PSR-SX720 behind a Bluetooth MIDI adapter.
 
-Steps 1 and 3 do not depend on each other.
+- **How it is built.** `dm-project` has `KeyboardKind`, `Section` and `StyleSections` in
+  `style.rs`, and the Yamaha writer in `style_yamaha.rs`. `dm-midi` has the transfer in
+  `transfer/` (the Yamaha session in `transfer/yamaha.rs`) and the switch-off check in
+  `liveness.rs`. `dm-ui` has the section step in `keyboard.rs`. The `style_send` example uses the
+  library; its `probe` command lists the keyboard's files, and `watch` prints the MIDI status, for
+  testing a switch-off.
+- **The writer** gives, for the same beat, exactly the bytes of the file the SX720 played; a test
+  holds it to that.
+- **Keyboard style** saved a valid `.sty` file through the save dialog. The dialogs and the
+  pattern pickers were looked at on screen.
+- **Send to keyboard** put "Minha batida.sty" into the keyboard's User drive in about two
+  seconds, with the progress bar and the result line. Sending a file twice left one copy, so the
+  delete message works.
+- **A keyboard switched off is noticed.** Windows keeps a switched-off Bluetooth MIDI device
+  listed, and sends to it seem to work, for about 30 seconds. Then it vanishes for a moment and
+  returns, and the old connections stay dead. The port list alone therefore missed it. The app
+  now listens to the input of the same name: a device that sends Active Sensing (the SX720 sends
+  about 5 a second) and stops for a second counts as gone. The input is reopened each second until
+  Active Sensing returns; then the output reopens. Switching the keyboard off and on with the app
+  running made it drop the output and reconnect on its own. How quickly it noticed was not timed.
+- **A badge on Play** shows while the drums go to a MIDI output.
 
-### To check during the build
+Not checked:
 
-- **The SX720's drum kit numbers,** from its Data List. The XG numbers (bank MSB 127, the kit as
-  the program) are the starting guess. Listen to each kit the app's short list offers.
+- **USB.** Only Bluetooth MIDI was tried.
+- **The SX720's drum kit numbers.** The XG numbers (bank MSB 127, the kit as the program) are
+  used. Nobody has listened to each kit of the app's short list on the keyboard.
 - **A style with no Intro or Ending:** what the keyboard does when those buttons are pressed.
-- **Replacing a file:** that the delete message works, or that writing over the same name does.
+- **Phone screens.** The section step's pickers are small for a finger.
+- **iOS and macOS,** and the Send to keyboard failure messages on real hardware.
 
 ## Open questions
 
