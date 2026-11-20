@@ -5,6 +5,7 @@ members = [
     "crates/dm-bank",
     "crates/dm-midi",
     "crates/dm-project",
+    "crates/dm-tab",
     "crates/dm-ui",
     "apps/dm-desktop",
     "apps/dm-android",
@@ -25,6 +26,7 @@ dm-audio = { path = "crates/dm-audio" }
 dm-bank = { path = "crates/dm-bank" }
 dm-midi = { path = "crates/dm-midi" }
 dm-project = { path = "crates/dm-project" }
+dm-tab = { path = "crates/dm-tab" }
 # Without default features, so each app chooses its own (MIDI out, for one).
 dm-ui = { path = "crates/dm-ui", default-features = false }
 

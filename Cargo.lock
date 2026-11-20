@@ -1018,6 +1018,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dm-tab"
+version = "1.0.0"
+dependencies = [
+ "dm-project",
+]
+
+[[package]]
 name = "dm-ui"
 version = "1.0.0"
 dependencies = [
@@ -1025,6 +1032,7 @@ dependencies = [
  "dm-bank",
  "dm-midi",
  "dm-project",
+ "dm-tab",
  "egui",
  "fluent-bundle",
  "fluent-syntax",

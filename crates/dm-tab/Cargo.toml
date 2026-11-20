@@ -1,0 +1,11 @@
+[package]
+name = "dm-tab"
+description = "TickTapDrum's paste-in import of plain-text drum tabs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+dm-project = { workspace = true }
