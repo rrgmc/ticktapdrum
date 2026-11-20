@@ -1238,7 +1238,8 @@ is one tap away from Play or Add. Re-importing a file of the same name replaces 
     opened with the running app (`ACTION_VIEW` with a content address) became its own pack.
   - Typing a link into "Add grooves from a link" (through the input system) and tapping Add
     downloaded the GetGood Drums sampler: 84 grooves added, 190 files left out with reasons.
-  - With the experimental setting on, a typed 1-bar tab became pattern C as written.
+  - With the experimental setting on (since removed), a typed 1-bar tab became pattern C as
+    written.
 - **Fixed after the first look:** names in a pack all began "076 Chilled Beat 1 ..." and were cut
   short identically, so the list now drops the words every groove in a pack shares. The
   experimental setting's label was too long for its button.
@@ -1257,16 +1258,16 @@ is one tap away from Play or Add. Re-importing a file of the same name replaces 
   pasting from the clipboard into a text box on Android; sharing from Chrome and Files by hand;
   iOS, which has none of this yet.
 
-## Experimental: paste a drum tab
+## Paste a drum tab
 
 Plain-text drum tabs are mostly whole-song transcriptions with no standard (see
 [`research/tab-import-spike.md`](research/tab-import-spike.md)), so they do not fit a simple app
-as a song import. Copying a few bars of a beat from a tab is still worth trying, so this feature
-exists, **off by default**, for the author to try from time to time.
+as a song import. Copying a few bars of a beat from a tab is still worth having. The feature
+started behind an experimental setting, off by default; after trying it on the desktop, the
+author made it a plain menu item.
 
-- **A device setting, "Experimental: paste drum tabs"**, in the ☰ menu's settings, turns it on.
-  It is stored like basic mode and changes nothing else.
-- **When it is on, the ☰ menu offers "Paste a drum tab"**: a text box, and "Add as pattern".
+- **The ☰ menu's Grooves section offers "Paste a drum tab"**, outside basic mode: a text box,
+  and "Add as pattern". Text shared to the app that is not a link opens the same dialog.
 - **The paste becomes one new pattern** after the existing ones, at most 16 bars; the rest is
   left out and the message says how many bars. The pattern uses rows that already play each
   drum and adds rows for the drums the project lacks. Tempo, swing, kit and song do not change.
@@ -1284,8 +1285,15 @@ exists, **off by default**, for the author to try from time to time.
   - Rows of one system with different numbers of bars are refused.
   - Repeat marks such as `x4` repeat the system; `%` repeats the bar before.
 - **The parser is the crate `dm-tab`,** ported from the spike's tab parser, with tests.
-- **On Android, pasting into the text box may not work** (see "Groove import", Risks). Sharing
-  text to the app would cover it, once milestone 12 exists.
+- **On Android, pasting into the text box was not checked** (see "Groove import", Risks).
+  Sharing text to the app covers it.
+
+## The ☰ menu's sections
+
+The menu grew past a screen, so two groups fold open in place: **Grooves** (add from a file, add
+from a link, paste a drum tab, the groove list), hidden in basic mode, and **Settings**. Both
+start closed and stay as left while the app runs. A section folds open inside the one scrolling
+list instead of opening a submenu beside it, which works the same with a finger and a mouse.
 
 ## Open questions
 

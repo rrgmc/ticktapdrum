@@ -26,8 +26,6 @@ pub(crate) enum ProjectEvent {
     Landscape(bool),
     /// Turn basic mode on or off.
     Basic(bool),
-    /// Offer pasting a drum tab in the menu, or stop offering it.
-    PasteTabs(bool),
     /// Add the pasted drum tab as a new pattern, with what the person chose for reading it.
     PasteTab(String, dm_tab::Options),
     /// Show row names as names, pictures and names, or pictures.
@@ -57,8 +55,6 @@ pub(crate) struct ProjectsView<'a> {
     pub(crate) landscape: Option<bool>,
     /// Whether the app is in basic mode: one pattern of one bar, and no song.
     pub(crate) basic: bool,
-    /// Whether the menu offers pasting a drum tab, an experiment that is off by default.
-    pub(crate) paste_tabs: bool,
     /// How row names show in the grid.
     pub(crate) row_labels: crate::pictures::RowLabels,
 }

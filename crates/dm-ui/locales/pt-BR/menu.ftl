@@ -22,7 +22,7 @@ menu-open = Abrir
 menu-new = Novo
 # Abre uma lista de batidas prontas em estilos conhecidos (rock, funk etc.).
 menu-presets = Estilos prontos
-# Aparece só com o ajuste menu-paste-tabs ligado. Uma tablatura de bateria é a bateria
+# Uma tablatura de bateria é a bateria
 # escrita como texto, uma linha por peça, como "SD |----o-------o---|".
 menu-paste-tab = Colar uma tablatura de bateria
 menu-sounds = Sons
@@ -32,8 +32,6 @@ menu-export = Exportar
 menu-landscape = Manter na horizontal
 # Uma versão mais simples do app: um padrão, sem música.
 menu-basic = Modo básico
-# Mostra menu-paste-tab no menu. Experimental: pode não ler toda tablatura.
-menu-paste-tabs = Experimental: tablaturas
 menu-language = Idioma
 # A primeira escolha da janela Idioma: seguir o idioma do sistema. $language é o nome desse
 # idioma nele mesmo, como "English".
@@ -119,6 +117,7 @@ menu-export-place = Local das exportações: { $place }.
 ## O grupo Ajustes no fim do menu.
 
 menu-settings = Ajustes
+menu-grooves-section = { grooves-title }
 # Como cada linha aparece na grade: pelo nome, por um desenho da peça, ou pelos dois.
 menu-rows-names = Linhas: nomes
 menu-rows-pictures-and-names = Linhas: desenhos e nomes

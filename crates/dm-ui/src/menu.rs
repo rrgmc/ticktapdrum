@@ -116,6 +116,10 @@ pub(crate) struct Menu {
     /// How the Paste a drum tab dialog reads a tab. Kept while the app runs, so a second paste
     /// reads like the first.
     tab_options: dm_tab::Options,
+    /// Which of the pop-up's sections are open. They start closed and stay as left while the
+    /// app runs.
+    grooves_section: bool,
+    settings_section: bool,
 }
 
 /// The width of a menu item.
@@ -123,6 +127,24 @@ const ITEM_WIDTH: f32 = 240.0;
 
 fn item<'a>(icon: &str, word: &str) -> egui::Button<'a> {
     widgets::button(icon, word).min_size(Vec2::new(ITEM_WIDTH, TAP))
+}
+
+/// A heading that opens and closes a section of the pop-up in place, with a caret that points
+/// down while it is open. A section keeps the pop-up one list, which works the same with a
+/// finger and a mouse, where a submenu beside it would not.
+fn section(ui: &mut egui::Ui, open: &mut bool, title: &str) {
+    let caret = if *open {
+        icons::CARET_DOWN
+    } else {
+        icons::CARET_RIGHT
+    };
+    if ui
+        .add(item(caret, title).frame(false))
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
+        *open = !*open;
+    }
 }
 
 fn big(text: &str) -> RichText {
@@ -342,54 +364,6 @@ impl Menu {
             self.open(Shown::Presets);
             ui.close();
         }
-        // An experiment, offered only when its setting is on. Basic mode has one pattern only,
-        // so it has no room for another.
-        if p.paste_tabs
-            && !p.basic
-            && ui
-                .add(item(icons::MUSIC_NOTES_PLUS, &tr!("menu-paste-tab")))
-                .clicked()
-        {
-            self.open(Shown::PasteTab {
-                text: String::new(),
-                refusal: None,
-            });
-            ui.close();
-        }
-        // Grooves become new patterns, so basic mode, with its one pattern, has no use for them.
-        // A file can be chosen on a desktop and where the host has a picker.
-        if !p.basic
-            && p.file_items
-            && ui
-                .add(item(icons::FILE_ARROW_UP, &tr!("grooves-add-from-file")))
-                .clicked()
-        {
-            events.push(MenuEvent::Grooves(GrooveEvent::AddFromFile));
-            ui.close();
-        }
-        // A link needs no file picker, so it is offered everywhere.
-        if !p.basic
-            && ui
-                .add(item(icons::LINK, &tr!("grooves-add-from-link")))
-                .clicked()
-        {
-            self.open(Shown::AddLink {
-                text: String::new(),
-                error: None,
-                focus: true,
-            });
-            ui.close();
-        }
-        if !p.basic
-            && view.grooves.any
-            && ui
-                .add(item(icons::PLAYLIST, &tr!("grooves-title")))
-                .clicked()
-        {
-            self.open(Shown::Grooves { focus: None });
-            events.push(MenuEvent::Grooves(GrooveEvent::Open));
-            ui.close();
-        }
         if ui
             .add(item(icons::SPEAKER_HIGH, &tr!("menu-sounds")))
             .clicked()
@@ -401,88 +375,143 @@ impl Menu {
             self.open(Shown::Export);
             ui.close();
         }
-        // The settings, together under a heading. They belong to the device, not to the beat.
-        // Basic mode always comes last.
+        // Grooves and tabs become new patterns, so basic mode, with its one pattern, has no use
+        // for them and no section.
+        if !p.basic {
+            ui.separator();
+            section(ui, &mut self.grooves_section, &tr!("menu-grooves-section"));
+            if self.grooves_section {
+                self.grooves_items(ui, view, &mut events);
+            }
+        }
+        // The settings belong to the device, not to the beat.
         ui.separator();
-        ui.label(big(&tr!("menu-settings")).strong());
-        // How rows are labelled: each tap moves to the next choice, and the item says which
-        // one is on. It stays open, so the grid behind can be seen to change.
-        let labels = match p.row_labels {
-            RowLabels::Names => tr!("menu-rows-names"),
-            RowLabels::PicturesAndNames => tr!("menu-rows-pictures-and-names"),
-            RowLabels::Pictures => tr!("menu-rows-pictures"),
-        };
-        if ui
-            .add(
-                widgets::toggle_button(p.row_labels.shows_pictures(), icons::IMAGE, &labels)
-                    .min_size(Vec2::new(ITEM_WIDTH, TAP)),
-            )
-            .clicked()
-        {
-            events.push(MenuEvent::Project(ProjectEvent::RowLabels(
-                p.row_labels.next(),
-            )));
+        section(ui, &mut self.settings_section, &tr!("menu-settings"));
+        if self.settings_section {
+            settings_items(ui, view, &mut events, |dialog| self.open(dialog));
         }
-        if let Some(landscape) = p.landscape
-            && ui
-                .add(
-                    widgets::toggle_button(landscape, icons::DEVICE_ROTATE, &tr!("menu-landscape"))
-                        .min_size(Vec2::new(ITEM_WIDTH, TAP)),
-                )
-                .clicked()
-        {
-            events.push(MenuEvent::Project(ProjectEvent::Landscape(!landscape)));
-        }
-        if ui.add(item(icons::GLOBE, &tr!("menu-language"))).clicked() {
-            self.open(Shown::Language);
-            ui.close();
-        }
-        // The item names the output chosen, shortened to fit.
-        if let Some(midi) = &view.midi {
-            let device = midi.choice.map_or_else(
-                || tr!("menu-midi-output-none"),
-                |name| crate::midi::shorten(name, crate::midi::SHORT_NAME),
-            );
-            let text = tr!("menu-midi-output-choice", device = device);
-            let mut response = ui.add(item(icons::MUSIC_NOTES, &text));
-            if let Some(name) = midi.choice
-                && name.chars().count() > crate::midi::SHORT_NAME
-            {
-                response = response.on_hover_text(name);
-            }
-            if response.clicked() {
-                self.open(Shown::MidiOutput);
-                events.push(MenuEvent::ListMidiOutputs);
-                ui.close();
-            }
-        }
-        if ui
-            .add(
-                widgets::toggle_button(
-                    p.paste_tabs,
-                    icons::MUSIC_NOTES_PLUS,
-                    &tr!("menu-paste-tabs"),
-                )
-                .min_size(Vec2::new(ITEM_WIDTH, TAP)),
-            )
-            .clicked()
-        {
-            events.push(MenuEvent::Project(ProjectEvent::PasteTabs(!p.paste_tabs)));
-        }
-        // Basic mode always comes last.
-        if ui
-            .add(
-                widgets::toggle_button(p.basic, icons::SLIDERS_HORIZONTAL, &tr!("menu-basic"))
-                    .min_size(Vec2::new(ITEM_WIDTH, TAP)),
-            )
-            .clicked()
-        {
-            events.push(MenuEvent::Project(ProjectEvent::Basic(!p.basic)));
-        }
-
         events
     }
 
+    /// The Grooves section: adding grooves from a file or a link, pasting a drum tab, and the groove
+    /// list.
+    fn grooves_items(&mut self, ui: &mut egui::Ui, view: &MenuView, events: &mut Vec<MenuEvent>) {
+        let p = &view.projects;
+        // A file can be chosen on a desktop and where the host has a picker.
+        if p.file_items
+            && ui
+                .add(item(icons::FILE_ARROW_UP, &tr!("grooves-add-from-file")))
+                .clicked()
+        {
+            events.push(MenuEvent::Grooves(GrooveEvent::AddFromFile));
+            ui.close();
+        }
+        // A link needs no file picker, so it is offered everywhere.
+        if ui
+            .add(item(icons::LINK, &tr!("grooves-add-from-link")))
+            .clicked()
+        {
+            self.open(Shown::AddLink {
+                text: String::new(),
+                error: None,
+                focus: true,
+            });
+            ui.close();
+        }
+        if ui
+            .add(item(icons::MUSIC_NOTES_PLUS, &tr!("menu-paste-tab")))
+            .clicked()
+        {
+            self.open(Shown::PasteTab {
+                text: String::new(),
+                refusal: None,
+            });
+            ui.close();
+        }
+        if view.grooves.any
+            && ui
+                .add(item(icons::PLAYLIST, &tr!("grooves-title")))
+                .clicked()
+        {
+            self.open(Shown::Grooves { focus: None });
+            events.push(MenuEvent::Grooves(GrooveEvent::Open));
+            ui.close();
+        }
+    }
+}
+
+/// The Settings section. `open` opens a dialog. Basic mode always comes last.
+fn settings_items(
+    ui: &mut egui::Ui,
+    view: &MenuView,
+    events: &mut Vec<MenuEvent>,
+    mut open: impl FnMut(Shown),
+) {
+    let p = &view.projects;
+    // How rows are labelled: each tap moves to the next choice, and the item says which
+    // one is on. It stays open, so the grid behind can be seen to change.
+    let labels = match p.row_labels {
+        RowLabels::Names => tr!("menu-rows-names"),
+        RowLabels::PicturesAndNames => tr!("menu-rows-pictures-and-names"),
+        RowLabels::Pictures => tr!("menu-rows-pictures"),
+    };
+    if ui
+        .add(
+            widgets::toggle_button(p.row_labels.shows_pictures(), icons::IMAGE, &labels)
+                .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+        )
+        .clicked()
+    {
+        events.push(MenuEvent::Project(ProjectEvent::RowLabels(
+            p.row_labels.next(),
+        )));
+    }
+    if let Some(landscape) = p.landscape
+        && ui
+            .add(
+                widgets::toggle_button(landscape, icons::DEVICE_ROTATE, &tr!("menu-landscape"))
+                    .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+            )
+            .clicked()
+    {
+        events.push(MenuEvent::Project(ProjectEvent::Landscape(!landscape)));
+    }
+    if ui.add(item(icons::GLOBE, &tr!("menu-language"))).clicked() {
+        open(Shown::Language);
+        ui.close();
+    }
+    // The item names the output chosen, shortened to fit.
+    if let Some(midi) = &view.midi {
+        let device = midi.choice.map_or_else(
+            || tr!("menu-midi-output-none"),
+            |name| crate::midi::shorten(name, crate::midi::SHORT_NAME),
+        );
+        let text = tr!("menu-midi-output-choice", device = device);
+        let mut response = ui.add(item(icons::MUSIC_NOTES, &text));
+        if let Some(name) = midi.choice
+            && name.chars().count() > crate::midi::SHORT_NAME
+        {
+            response = response.on_hover_text(name);
+        }
+        if response.clicked() {
+            open(Shown::MidiOutput);
+            events.push(MenuEvent::ListMidiOutputs);
+            ui.close();
+        }
+    }
+    // Basic mode always comes last.
+    if ui
+        .add(
+            widgets::toggle_button(p.basic, icons::SLIDERS_HORIZONTAL, &tr!("menu-basic"))
+                .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+        )
+        .clicked()
+    {
+        events.push(MenuEvent::Project(ProjectEvent::Basic(!p.basic)));
+    }
+}
+
+impl Menu {
     /// Shows the dialog a menu item opened, if any. Call it every frame.
     pub(crate) fn dialogs(&mut self, ctx: &egui::Context, view: &MenuView) -> Vec<MenuEvent> {
         let mut events = Vec::new();

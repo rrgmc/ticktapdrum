@@ -22,7 +22,7 @@ menu-open = Open
 menu-new = New
 # Opens a list of ready-made beats in well-known styles (rock, funk and so on).
 menu-presets = Load default style
-# Shown only while the setting menu-paste-tabs is on. A drum tab is drums written as text,
+# A drum tab is drums written as text,
 # one row per drum, such as "SD |----o-------o---|".
 menu-paste-tab = Paste a drum tab
 menu-sounds = Sounds
@@ -32,8 +32,6 @@ menu-export = Export
 menu-landscape = Keep in landscape
 # A simpler version of the app: one pattern, no song.
 menu-basic = Basic mode
-# Offers menu-paste-tab in the menu. Experimental: it may not read every tab.
-menu-paste-tabs = Experimental: drum tabs
 menu-language = Language
 # The first choice in the Language dialog: follow the system's language. $language is that
 # language's own name, such as "English".
@@ -118,6 +116,8 @@ menu-export-place = Exports are saved in { $place }.
 ## The Settings group at the bottom of the menu.
 
 menu-settings = Settings
+# A heading in the menu that opens to show the items for adding grooves and drum tabs.
+menu-grooves-section = { grooves-title }
 # How each row is labelled in the grid: by its name, a picture of the drum, or both.
 menu-rows-names = Rows: names
 menu-rows-pictures-and-names = Rows: pictures and names

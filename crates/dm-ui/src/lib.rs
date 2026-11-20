@@ -88,8 +88,6 @@ pub struct DrumApp {
     basic: bool,
     /// How row names show: names, pictures and names, or pictures. A device setting.
     row_labels: pictures::RowLabels,
-    /// Whether the menu offers pasting a drum tab, an experiment. A device setting.
-    paste_tabs: bool,
     grid: grid::Grid,
     bar_strip: bars::BarStrip,
     tabs: patterns::PatternTabs,
@@ -179,7 +177,6 @@ impl DrumApp {
         let language_choice = store.language();
         let system_language = i18n::system_language();
         let row_labels = store.row_labels();
-        let paste_tabs = store.paste_tabs();
         let midi = midi::Midi::new(store.midi_output());
         // Only the names: reading the packs waits until the list opens.
         let has_grooves = !store.pack_keys().is_empty();
@@ -194,7 +191,6 @@ impl DrumApp {
             follow: true,
             basic,
             row_labels,
-            paste_tabs,
             grid: grid::Grid::default(),
             bar_strip: bars::BarStrip::default(),
             tabs: patterns::PatternTabs::default(),
@@ -775,7 +771,6 @@ impl DrumApp {
                 export_place: export_place.as_deref(),
                 landscape: self.orientation.is_some().then(|| self.store.landscape()),
                 basic: self.basic,
-                paste_tabs: self.paste_tabs,
                 row_labels: self.row_labels,
             },
             hidden: strip.hidden,
@@ -1229,12 +1224,6 @@ impl DrumApp {
                         log::warn!("the basic mode setting was not saved: {e}");
                     }
                 }
-                ProjectEvent::PasteTabs(on) => {
-                    self.paste_tabs = on;
-                    if let Err(e) = self.store.set_paste_tabs(on) {
-                        log::warn!("the paste tabs setting was not saved: {e}");
-                    }
-                }
                 ProjectEvent::PasteTab(text, options) => self.paste_tab(engine, &text, options),
                 ProjectEvent::RowLabels(labels) => {
                     self.row_labels = labels;
@@ -1629,9 +1618,9 @@ impl DrumApp {
 
     /// Text a host handed in, such as a link shared to the app. A link opens the link dialog and
     /// downloads at once, so a share needs no further tap. Other text goes to the Paste a drum
-    /// tab dialog while that experiment is on. Anything else is refused with a notice.
+    /// tab dialog, outside basic mode. Anything else is refused with a notice.
     fn incoming_text(&mut self, text: &str) {
-        match link::shared_text(text, self.paste_tabs, self.basic) {
+        match link::shared_text(text, self.basic) {
             link::SharedText::Download(address) => {
                 self.menu.open_link(address.clone());
                 self.start_download(address);

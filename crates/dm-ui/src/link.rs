@@ -138,12 +138,12 @@ pub(crate) enum SharedText {
 }
 
 /// Chooses what to do with shared text. A link is downloaded, even in basic mode, whose import
-/// keeps the grooves without opening the list. Other text is a drum tab only while the
-/// experimental setting is on, outside basic mode, as in the menu.
-pub(crate) fn shared_text(text: &str, paste_tabs: bool, basic: bool) -> SharedText {
+/// keeps the grooves without opening the list. Other text is a drum tab, outside basic mode, as
+/// in the menu.
+pub(crate) fn shared_text(text: &str, basic: bool) -> SharedText {
     if let Some(link) = dm_groove::link_address(text) {
         SharedText::Download(link)
-    } else if paste_tabs && !basic && !text.trim().is_empty() {
+    } else if !basic && !text.trim().is_empty() {
         SharedText::PasteTab
     } else {
         SharedText::Refuse
@@ -173,23 +173,22 @@ mod tests {
     #[test]
     fn a_link_downloads_whatever_the_settings() {
         let link = "https://example.com/Beat.mid";
-        for (tabs, basic) in [(false, false), (true, false), (true, true), (false, true)] {
+        for basic in [false, true] {
             assert_eq!(
-                shared_text(&format!("  {link}\n"), tabs, basic),
+                shared_text(&format!("  {link}\n"), basic),
                 SharedText::Download(link.into())
             );
         }
     }
 
     #[test]
-    fn other_text_is_a_tab_only_with_the_experiment_on_outside_basic_mode() {
+    fn other_text_is_a_tab_outside_basic_mode() {
         let tab = "HH|x-x-x-x-|\nSD|----o---|";
-        assert_eq!(shared_text(tab, true, false), SharedText::PasteTab);
-        assert_eq!(shared_text(tab, false, false), SharedText::Refuse);
-        assert_eq!(shared_text(tab, true, true), SharedText::Refuse);
-        assert_eq!(shared_text("  ", true, false), SharedText::Refuse);
+        assert_eq!(shared_text(tab, false), SharedText::PasteTab);
+        assert_eq!(shared_text(tab, true), SharedText::Refuse);
+        assert_eq!(shared_text("  ", false), SharedText::Refuse);
         assert_eq!(
-            shared_text("ftp://example.com/a.mid", false, false),
+            shared_text("ftp://example.com/a.mid", true),
             SharedText::Refuse
         );
     }
