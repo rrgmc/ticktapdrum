@@ -1293,11 +1293,13 @@ it: 359 beats and fills, whole takes of up to 16 bars, so there are grooves by r
 without a download. `dm-groove`'s `curate_magenta` example gathers them from the dataset's MIDI
 zip and writes `crates/dm-ui/assets/magenta-grooves.json` (250 KB). Each groove's folder is its
 style; the dataset's "grooveN" takes count as their style, which gives 24 styles. Within a
-style, grooves of up to 4 bars come first, as the easiest to start from, then beats before
-fills, by tempo. Each drummer's take is kept, even where several share a file name.
+style the beats come first, then the fills ("Funk 3 (fill)"), each by tempo, numbered in that
+order, so the list reads in the order of its names. Each drummer's take is kept, even where
+several share a file name.
 
 The author first asked for a few beats per style (25, cut to 4 bars, then whole takes), then for
-all of them, short ones first. Rock has the most (64 beats, 28 fills); several styles have only
+all of them. Putting grooves of up to 4 bars first looked odd, as the numbers then jumped, so
+the order follows the names. Rock has the most (64 beats, 28 fills); several styles have only
 fills.
 
 - **"Ready-made styles" has a button, "Grooves by real drummers",** that lists them with their

@@ -127,7 +127,7 @@ grooves-source-beat-farm = Groove Monkee: Beat Farm
 # The dialog listing the grooves that come with the app, and the button that opens it in the
 # Ready-made styles dialog. Google Magenta and Groove MIDI Dataset are names; keep them.
 grooves-magenta-title = Grooves by real drummers
-grooves-magenta-intro = Beats and fills played by drummers on an electronic kit, by style, the shortest first. Tap Play to hear one; Load starts a new beat from it, as a ready-made style does.
+grooves-magenta-intro = Beats and fills played by drummers on an electronic kit, by style. Tap Play to hear one; Load starts a new beat from it, as a ready-made style does.
 # The credits, required by the licence. Keep the names, the year and "CC BY 4.0".
 grooves-magenta-credits = From the Groove MIDI Dataset by Google Magenta (Gillick, Roberts, Engel, Eck and Bamman, 2019), licensed under CC BY 4.0. Chosen and changed for TickTapDrum: whole takes of up to 16 bars, with the notes moved onto the 16-step grid.
 grooves-magenta-page = The Groove MIDI Dataset

@@ -8,18 +8,15 @@
 //! The dataset's files are named like `149_latin-brazilian-baiao_95_beat_4-4`: a take number,
 //! the style, the tempo, `beat` or `fill`, and the time signature. Styles such as `funk-groove5`
 //! (ten set grooves several drummers played) count as their style, `funk`. Each groove's folder
-//! is its style, which the app's lists group by. Within a style the grooves of up to
-//! [`SHORT`] bars come first, as they are the easiest to start from; then, in each group, beats
-//! before fills, each by tempo and then take number, so the order is the same every run. Several
+//! is its style, which the app's lists group by. Within a style the beats come first, then the
+//! fills, each by tempo and then take number, and they are numbered in that order, so the list
+//! reads in the order of its names and is the same every run. Several
 //! drummers' takes may share a file name; each take is kept, as each is played differently.
 
 use std::collections::BTreeMap;
 
 use dm_groove::{Groove, Pack};
 use dm_project::BarHit;
-
-/// Grooves of up to this many bars come first in their style.
-const SHORT: usize = 4;
 
 /// One take: whether it is a fill, its tempo and take number for sorting, and the groove.
 struct Take {
@@ -76,10 +73,7 @@ fn main() {
 
     let mut grooves = Vec::new();
     for (label, mut takes) in styles.into_values() {
-        takes.sort_by_key(|t| {
-            let bars = dm_project::repeat_unit(&t.groove.bars);
-            (bars > SHORT, t.fill, t.groove.bpm as u32, t.take)
-        });
+        takes.sort_by_key(|t| (t.fill, t.groove.bpm as u32, t.take));
         let (mut beats, mut fills) = (0, 0);
         for Take { fill, groove, .. } in takes {
             // The whole take, as the import gives it: at most 16 bars, exact repeats collapsed.

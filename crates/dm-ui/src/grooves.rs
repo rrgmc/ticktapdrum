@@ -242,7 +242,7 @@ pub(crate) fn magenta_list(ui: &mut egui::Ui, view: &GroovesView, events: &mut V
 
 /// The grooves that come with the app, by style: each style a heading with its count that opens
 /// and closes, with its grooves under it. Their folder is their style, and the pack keeps a
-/// style's grooves together, shortest first. `add` is the Add button's word and hover text.
+/// style's grooves together, in the order of their names. `add` is the Add button's word and hover text.
 fn magenta_styles(
     ui: &mut egui::Ui,
     view: &GroovesView,
