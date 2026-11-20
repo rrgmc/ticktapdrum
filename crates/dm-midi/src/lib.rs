@@ -190,9 +190,10 @@ mod tests {
 
     use super::*;
 
-    /// Waits up to a second for the status to satisfy `ok`.
+    /// Waits up to ten seconds for the status to satisfy `ok`. Listing the ports can take over a
+    /// second on a busy Windows CI machine; a passing test returns as soon as the status changes.
     fn wait_for(midi: &MidiOut, ok: impl Fn(&MidiStatus) -> bool) -> MidiStatus {
-        let deadline = Instant::now() + Duration::from_secs(1);
+        let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             let status = midi.status();
             if ok(&status) || Instant::now() > deadline {
