@@ -128,6 +128,8 @@ pub struct DrumApp {
     wav_job: Option<export::WavJob>,
     /// The keyboard style the section step chose, kept while its file is being picked.
     style_export: Option<(dm_project::KeyboardKind, dm_project::StyleSections)>,
+    /// A style is on its way to the keyboard, so the transfer's outcome is still to be told.
+    sending_style: bool,
     /// A download from a link in progress. It runs only while the link dialog is open.
     link_job: Option<link::LinkJob>,
     /// The egui context, kept so worker threads can ask for a redraw.
@@ -217,6 +219,7 @@ impl DrumApp {
             titled: None,
             wav_job: None,
             style_export: None,
+            sending_style: false,
             link_job: None,
             ctx: egui::Context::default(),
             frame_group: Group::Single,
@@ -411,6 +414,7 @@ impl DrumApp {
             self.editor(ui, &mut engine);
             // After the editor, so a new engine has the project, and its kit, before MIDI out
             // turns on and sends the kit.
+            self.style_transfer(ui.ctx());
             if let Some(note) = self.midi.frame(ui.ctx(), &mut engine) {
                 let text = note.text();
                 let until = ui.input(|i| i.time) + NOTICE_SECONDS;
@@ -788,6 +792,10 @@ impl DrumApp {
                 message: self.message.as_deref(),
                 export_message: self.export_message.as_deref(),
                 exporting: self.wav_job.as_ref().map(export::WavJob::progress),
+                sending: self.sending_style.then(|| match self.midi.transfer() {
+                    midi::TransferStatus::Running(fraction) => fraction,
+                    _ => 0.0,
+                }),
                 can_render: self.bank.soundfont().is_some(),
                 export_place: export_place.as_deref(),
                 landscape: self.orientation.is_some().then(|| self.store.landscape()),
@@ -1241,10 +1249,25 @@ impl DrumApp {
                     self.style_export = Some((kind, sections));
                     self.pick(engine, PickKind::ExportStyle);
                 }
-                // TODO: send the style over the MIDI output (build order step 4 in
-                // docs/DESIGN.md). Until then it is only logged.
                 ProjectEvent::SendStyle { kind, sections } => {
-                    log::info!("Send to keyboard is not built yet: {kind:?}, {sections:?}");
+                    let name = self.export_name();
+                    match kind.write(&self.project, &sections, &name) {
+                        Ok(bytes) => {
+                            // Playing would fight the transfer for the output.
+                            if self.playing {
+                                engine.stop();
+                                self.playing = false;
+                            }
+                            self.midi.send_style(kind, kind.file_name(&name), bytes);
+                            self.sending_style = true;
+                            self.export_message = None;
+                        }
+                        Err(problem) => {
+                            let reason = keyboard::problem_text(&problem);
+                            self.message = Some(tr!("projects-style-send-failed", reason = reason));
+                            self.export_message = self.message.clone();
+                        }
+                    }
                 }
                 ProjectEvent::CancelExport => {
                     if let Some(job) = &self.wav_job {
@@ -1337,6 +1360,34 @@ impl DrumApp {
             },
         };
         self.carry_out(engine, kind, files::Target::Path(path));
+    }
+
+    /// Follows a style on its way to the keyboard, and says how it ended.
+    fn style_transfer(&mut self, ctx: &egui::Context) {
+        if !self.sending_style {
+            return;
+        }
+        let text = match self.midi.transfer() {
+            midi::TransferStatus::Idle | midi::TransferStatus::Running(_) => {
+                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                return;
+            }
+            midi::TransferStatus::Done(name) => tr!("projects-style-sent", name = name),
+            midi::TransferStatus::Failed(error) => match error {
+                midi::TransferError::NoAnswer | midi::TransferError::UnknownKeyboard(_) => {
+                    tr!("projects-style-send-no-answer")
+                }
+                midi::TransferError::NotConnected => tr!("projects-style-send-not-connected"),
+                midi::TransferError::NoInput => tr!("projects-style-send-no-input"),
+                midi::TransferError::Refused(detail) => {
+                    log::warn!("Send to keyboard: {detail}");
+                    tr!("projects-style-send-refused")
+                }
+            },
+        };
+        self.sending_style = false;
+        self.message = Some(text);
+        self.export_message = self.message.clone();
     }
 
     /// The project's name, or "My beat" in the current language: the name of an exported file,

@@ -146,3 +146,6 @@ menu-paste-tab-skip-odd-bars = Deixar de fora os compassos que não cabem
 menu-paste-tab-sources = Onde encontrar tablaturas de bateria
 menu-paste-tab-source-ultimate-guitar = Ultimate Guitar: tablaturas de bateria
 menu-paste-tab-source-tabcrawler = Tabcrawler
+
+# Mostrado com uma barra de progresso enquanto um estilo vai para o teclado por MIDI.
+menu-keyboard-sending = Enviando o estilo ao teclado

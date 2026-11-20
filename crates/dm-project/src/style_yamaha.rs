@@ -118,7 +118,7 @@ pub(super) fn write(project: &Project, parts: &[Part<'_>], name: &str) -> Vec<u8
 /// The style's name in printable ASCII, which is what the keyboard shows. An accented Latin
 /// letter becomes its plain letter, and any other character outside printable ASCII becomes
 /// `_`. A name with nothing but spaces becomes "TickTapDrum".
-fn style_name(name: &str) -> String {
+pub(super) fn style_name(name: &str) -> String {
     if name.trim().is_empty() {
         return DEFAULT_NAME.to_owned();
     }

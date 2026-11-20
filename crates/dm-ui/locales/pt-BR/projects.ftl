@@ -43,3 +43,12 @@ projects-file-kind-project = Projeto do TickTapDrum
 projects-file-kind-midi = Arquivo MIDI
 projects-file-kind-wav = Gravação WAV
 projects-file-kind-style = Estilo para teclado
+
+# Um estilo enviado ao teclado por MIDI. $name é o nome do arquivo no teclado.
+projects-style-sent = Salvo no teclado como { $name }. Escolha em Style, User.
+projects-style-send-no-answer = O teclado não respondeu. O envio funciona com teclados Yamaha PSR-SX e Genos.
+projects-style-send-not-connected = O estilo não foi enviado: o teclado não está mais conectado.
+projects-style-send-no-input = O estilo não foi enviado: o aplicativo não ouve as respostas do teclado nesta saída MIDI.
+projects-style-send-refused = O teclado recusou o estilo. Tente de novo, ou salve como arquivo e copie com um pen drive.
+# $reason diz o que está errado nas partes escolhidas.
+projects-style-send-failed = O estilo não foi enviado: { $reason }

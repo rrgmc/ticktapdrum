@@ -7,9 +7,9 @@
 
 use dm_audio::Engine;
 #[cfg(feature = "midi")]
-pub(crate) use dm_midi::{MidiOut, MidiStatus};
+pub(crate) use dm_midi::{KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus};
 #[cfg(not(feature = "midi"))]
-pub(crate) use off::{MidiOut, MidiStatus};
+pub(crate) use off::{KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus};
 
 /// Stands in for `dm-midi` in a build without the `midi` feature: it reports no MIDI, so the
 /// setting is not offered and the engine's MIDI out stays off.
@@ -44,6 +44,42 @@ mod off {
         pub(crate) fn status(&self) -> MidiStatus {
             MidiStatus::Off
         }
+
+        pub(crate) fn send_style(
+            &mut self,
+            _target: KeyboardTarget,
+            _file_name: String,
+            _data: Vec<u8>,
+        ) {
+        }
+
+        pub(crate) fn transfer(&self) -> TransferStatus {
+            TransferStatus::Idle
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum KeyboardTarget {
+        Yamaha,
+    }
+
+    #[allow(dead_code)]
+    #[derive(Debug, Clone, PartialEq)]
+    pub(crate) enum TransferStatus {
+        Idle,
+        Running(f32),
+        Done(String),
+        Failed(TransferError),
+    }
+
+    #[allow(dead_code)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub(crate) enum TransferError {
+        NotConnected,
+        NoInput,
+        NoAnswer,
+        UnknownKeyboard(String),
+        Refused(String),
     }
 }
 
@@ -143,6 +179,29 @@ impl Midi {
     /// Whether the drums go to the chosen output now.
     pub(crate) fn connected(&self) -> bool {
         self.sending
+    }
+
+    /// Starts sending a style file to the keyboard behind the chosen output. Does nothing before
+    /// the sender has started.
+    pub(crate) fn send_style(
+        &mut self,
+        kind: dm_project::KeyboardKind,
+        file_name: String,
+        data: Vec<u8>,
+    ) {
+        let target = match kind {
+            dm_project::KeyboardKind::Yamaha => KeyboardTarget::Yamaha,
+        };
+        if let Some(out) = &mut self.out {
+            out.send_style(target, file_name, data);
+        }
+    }
+
+    /// What the style transfer is doing.
+    pub(crate) fn transfer(&self) -> TransferStatus {
+        self.out
+            .as_ref()
+            .map_or(TransferStatus::Idle, MidiOut::transfer)
     }
 
     /// The outputs listed when the dialog last opened.

@@ -59,6 +59,8 @@ pub(crate) struct ProjectsView<'a> {
     pub(crate) export_message: Option<&'a str>,
     /// How far a WAV export has got, while one runs.
     pub(crate) exporting: Option<f32>,
+    /// How far a style on its way to the keyboard has got, while one is.
+    pub(crate) sending: Option<f32>,
     /// Whether the bank is loaded, which a WAV export needs.
     pub(crate) can_render: bool,
     /// Where exports go on a phone with neither a save dialog nor a file picker, said the way

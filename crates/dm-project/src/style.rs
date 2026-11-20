@@ -152,6 +152,16 @@ impl KeyboardKind {
         }
     }
 
+    /// A file name for a style called `name`, safe to write on the keyboard: plain ASCII, no
+    /// character a file name may not hold, and this kind's extension.
+    pub fn file_name(self, name: &str) -> String {
+        let stem: String = yamaha::style_name(name)
+            .chars()
+            .map(|c| if r#"\/:*?"<>|"#.contains(c) { '_' } else { c })
+            .collect();
+        format!("{}.{}", stem.trim(), self.extension())
+    }
+
     /// Whether this kind of style has the section.
     pub fn has(self, section: Section) -> bool {
         match self {

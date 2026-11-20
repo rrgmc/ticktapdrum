@@ -151,3 +151,6 @@ menu-paste-tab-skip-odd-bars = Leave out bars that do not fit
 menu-paste-tab-sources = Where to find drum tabs
 menu-paste-tab-source-ultimate-guitar = Ultimate Guitar: drum tabs
 menu-paste-tab-source-tabcrawler = Tabcrawler
+
+# Shown with a progress bar while a style goes to the keyboard over MIDI.
+menu-keyboard-sending = Sending the style to the keyboard

@@ -1105,6 +1105,15 @@ fn export(
     events: &mut Vec<MenuEvent>,
 ) -> Option<Goal> {
     let mut goal = None;
+    if let Some(fraction) = p.sending {
+        ui.label(big(&tr!("menu-keyboard-sending")));
+        ui.add(
+            egui::ProgressBar::new(fraction)
+                .show_percentage()
+                .desired_width(200.0),
+        );
+        return None;
+    }
     match p.exporting {
         Some(fraction) => {
             ui.label(big(&tr!("menu-recording")));

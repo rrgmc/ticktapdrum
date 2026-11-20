@@ -549,6 +549,15 @@ fn get_and_set_reach_every_section() {
 }
 
 #[test]
+fn the_file_name_is_safe_for_the_keyboard() {
+    let yamaha = KeyboardKind::Yamaha;
+    assert_eq!(yamaha.file_name("Minha batida"), "Minha batida.sty");
+    assert_eq!(yamaha.file_name("Canção: nº 1?"), "Cancao_ n_ 1_.sty");
+    assert_eq!(yamaha.file_name("a/b\\c"), "a_b_c.sty");
+    assert_eq!(yamaha.file_name("  "), "TickTapDrum.sty");
+}
+
+#[test]
 fn yamaha_has_every_section_and_one_bar_fills() {
     let yamaha = KeyboardKind::Yamaha;
     assert_eq!(yamaha.extension(), "sty");
