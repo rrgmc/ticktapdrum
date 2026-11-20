@@ -1,8 +1,9 @@
-//! Files a host hands to the app from outside, such as a groove pack shared to the app on
-//! Android. Each one goes to the groove import, as a file chosen in the menu does.
+//! Files and text a host hands to the app from outside, such as a groove pack or a link shared to
+//! the app on Android. A file goes to the groove import, as a file chosen in the menu does. Text
+//! is a link to download, or, with the experimental setting on, a drum tab to paste.
 //!
-//! The host sends a file's name and bytes through [`IncomingFiles`], from any thread. The
-//! interface takes them on its next frame. See "Groove import" in `docs/DESIGN.md`.
+//! The host sends them through [`IncomingFiles`], from any thread. The interface takes them on
+//! its next frame. See "Groove import" in `docs/DESIGN.md`.
 
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
@@ -11,7 +12,7 @@ use std::sync::{Arc, Mutex};
 /// the one a JNI callback arrives on. Get it from [`crate::DrumApp::incoming_files`].
 #[derive(Clone)]
 pub struct IncomingFiles {
-    sender: Sender<(String, Vec<u8>)>,
+    sender: Sender<Incoming>,
     /// The interface's context once it has drawn a frame, so a file wakes it at once.
     ctx: Arc<Mutex<Option<egui::Context>>>,
 }
@@ -21,7 +22,16 @@ impl IncomingFiles {
     /// as `Chilled Beat.zip`; it names the pack and appears in messages. `bytes` is the whole
     /// file.
     pub fn send(&self, name: String, bytes: Vec<u8>) {
-        let _ = self.sender.send((name, bytes));
+        self.deliver(Incoming::File { name, bytes });
+    }
+
+    /// Hands in text shared to the app, such as a link to a groove file.
+    pub fn send_text(&self, text: String) {
+        self.deliver(Incoming::Text(text));
+    }
+
+    fn deliver(&self, incoming: Incoming) {
+        let _ = self.sender.send(incoming);
         if let Ok(ctx) = self.ctx.lock()
             && let Some(ctx) = ctx.as_ref()
         {
@@ -30,9 +40,18 @@ impl IncomingFiles {
     }
 }
 
+/// Something a host handed in.
+#[derive(Debug, PartialEq)]
+pub(crate) enum Incoming {
+    /// A file's name and its bytes.
+    File { name: String, bytes: Vec<u8> },
+    /// Shared text.
+    Text(String),
+}
+
 /// The interface's end of the files.
 pub(crate) struct IncomingInbox {
-    receiver: Receiver<(String, Vec<u8>)>,
+    receiver: Receiver<Incoming>,
     files: IncomingFiles,
 }
 
@@ -62,8 +81,8 @@ impl IncomingInbox {
         }
     }
 
-    /// The next file that has arrived, if any, as its name and bytes.
-    pub(crate) fn take(&self) -> Option<(String, Vec<u8>)> {
+    /// The next file or text that has arrived, if any.
+    pub(crate) fn take(&self) -> Option<Incoming> {
         self.receiver.try_recv().ok()
     }
 }
@@ -79,11 +98,20 @@ mod tests {
         std::thread::spawn(move || {
             files.send("One.mid".into(), vec![1]);
             files.send("Two.zip".into(), vec![2, 2]);
+            files.send_text("https://example.com/a.mid".into());
         })
         .join()
         .unwrap();
-        assert_eq!(inbox.take(), Some(("One.mid".into(), vec![1])));
-        assert_eq!(inbox.take(), Some(("Two.zip".into(), vec![2, 2])));
+        let file = |name: &str, bytes: Vec<u8>| Incoming::File {
+            name: name.into(),
+            bytes,
+        };
+        assert_eq!(inbox.take(), Some(file("One.mid", vec![1])));
+        assert_eq!(inbox.take(), Some(file("Two.zip", vec![2, 2])));
+        assert_eq!(
+            inbox.take(),
+            Some(Incoming::Text("https://example.com/a.mid".into()))
+        );
         assert_eq!(inbox.take(), None);
     }
 }

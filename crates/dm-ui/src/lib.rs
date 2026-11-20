@@ -381,8 +381,11 @@ impl DrumApp {
         self.picks.set_context(&ctx);
         self.incoming.set_context(&ctx);
         self.ctx = ctx.clone();
-        while let Some((name, bytes)) = self.incoming.take() {
-            self.import_grooves(&name, bytes);
+        while let Some(incoming) = self.incoming.take() {
+            match incoming {
+                incoming::Incoming::File { name, bytes } => self.import_grooves(&name, bytes),
+                incoming::Incoming::Text(text) => self.incoming_text(&text),
+            }
         }
         self.dropped_files(&ctx);
         self.back(&ctx);
@@ -1612,6 +1615,12 @@ impl DrumApp {
                 self.reload_grooves();
             }
         }
+    }
+
+    /// Text a host handed in, such as a link shared to the app. Milestone 13 downloads links;
+    /// until then the text is only logged.
+    fn incoming_text(&mut self, text: &str) {
+        log::info!("shared text not handled yet: {} characters", text.len());
     }
 
     fn finish(&mut self, engine: &mut Engine, result: Result<Vec<Change>, dm_project::Refused>) {
