@@ -258,10 +258,8 @@ possible mapping:
    another kit and listen for the right sounds.
 3. **Try a fuller style:** all four Mains, their fills, the Break, an Intro and an Ending, made
    from a real project. This shows how the keyboard moves between sections.
-4. **Decide whether the app sends styles over MIDI** as well as saving a file, with the file
-   transfer in "Sending a style over MIDI". The app already has MIDI out on desktop; it would need
-   MIDI in for the replies.
-5. **Then** design the export option in `DESIGN.md`.
+4. **Done: the export is planned** in `DESIGN.md`, "Export as a keyboard style". The app will
+   both save a style file and send a style over MIDI.
 
 The converter route (MIDI Song to Style) is no longer needed to prove the format. It stays useful
 as a reference if a later keyboard refuses a file without CASM.
