@@ -21,10 +21,12 @@
 //! [`presets`] with [`preset_project`] give beginners ready-made beats to start from.
 
 mod file;
+mod import;
 mod midi;
 mod presets;
 
 pub use file::{FILE_EXTENSION, FILE_FORMAT, InvalidReason, LoadError, from_json, to_json};
+pub use import::{BarHit, Imported, repeat_unit};
 pub use midi::{MIDI_EXTENSION, TICKS_PER_QUARTER, TICKS_PER_STEP, to_midi};
 pub use presets::{Preset, preset_project, presets};
 
@@ -851,5 +853,7 @@ fn diff_into(before: &Pattern, after: &Pattern, changes: &mut Vec<Change>) {
     }
 }
 
+#[cfg(test)]
+mod import_tests;
 #[cfg(test)]
 mod tests;

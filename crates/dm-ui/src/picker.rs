@@ -23,12 +23,14 @@ pub enum PickKind {
     ExportMidi,
     /// Export a WAV recording (as `SaveProject`).
     ExportWav,
+    /// Open a MIDI file or a zip of them to import as grooves (as `OpenProject`).
+    OpenGrooves,
 }
 
 impl PickKind {
     /// Whether the picker creates a file to write, rather than opening one to read.
     pub fn creates(self) -> bool {
-        self != PickKind::OpenProject
+        !matches!(self, PickKind::OpenProject | PickKind::OpenGrooves)
     }
 }
 
@@ -44,8 +46,8 @@ pub struct PickRequest {
     pub name: String,
 }
 
-/// A file the person picked, opened by the host: for reading for [`PickKind::OpenProject`], and
-/// empty and open for writing otherwise.
+/// A file the person picked, opened by the host: for reading when its kind does not
+/// [`create`](PickKind::creates), and empty and open for writing otherwise.
 #[derive(Debug)]
 pub struct PickedFile {
     pub file: File,

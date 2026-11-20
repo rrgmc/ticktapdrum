@@ -127,6 +127,7 @@ locale_files!(
     "song.ftl",
     "bars.ftl",
     "patterns.ftl",
+    "grooves.ftl",
     "tempo.ftl",
     "sounds.ftl",
     "bank.ftl",

@@ -45,6 +45,28 @@ impl Target {
         stem.map(|s| s.to_string_lossy().into_owned())
     }
 
+    /// The file's own name, without its folder, such as `Beat.drums`.
+    pub(crate) fn file_name(&self) -> String {
+        match self {
+            Target::Path(path) => path
+                .file_name()
+                .map_or_else(|| self.name(), |n| n.to_string_lossy().into_owned()),
+            Target::Picked(picked) => picked.name.clone(),
+        }
+    }
+
+    /// Reads the whole file, but no more than `limit` bytes and one more, so a file that is too
+    /// large shows as longer than `limit` without being read in full.
+    pub(crate) fn read_limited(&self, limit: usize) -> io::Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        let most = limit as u64 + 1;
+        match self {
+            Target::Path(path) => fs::File::open(path)?.take(most).read_to_end(&mut bytes)?,
+            Target::Picked(picked) => (&picked.file).take(most).read_to_end(&mut bytes)?,
+        };
+        Ok(bytes)
+    }
+
     pub(crate) fn read_to_string(&self) -> io::Result<String> {
         match self {
             Target::Path(path) => fs::read_to_string(path),
@@ -85,6 +107,8 @@ fn extension(kind: PickKind) -> &'static str {
         PickKind::OpenProject | PickKind::SaveProject => FILE_EXTENSION,
         PickKind::ExportMidi => "mid",
         PickKind::ExportWav => "wav",
+        // Grooves come as `.mid`, `.midi` or `.zip`; see `dialog`.
+        PickKind::OpenGrooves => "mid",
     }
 }
 
@@ -95,6 +119,8 @@ pub(crate) fn request(id: u64, kind: PickKind, name: &str) -> PickRequest {
         // Files from elsewhere may be labelled anything; the format check refuses what is not a
         // project.
         PickKind::OpenProject => "*/*",
+        // MIDI files and zips are labelled in many ways; the import checks what each file holds.
+        PickKind::OpenGrooves => "*/*",
         // Not application/json: Android's Downloads provider then adds .json to the name.
         PickKind::SaveProject => "application/octet-stream",
         PickKind::ExportMidi => "audio/midi",
@@ -178,9 +204,15 @@ pub(crate) fn dialog(kind: PickKind, name: &str) -> Option<PathBuf> {
         PickKind::OpenProject | PickKind::SaveProject => tr!("projects-file-kind-project"),
         PickKind::ExportMidi => tr!("projects-file-kind-midi"),
         PickKind::ExportWav => tr!("projects-file-kind-wav"),
+        PickKind::OpenGrooves => tr!("grooves-file-kind"),
     };
     let extension = extension(kind);
-    let dialog = rfd::FileDialog::new().add_filter(filter, &[extension]);
+    let extensions: &[&str] = if kind == PickKind::OpenGrooves {
+        &["mid", "midi", "zip"]
+    } else {
+        &[extension]
+    };
+    let dialog = rfd::FileDialog::new().add_filter(filter, extensions);
     if kind.creates() {
         dialog
             .set_file_name(format!("{name}.{extension}"))
@@ -243,6 +275,9 @@ mod tests {
     fn requests_name_the_new_file_and_its_type() {
         let open = request(1, PickKind::OpenProject, "Beat");
         assert_eq!((open.mime, open.name.as_str()), ("*/*", ""));
+        let grooves = request(5, PickKind::OpenGrooves, "Beat");
+        assert_eq!((grooves.mime, grooves.name.as_str()), ("*/*", ""));
+        assert!(!PickKind::OpenGrooves.creates());
         let save = request(2, PickKind::SaveProject, "Beat");
         assert_eq!(
             (save.mime, save.name.as_str()),
@@ -280,6 +315,23 @@ mod tests {
             route(PickKind::OpenProject, true, None, "Beat"),
             Route::Picker
         );
+        // Grooves never go to the export folder either.
+        assert_eq!(
+            route(PickKind::OpenGrooves, false, Some(dir), "Beat"),
+            Route::Dialog
+        );
+    }
+
+    #[test]
+    fn reading_stops_just_past_the_limit() {
+        let path = temp_path("limited");
+        fs::write(&path, [7u8; 10]).unwrap();
+        let target = Target::Path(path.clone());
+        assert_eq!(target.read_limited(100).unwrap().len(), 10);
+        assert_eq!(target.read_limited(10).unwrap().len(), 10);
+        // One byte more than the limit tells that the file is too large.
+        assert_eq!(target.read_limited(4).unwrap().len(), 5);
+        let _ = fs::remove_file(path);
     }
 
     #[test]
@@ -287,9 +339,11 @@ mod tests {
         let path = temp_path("names");
         let target = Target::Picked(picked(&path, "My beat.drums"));
         assert_eq!(target.name(), "My beat.drums");
+        assert_eq!(target.file_name(), "My beat.drums");
         assert_eq!(target.stem().as_deref(), Some("My beat"));
         let target = Target::Path(PathBuf::from("folder").join("Rock.drums"));
         assert_eq!(target.stem().as_deref(), Some("Rock"));
+        assert_eq!(target.file_name(), "Rock.drums");
         drop(target);
         let _ = fs::remove_file(path);
     }

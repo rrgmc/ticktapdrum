@@ -12,23 +12,71 @@ use dm_project::{
 };
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
-/// The width of the column of row names, with names showing.
+/// The least width of the column of row names, with names showing.
 const LABEL_WIDTH: f32 = 96.0;
+/// The size of a name with names showing.
+const NAME_SIZE: f32 = 16.0;
+/// The most of the grid's width the column of names takes, so a phone keeps room for the steps.
+const MAX_LABEL_SHARE: f32 = 0.25;
 /// The same with pictures alone, which need less room and leave more for the steps.
 const PICTURE_LABEL_WIDTH: f32 = 60.0;
-/// The same with a picture and the name under it: wider, so long names such as Portuguese
-/// "Chimbal fechado" fit on one line under the picture.
+/// The same with a picture and its name beside it, on a short row: wide enough for long names
+/// such as Portuguese "Chimbal fechado". It is also the most the column takes with the name
+/// under the picture.
 const PICTURE_NAME_LABEL_WIDTH: f32 = 112.0;
+/// The least the column takes with the name under the picture, so the picture keeps its size.
+const PICTURE_NAME_MIN_WIDTH: f32 = 64.0;
+/// The row height from which the name goes under its picture.
+const NAME_UNDER_ROW: f32 = 44.0;
+/// The row height from which a name under its picture may take two lines.
+const TWO_LINE_ROW: f32 = 64.0;
+/// Room beside a name for the mute or solo badge.
+const BADGE_ROOM: f32 = 14.0;
 /// The size of a name beside or under its picture.
 const PICTURE_NAME_SIZE: f32 = 12.0;
 
-/// The width of the column of row names for this way of labelling rows.
-pub(crate) fn label_width(labels: RowLabels) -> f32 {
+/// The width of the column of row names for this way of labelling `project`'s rows, in a grid
+/// `width` points wide with rows `row_height` points tall (see [`row_height`]).
+///
+/// The column is as wide as the longest name on one line needs, with room for a badge, within
+/// limits: with names alone, from 96 points up to a quarter of the grid, so a wide window shows
+/// whole names and a phone keeps its steps; with the name under the picture, from 64 to 112
+/// points. With the name beside the picture it is 112 points, and pictures alone take 60.
+pub(crate) fn label_width(
+    ctx: &egui::Context,
+    project: &Project,
+    labels: RowLabels,
+    width: f32,
+    row_height: f32,
+) -> f32 {
+    let widest = |size: f32| {
+        let font = FontId::proportional(size);
+        project
+            .rows()
+            .iter()
+            .map(|info| {
+                let name = crate::drums::row_name(&info.name, info.key);
+                ctx.fonts_mut(|f| f.layout_no_wrap(name, font.clone(), Color32::WHITE))
+                    .size()
+                    .x
+            })
+            .fold(0.0, f32::max)
+    };
     match labels {
         RowLabels::Pictures => PICTURE_LABEL_WIDTH,
+        RowLabels::PicturesAndNames if row_height >= NAME_UNDER_ROW => {
+            (widest(PICTURE_NAME_SIZE) + 6.0 + BADGE_ROOM + 4.0)
+                .clamp(PICTURE_NAME_MIN_WIDTH, PICTURE_NAME_LABEL_WIDTH)
+        }
         RowLabels::PicturesAndNames => PICTURE_NAME_LABEL_WIDTH,
-        RowLabels::Names => LABEL_WIDTH,
+        RowLabels::Names => (widest(NAME_SIZE) + 18.0 + BADGE_ROOM + 4.0)
+            .clamp(LABEL_WIDTH, (width * MAX_LABEL_SHARE).max(LABEL_WIDTH)),
     }
+}
+
+/// How tall each of `rows` rows is in a grid `height` points tall, header included.
+pub(crate) fn row_height(height: f32, rows: usize) -> f32 {
+    ((height - HEADER_HEIGHT) / rows.max(1) as f32).clamp(8.0, MAX_ROW_HEIGHT)
 }
 const HEADER_HEIGHT: f32 = 26.0;
 const GAP: f32 = 3.0;
@@ -124,7 +172,7 @@ impl Grid {
     }
 
     /// Sets which loudness levels a tap on a step goes through. The caller sets it every frame
-    /// before [`Grid::ui`]: the project's choice, or on and off alone in basic mode.
+    /// before [`Grid::ui`]: the project's choice.
     pub(crate) fn set_step_levels(&mut self, levels: StepLevels) {
         self.step_levels = levels;
     }
@@ -160,7 +208,13 @@ impl Grid {
     ) -> Vec<GridEvent> {
         let area = ui.available_rect_before_wrap();
         let rows = project.rows().len().max(1);
-        let label_width = label_width(self.row_labels);
+        let label_width = label_width(
+            ui.ctx(),
+            project,
+            self.row_labels,
+            area.width(),
+            row_height(area.height(), rows),
+        );
         let header = Rect::from_min_max(
             Pos2::new(area.min.x + label_width, area.min.y),
             Pos2::new(area.max.x, area.min.y + HEADER_HEIGHT),
@@ -243,7 +297,7 @@ impl Grid {
                 colour,
                 text_color,
                 self.row_labels,
-                if badge.is_some() { 14.0 } else { 0.0 },
+                if badge.is_some() { BADGE_ROOM } else { 0.0 },
             );
             if lit {
                 ui.painter().rect_stroke(
@@ -452,15 +506,19 @@ fn draw_label(
                 Vec2::new(4.0, rect.height() - 2.0 * inset),
             );
             painter.rect_filled(stripe, CornerRadius::same(2), colour);
-            let galley = fitted(16.0, rect.width() - 18.0 - badge_room, rect.height() - 4.0);
+            let galley = fitted(
+                NAME_SIZE,
+                rect.width() - 18.0 - badge_room,
+                rect.height() - 4.0,
+            );
             let top = rect.center().y - galley.size().y / 2.0;
             painter.galley(Pos2::new(rect.left() + 14.0, top), galley, text);
         }
-        RowLabels::PicturesAndNames if rect.height() >= 44.0 => {
+        RowLabels::PicturesAndNames if rect.height() >= NAME_UNDER_ROW => {
             // A tall row: the picture above, the name under it on up to two lines. The name is
             // laid out first, and the picture takes the height left, so a long name is not cut.
             let line = ui.fonts_mut(|f| f.row_height(&FontId::proportional(PICTURE_NAME_SIZE)));
-            let name_room = if rect.height() >= 64.0 {
+            let name_room = if rect.height() >= TWO_LINE_ROW {
                 2.0 * line
             } else {
                 line

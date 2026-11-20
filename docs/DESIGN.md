@@ -109,7 +109,6 @@ Deleting a pattern is a separate, explicit command.
   level the first step touched received.
 - Steps keep their loudness whichever choice is made, so changing it loses nothing.
 - A beat to start from picks the fewest levels that reach its notes.
-- In basic mode the button is not there, and a tap turns a step on or off.
 
 ### Rows
 
@@ -125,10 +124,14 @@ Deleting a pattern is a separate, explicit command.
   stripe beside its name and one on each drum in the drum list. Loud and soft steps still differ
   in shape as well, so the grid reads without colour vision.
 - **Rows can show pictures**, for children who cannot read yet. ☰ → "Rows: …" cycles through
-  three choices, a device setting like basic mode:
+  three choices, a device setting:
   - **Names** (the default): the name with the family's stripe.
   - **Pictures and names**: a picture with the name, the name under it on a tall row and beside
-    it on a short one.
+    it on a short one. With the name under the picture, the column is as wide as the longest
+    name on one line needs, between 64 and 112 points, so short names leave more room for the
+    steps. With the name beside the picture it is 112 points. With names alone the column also
+    fits the longest name, from 96 points up to a quarter of the grid's width, so a desktop
+    window shows whole names and a phone keeps room for its steps.
   - **Pictures**: a larger picture alone. The column of names narrows from 96 to 60 points, so
     the steps get the room.
   - With either picture choice, the drum list shows each drum's picture beside its name.
@@ -296,7 +299,7 @@ the beat.
 | **♩ 120** | Opens the tempo pop-up: large − and + buttons, a slider, and Swing. |
 | **▂▄▆** | Step levels: moves to the next choice of what a tap on a step does (see "Steps and loudness"). |
 | **↶** | Undo. Redo sits beside it when there is room. Either is in ☰ when it does not fit. |
-| **☰** | Opens the menu: Undo, Redo and the tempo on one line at the top when the strip has no room for them, then Save, Save as, Open, New, Load default style, Sounds, Export MIDI and Export WAV. Last, under "Settings": Rows (names or pictures), Keep in landscape, Language, and Basic mode, always the last item. Sounds opens the Sounds dialog: the drum kit and "Add a row". |
+| **☰** | Opens the menu: Undo, Redo and the tempo on one line at the top when the strip has no room for them, then Save, Save as, Open, New, Load default style, Sounds, Export MIDI and Export WAV. Last, under "Settings": Rows (names or pictures), Keep in landscape, and Language. Sounds opens the Sounds dialog: the drum kit and "Add a row". |
 
 - **The strip never wraps and never scrolls.** Each button shows an icon and a word when there is
   room, and only the icon when there is not. If the icons still do not fit, buttons move into ☰
@@ -324,33 +327,9 @@ the beat.
   and changed no step. Nobody has listened to it yet.
 - **Remove row always asks first.** For a row with notes the question says that its notes in
   every pattern go too.
-- **Basic mode** (☰ → Basic mode) is a simpler app for someone who only wants one beat. It is a
-  device setting, like Keep in landscape, and is off unless turned on.
-  - There is no pattern button: the app plays and edits the first pattern only, and plays
-    the pattern, never the song. Turning it on while the song plays switches to the pattern.
-  - The bar button is hidden whenever the grid shows the whole pattern, which for a new project
-    is bar 1 of 1. It stays where steps are off screen, such as half a bar on a phone in
-    portrait or a pattern with more bars than fit, so no step is out of reach. Its label then
-    opens nothing; only the arrows work.
-  - There is no Undo or Redo, in the strip or in ☰. Ctrl+Z and Ctrl+Y still work on a
-    keyboard. The strip is Play, the tempo and ☰.
-  - ☰ has no Song item.
-  - A row's pop-up has no drum choice, no "In this pattern" fills and no Remove row.
-  - Nothing in the project changes. Other patterns, bars and the song stay, and come back when
-    basic mode is turned off.
-  - **Checked on the Windows desktop build by screenshot:** turning it on and off from ☰, the
-    strip without the pattern and bar buttons, ☰ without Song, the short row pop-up, the
-    setting surviving a restart, and in a window 404 points wide the bar arrows paging to the
-    second half while a tap on the label opens nothing. Remove row asked first on an empty
-    row, and Keep kept it. Later, also by screenshot: the strip without Undo and Redo (Play,
-    tempo, ☰), ☰ without Redo in the narrow window, and in normal mode Sounds opening from ☰.
-  - **Checked on the Android phone by screenshot:** turning it on and off from ☰; in portrait,
-    where the grid shows half a bar, the strip is Play, the bar arrows, the tempo and ☰; ☰ has
-    no Song and no Redo; the short row pop-up. In normal mode, Remove row on a row with notes
-    asked first, with the line about notes in every pattern, and Keep kept it.
-  - **Not checked:** turning it on while pattern B is open or the song plays, and the iOS
-    build. The menu closes when basic mode is toggled,
-    because its button moves along the strip.
+- **Basic mode was removed** (2026-11-20). It hid the pattern button, Undo, Redo and the song
+  for someone who wanted one beat, but it kept getting in the way of new features, and the app
+  is simple enough without it. A `basic.mode` file left in the data folder is ignored.
 - **The song lives in the pattern pop-up** (changed from a Song dialog in ☰): the switch between
   playing the pattern and playing the song at the top, and the play order with move and take
   out, "Add" for the pattern being edited, and Repeat at the end. It is small enough to share
@@ -733,12 +712,17 @@ Shown as JSON. Field names are proposals.
     on the phone.* The brief and the findings are "Milestone 10: Android file picker" below.
 11. **Groove import from files.** Open a groove file or a groove pack (a `.mid` or `.zip` file),
     keep only the files that are groove loops, list them, and add one to the project as a
-    pattern. On desktop and Android, with drag and drop on a desktop. *Planned.*
+    pattern. On desktop and Android, with drag and drop on a desktop. *Done on the Android
+    emulator, checked by screenshot; not on the phone or a desktop, and no preview listened to.*
 12. **Share to the app on Android.** "Share" a download link or a groove file to TickTapDrum, and
-    open `.mid` and `.zip` files tapped in other apps. *Planned.*
-13. **Add from a link.** Paste a link to a groove file or pack, and the app downloads it. *Planned.*
+    open `.mid` and `.zip` files tapped in other apps. *Done on the Android emulator, checked
+    with intents sent through adb and by screenshot; not from Chrome or Files by hand, and not
+    on the phone.*
+13. **Add from a link.** Paste a link to a groove file or pack, and the app downloads it. *Done on
+    the Android emulator, with a real pack downloaded from Groove Monkee; pasting from the
+    clipboard not checked.*
 
-    The brief for milestones 11 to 13 is "Groove import" below.
+    The brief for milestones 11 to 13 is "Groove import" below, with what they found.
 
 ## Milestone 7: iOS
 
@@ -1126,8 +1110,8 @@ it, and **add it to the project as a new pattern**, using the project's own temp
 asks nothing more; undo removes it. A groove whose drums are not among the project's rows adds the
 rows it needs.
 
-A single file opened or shared shows its groove right away, with "Add as pattern" and "Keep in
-list"; a pack shows the list.
+Every import, a single file or a pack, opens the groove list on the new pack, so a single groove
+is one tap away from Play or Add. Re-importing a file of the same name replaces its pack.
 
 ### Milestone 11: groove import from files
 
@@ -1211,6 +1195,145 @@ list"; a pack shows the list.
 - **A help page with links to free packs**, which should tell people to download the "GM" or
   "General MIDI" version.
 - **Choosing bars from a longer file**, and any other MIDI: songs, live recordings, other meters.
+
+### What milestones 11 to 13 found
+
+- **How it is built.** `dm-groove` reads `.mid` and `.zip` files, applies the rule, keeps packs as
+  JSON, and downloads links (`ureq`, as the bank does). `dm-project` adds an import as one pattern
+  (`Project::add_imported_pattern`), collapsing exact repeats. The engine has a hidden preview
+  track (`Engine::preview`) with its own storage, so previewing never touches the project. In
+  `dm-ui`, `import_grooves` is the one entry point for a file, whether it was picked, dropped,
+  downloaded or shared; hosts hand files and text in through `DrumApp::incoming_files`. On
+  Android, `MainActivity` passes shares to Rust through `onShared`, and `share.rs` queues them
+  until the interface exists.
+- **Checked on the emulator (Android 16), by screenshot, in English:**
+  - "Add grooves from a file" opened the system picker. Groove Monkee's Chilled Beat pack opened
+    as a list of its grooves; Play turned into Stop; Add made pattern B, and its 8 bars of one
+    repeated bar became 1 bar, with a note saying so.
+  - The 3/4 metal pack was refused whole: "Nothing was added ... 18 files were left out: not in
+    4/4 (18)."
+  - A link shared with the app stopped (an `ACTION_SEND` intent through adb) waited for the
+    interface, downloaded Groove Monkee's free Perfect Drums pack and opened its grooves. A `.mid`
+    opened with the running app (`ACTION_VIEW` with a content address) became its own pack.
+  - Typing a link into "Add grooves from a link" (through the input system) and tapping Add
+    downloaded the GetGood Drums sampler: 84 grooves added, 190 files left out with reasons.
+  - With the experimental setting on (since removed), a typed 1-bar tab became pattern C as
+    written.
+- **Fixed after the first look:** names in a pack all began "076 Chilled Beat 1 ..." and were cut
+  short identically, so the list now drops the words every groove in a pack shares. The
+  experimental setting's label was too long for its button.
+- **The mapping check catches most, not all, files made for other drum programs.** About a third
+  of the GetGood Drums and Perfect Drums files still pass, probably those without a hi-hat. A
+  pack's GM folder, chosen automatically, remains the main protection.
+- **Found on the desktop: empty bars in GMD grooves.** Most GMD files end (their End of Track) a
+  fifth of a bar to a whole bar after the last note, so a 1-bar fill became 2 bars with an empty
+  second bar. Some fills start with a hit just before the second bar line, which left the first
+  bar empty. The length now comes from the last note, and End of Track counts only when it is on a
+  bar line; empty bars at either end are dropped. Over the GMD zip, 359 of 1,150 files are now
+  accepted (286 before, because padding had pushed 73 past 16 bars), and none has an empty first
+  or last bar. The desktop app also had no clipboard, so a link could not be pasted; eframe's
+  `clipboard` feature is now on.
+- **Not checked:** the phone; a desktop (its dialog and drag and drop); hearing a preview;
+  pasting from the clipboard into a text box on Android; sharing from Chrome and Files by hand;
+  iOS, which has none of this yet.
+
+## Paste a drum tab
+
+Plain-text drum tabs are mostly whole-song transcriptions with no standard (see
+[`research/tab-import-spike.md`](research/tab-import-spike.md)), so they do not fit a simple app
+as a song import. Copying a few bars of a beat from a tab is still worth having. The feature
+started behind an experimental setting, off by default; after trying it on the desktop, the
+author made it a plain menu item.
+
+- **The ☰ menu's Import section offers "Paste a drum tab"**: a text box,
+  and "Add as pattern". Text shared to the app that is not a link opens the same dialog.
+- **The paste becomes one new pattern** after the existing ones, at most 16 bars; the rest is
+  left out and the message says how many bars. The pattern uses rows that already play each
+  drum and adds rows for the drums the project lacks. Tempo, swing, kit and song do not change.
+  Undo removes it.
+- **Nothing is ever asked.** The app reads what it can recognise on its own and refuses the rest,
+  with a reason, keeping the text so it can be fixed:
+  - Drum names come from the tab's own legend first, then a built-in table of common labels.
+  - Rows with an unknown name are left out if they hold at most 10% of the hits; otherwise the
+    paste is refused, naming them.
+  - After fixing a spacer column or a bar one column short, every bar must be 4, 8, 16 or 32
+    characters wide. Triplets and other widths are refused, not guessed. A checkbox in the
+    dialog, "Leave out bars that do not fit", off by default and kept while the app runs, leaves
+    those bars out instead and says how many; the paste is still refused if none is left. It
+    exists because a whole song is often refused for one triplet fill.
+  - Rows of one system with different numbers of bars are refused.
+  - Repeat marks such as `x4` repeat the system; `%` repeats the bar before.
+- **The parser is the crate `dm-tab`,** ported from the spike's tab parser, with tests.
+- **On Android, pasting into the text box was not checked** (see "Groove import", Risks).
+  Sharing text to the app covers it.
+
+## The ☰ menu's sections
+
+The menu grew past a screen, so two groups fold open in place: **Import** (add from a file, add
+from a link, paste a drum tab, the groove list) and **Settings**. Both
+start closed and stay as left while the app runs. A section folds open inside the one scrolling
+list instead of opening a submenu beside it, which works the same with a finger and a mouse.
+
+## Where to find grooves and tabs
+
+The app points to free sources from the dialogs that take them, so nobody has to search first.
+eframe's `links` feature opens a link in the system browser on the desktop and on Android.
+
+- **"Add grooves from a link" lists free grooves.** Links to Magenta's page and to Groove
+  Monkee's two free pages open in the browser, with a line saying to copy a download link there
+  and paste it.
+- **"Paste a drum tab" lists where to find tabs:** Ultimate Guitar's drum tabs and Tabcrawler,
+  opened in the browser.
+- Every address answered on 2026-11-20. Pages move, so a link may break in a later version.
+
+## Grooves that come with the app
+
+Every file of Google Magenta's Groove MIDI Dataset (CC BY 4.0) that the app accepts ships with
+it: 359 beats and fills, whole takes of up to 16 bars, so there are grooves by real drummers
+without a download. `dm-groove`'s `curate_magenta` example gathers them from the dataset's MIDI
+zip and writes `crates/dm-ui/assets/magenta-grooves.json` (250 KB). Each groove's folder is its
+style; the dataset's "grooveN" takes count as their style, which gives 24 styles. Within a
+style the beats come first, then the fills ("Funk 3 (fill)"), each by tempo, numbered in that
+order, so the list reads in the order of its names. Each drummer's take is kept, even where
+several share a file name.
+
+The author first asked for a few beats per style (25, cut to 4 bars, then whole takes), then for
+all of them. Putting grooves of up to 4 bars first looked odd, as the numbers then jumped, so
+the order follows the names. Rock has the most (64 beats, 28 fills); several styles have only
+fills.
+
+- **"Ready-made styles" has a button, "Grooves by real drummers",** that lists them with their
+  credits and links to the dataset and the licence, by style: each style is a heading with its
+  count that opens and closes. Each groove shows its tempo and length. Load starts a new project from one, as a
+  ready-made style does: pattern A holds the groove at its tempo, and it asks first when there
+  are unsaved changes.
+- **The Grooves list always shows them first,** as a pack that cannot be deleted, with the
+  credits and the same styles. Add puts one in the project as a new pattern, like any imported groove. The Grooves
+  item is therefore always in the menu.
+- **The credits** are in the dialog, the Grooves list, the README and
+  `crates/dm-ui/assets/MAGENTA-CREDITS.txt`, as CC BY 4.0 asks.
+- The link dialog no longer offers to download the whole dataset; the page link stays.
+
+## Bars under the buttons
+
+A setting, "Show bars under the buttons", shows the bar thumbnails from the bar pop-up all the
+time, on one line under the strip that scrolls sideways. A tap on a thumbnail shows that bar, as
+in the pop-up, and the line scrolls to the bars the grid shows whenever they change, such as
+while following the music. Until the person chooses, it is on for a desktop and for a screen
+whose short side is at least 600 points (a tablet), and off for a phone, which needs the room
+for the grid.
+
+- **The line starts with two buttons the size of a thumbnail,** which stay put while the
+  thumbnails scroll: Follow (a crosshair), and a play icon with a bar number, which plays the
+  pattern from the first bar the grid shows (offered for a pattern only). Moving to another bar
+  by hand while playing stops following; Follow, here or in the bar pop-up, turns it back on.
+  The line's scroll bar takes its own room under the thumbnails instead of floating over them.
+- **While the line shows, the bar pop-up leaves its thumbnails out,** and with them "Play from
+  bar N", which the line offers instead.
+- **Otherwise the bar pop-up offers "Play from bar N",** N being the first bar the grid shows.
+  It plays the pattern from that bar's first step, loops the whole pattern after, and follows
+  it. A song plays from its start, so it is offered only for a pattern.
+- **The window's title names the project** once it has one: "Name - TickTapDrum".
 
 ## Open questions
 

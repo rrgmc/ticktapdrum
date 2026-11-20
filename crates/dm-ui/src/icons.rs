@@ -45,6 +45,7 @@ pub(crate) const FOLDER_OPEN: &str = "\u{E256}";
 pub(crate) const GLOBE: &str = "\u{E288}";
 pub(crate) const HEADPHONES: &str = "\u{E2A6}";
 pub(crate) const IMAGE: &str = "\u{E2CA}";
+pub(crate) const LINK: &str = "\u{E2E2}";
 pub(crate) const LIST: &str = "\u{E2F0}";
 pub(crate) const METRONOME: &str = "\u{EC8E}";
 pub(crate) const MINUS: &str = "\u{E32A}";

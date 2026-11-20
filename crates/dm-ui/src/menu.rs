@@ -1,5 +1,6 @@
 //! The menu under ☰, and the dialogs its items open: Save as, Open, Load default style, Export,
-//! Language, MIDI output, and the tempo when the strip has no room for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
+//! Language, MIDI output, Paste a drum tab, Add grooves from a link, Grooves, and the tempo when
+//! the strip has no room for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
 //!
 //! It does everything the old Projects screen did. Starting a new project, opening one, opening
 //! a file or starting from a beat asks first when there are unsaved changes, and deleting always
@@ -7,8 +8,10 @@
 
 use egui::{RichText, Vec2};
 
+use crate::grooves::{self, GrooveEvent, GroovesView};
 use crate::i18n::{self, Language};
 use crate::icons;
+use crate::link;
 use crate::pictures::RowLabels;
 use crate::projects::{ProjectEvent, ProjectsView};
 use crate::strip::Hidden;
@@ -31,6 +34,8 @@ pub(crate) enum MenuEvent {
     ListMidiOutputs,
     /// Send the drums to this MIDI output, or play them on this device if `None`.
     MidiOutput(Option<String>),
+    /// Import grooves, or use the groove list.
+    Grooves(GrooveEvent),
 }
 
 /// What the MIDI output item and its dialog show.
@@ -59,6 +64,9 @@ pub(crate) struct MenuView<'a> {
     pub(crate) system_language: Language,
     /// The MIDI output setting, or `None` where the platform cannot send MIDI.
     pub(crate) midi: Option<MidiView<'a>>,
+    pub(crate) grooves: GroovesView<'a>,
+    /// How far a download from a link has got, while one runs.
+    pub(crate) downloading: Option<link::Progress>,
 }
 
 /// The dialog a menu item opened.
@@ -71,6 +79,24 @@ enum Shown {
     Tempo,
     Language,
     MidiOutput,
+    /// The tab being pasted, and why the last try was refused, if it was.
+    PasteTab {
+        text: String,
+        refusal: Option<String>,
+    },
+    /// The link being typed, why the last download failed, if it did, and whether the box still
+    /// has to ask for focus once.
+    AddLink {
+        text: String,
+        error: Option<String>,
+        focus: bool,
+    },
+    /// The groove list, and a pack to open and show once, such as the one just imported.
+    Grooves {
+        focus: Option<String>,
+    },
+    /// The grooves that come with the app, from the Ready-made styles dialog.
+    Magenta,
     /// "Start new?" when there are unsaved changes.
     New,
 }
@@ -82,19 +108,85 @@ enum Ask {
     OpenFile,
     Delete(String),
     Preset(&'static str),
+    /// Starting a new project from a groove that comes with the app: its place and name.
+    Magenta(usize, String),
+    Groove(grooves::Ask),
 }
 
 #[derive(Default)]
 pub(crate) struct Menu {
     dialog: Option<Shown>,
     ask: Option<Ask>,
+    /// How the Paste a drum tab dialog reads a tab. Kept while the app runs, so a second paste
+    /// reads like the first.
+    tab_options: dm_tab::Options,
+    /// Which of the pop-up's sections are open. They start closed and stay as left while the
+    /// app runs.
+    import_section: bool,
+    settings_section: bool,
 }
 
 /// The width of a menu item.
 const ITEM_WIDTH: f32 = 240.0;
 
+/// Pages with free groove packs, opened in the browser from the link dialog: the label's
+/// message id, then the address. Checked to answer on 2026-11-20.
+const GROOVE_PAGES: [(&str, &str); 3] = [
+    (
+        "grooves-source-magenta-page",
+        "https://magenta.tensorflow.org/datasets/groove",
+    ),
+    (
+        "grooves-source-groove-monkee",
+        "https://groovemonkee.com/pages/free-midi-loops",
+    ),
+    (
+        "grooves-source-beat-farm",
+        "https://groovemonkee.com/pages/beat-farm-free-midi-beats",
+    ),
+];
+/// Sites with drum tabs, opened in the browser from the Paste a drum tab dialog. Checked to
+/// answer on 2026-11-20.
+const TAB_PAGES: [(&str, &str); 2] = [
+    (
+        "menu-paste-tab-source-ultimate-guitar",
+        "https://www.ultimate-guitar.com/explore?type[]=Drum%20Tabs",
+    ),
+    (
+        "menu-paste-tab-source-tabcrawler",
+        "https://www.tabcrawler.com/",
+    ),
+];
+
+/// Links that open `pages` in the browser, one per line, under a short heading.
+fn page_links(ui: &mut egui::Ui, heading: &str, pages: &[(&str, &str)]) {
+    ui.label(big(heading).strong());
+    for (label, address) in pages {
+        ui.hyperlink_to(big(&crate::i18n::tr(label)), *address)
+            .on_hover_text(*address);
+    }
+}
+
 fn item<'a>(icon: &str, word: &str) -> egui::Button<'a> {
     widgets::button(icon, word).min_size(Vec2::new(ITEM_WIDTH, TAP))
+}
+
+/// A heading that opens and closes a section of the pop-up in place, with a caret that points
+/// down while it is open. A section keeps the pop-up one list, which works the same with a
+/// finger and a mouse, where a submenu beside it would not.
+fn section(ui: &mut egui::Ui, open: &mut bool, title: &str) {
+    let caret = if *open {
+        icons::CARET_DOWN
+    } else {
+        icons::CARET_RIGHT
+    };
+    if ui
+        .add(item(caret, title).frame(false))
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
+        *open = !*open;
+    }
 }
 
 fn big(text: &str) -> RichText {
@@ -116,6 +208,74 @@ impl Menu {
     /// Whether one of the menu's dialogs is open.
     pub(crate) fn dialog_open(&self) -> bool {
         self.dialog.is_some()
+    }
+
+    /// Shows why a pasted tab was refused, in the Paste a drum tab dialog, which stays open with
+    /// the text so it can be fixed.
+    pub(crate) fn refuse_paste(&mut self, message: String) {
+        if let Some(Shown::PasteTab { refusal, .. }) = &mut self.dialog {
+            *refusal = Some(message);
+        }
+    }
+
+    /// Closes the Paste a drum tab dialog once its tab has been added.
+    pub(crate) fn close_paste(&mut self) {
+        if matches!(self.dialog, Some(Shown::PasteTab { .. })) {
+            self.dialog = None;
+            self.ask = None;
+        }
+    }
+
+    /// Opens the Paste a drum tab dialog with `text` in its box, such as text shared to the app.
+    /// Nothing is added until the person taps "Add as pattern".
+    pub(crate) fn open_paste_tab(&mut self, text: String) {
+        self.open(Shown::PasteTab {
+            text,
+            refusal: None,
+        });
+    }
+
+    /// Opens the Add grooves from a link dialog with `link` in its box, such as a link shared to
+    /// the app, whose download the app starts at once. The box does not ask for focus, which on
+    /// a phone would bring up the keyboard over the progress.
+    pub(crate) fn open_link(&mut self, link: String) {
+        self.open(Shown::AddLink {
+            text: link,
+            error: None,
+            focus: false,
+        });
+    }
+
+    /// Whether the Add grooves from a link dialog is open. A download runs only while it is.
+    pub(crate) fn link_open(&self) -> bool {
+        matches!(self.dialog, Some(Shown::AddLink { .. }))
+    }
+
+    /// Shows why a download or its import failed, in the link dialog, which stays open with the
+    /// link so it can be fixed or tried again.
+    pub(crate) fn link_failed(&mut self, message: String) {
+        if let Some(Shown::AddLink { error, .. }) = &mut self.dialog {
+            *error = Some(message);
+        }
+    }
+
+    /// Opens the groove list, showing the pack with key `focus` if there is one.
+    pub(crate) fn open_grooves(&mut self, focus: Option<String>) {
+        self.open(Shown::Grooves { focus });
+    }
+
+    /// Whether the groove list is open.
+    /// Whether a list of grooves is open: the groove list or the grooves that come with the app.
+    pub(crate) fn grooves_open(&self) -> bool {
+        matches!(self.dialog, Some(Shown::Grooves { .. } | Shown::Magenta))
+    }
+
+    /// Closes the groove list, once a groove from it has been added.
+    pub(crate) fn close_grooves(&mut self) {
+        if self.grooves_open() {
+            self.dialog = None;
+            self.ask = None;
+        }
     }
 
     /// Opens a dialog, dropping any question left from before.
@@ -250,75 +410,139 @@ impl Menu {
             self.open(Shown::Export);
             ui.close();
         }
-        // The settings, together under a heading. They belong to the device, not to the beat.
-        // Basic mode always comes last.
         ui.separator();
-        ui.label(big(&tr!("menu-settings")).strong());
-        // How rows are labelled: each tap moves to the next choice, and the item says which
-        // one is on. It stays open, so the grid behind can be seen to change.
-        let labels = match p.row_labels {
-            RowLabels::Names => tr!("menu-rows-names"),
-            RowLabels::PicturesAndNames => tr!("menu-rows-pictures-and-names"),
-            RowLabels::Pictures => tr!("menu-rows-pictures"),
-        };
-        if ui
-            .add(
-                widgets::toggle_button(p.row_labels.shows_pictures(), icons::IMAGE, &labels)
-                    .min_size(Vec2::new(ITEM_WIDTH, TAP)),
-            )
-            .clicked()
-        {
-            events.push(MenuEvent::Project(ProjectEvent::RowLabels(
-                p.row_labels.next(),
-            )));
+        section(ui, &mut self.import_section, &tr!("menu-import"));
+        if self.import_section {
+            self.import_items(ui, view, &mut events);
         }
-        if let Some(landscape) = p.landscape
-            && ui
-                .add(
-                    widgets::toggle_button(landscape, icons::DEVICE_ROTATE, &tr!("menu-landscape"))
-                        .min_size(Vec2::new(ITEM_WIDTH, TAP)),
-                )
-                .clicked()
-        {
-            events.push(MenuEvent::Project(ProjectEvent::Landscape(!landscape)));
+        // The settings belong to the device, not to the beat.
+        ui.separator();
+        section(ui, &mut self.settings_section, &tr!("menu-settings"));
+        if self.settings_section {
+            settings_items(ui, view, &mut events, |dialog| self.open(dialog));
         }
-        if ui.add(item(icons::GLOBE, &tr!("menu-language"))).clicked() {
-            self.open(Shown::Language);
-            ui.close();
-        }
-        // The item names the output chosen, shortened to fit.
-        if let Some(midi) = &view.midi {
-            let device = midi.choice.map_or_else(
-                || tr!("menu-midi-output-none"),
-                |name| crate::midi::shorten(name, crate::midi::SHORT_NAME),
-            );
-            let text = tr!("menu-midi-output-choice", device = device);
-            let mut response = ui.add(item(icons::MUSIC_NOTES, &text));
-            if let Some(name) = midi.choice
-                && name.chars().count() > crate::midi::SHORT_NAME
-            {
-                response = response.on_hover_text(name);
-            }
-            if response.clicked() {
-                self.open(Shown::MidiOutput);
-                events.push(MenuEvent::ListMidiOutputs);
-                ui.close();
-            }
-        }
-        // Basic mode always comes last.
-        if ui
-            .add(
-                widgets::toggle_button(p.basic, icons::SLIDERS_HORIZONTAL, &tr!("menu-basic"))
-                    .min_size(Vec2::new(ITEM_WIDTH, TAP)),
-            )
-            .clicked()
-        {
-            events.push(MenuEvent::Project(ProjectEvent::Basic(!p.basic)));
-        }
-
         events
     }
 
+    /// The Import section: adding grooves from a file or a link, pasting a drum tab, and the groove
+    /// list.
+    fn import_items(&mut self, ui: &mut egui::Ui, view: &MenuView, events: &mut Vec<MenuEvent>) {
+        let p = &view.projects;
+        // A file can be chosen on a desktop and where the host has a picker.
+        if p.file_items
+            && ui
+                .add(item(icons::FILE_ARROW_UP, &tr!("grooves-add-from-file")))
+                .clicked()
+        {
+            events.push(MenuEvent::Grooves(GrooveEvent::AddFromFile));
+            ui.close();
+        }
+        // A link needs no file picker, so it is offered everywhere.
+        if ui
+            .add(item(icons::LINK, &tr!("grooves-add-from-link")))
+            .clicked()
+        {
+            self.open(Shown::AddLink {
+                text: String::new(),
+                error: None,
+                focus: true,
+            });
+            ui.close();
+        }
+        if ui
+            .add(item(icons::MUSIC_NOTES_PLUS, &tr!("menu-paste-tab")))
+            .clicked()
+        {
+            self.open(Shown::PasteTab {
+                text: String::new(),
+                refusal: None,
+            });
+            ui.close();
+        }
+        // There is always the pack that comes with the app.
+        if ui
+            .add(item(icons::PLAYLIST, &tr!("grooves-title")))
+            .clicked()
+        {
+            self.open(Shown::Grooves { focus: None });
+            events.push(MenuEvent::Grooves(GrooveEvent::Open));
+            ui.close();
+        }
+    }
+}
+
+/// The Settings section. `open` opens a dialog.
+fn settings_items(
+    ui: &mut egui::Ui,
+    view: &MenuView,
+    events: &mut Vec<MenuEvent>,
+    mut open: impl FnMut(Shown),
+) {
+    let p = &view.projects;
+    // How rows are labelled: each tap moves to the next choice, and the item says which
+    // one is on. It stays open, so the grid behind can be seen to change.
+    let labels = match p.row_labels {
+        RowLabels::Names => tr!("menu-rows-names"),
+        RowLabels::PicturesAndNames => tr!("menu-rows-pictures-and-names"),
+        RowLabels::Pictures => tr!("menu-rows-pictures"),
+    };
+    if ui
+        .add(
+            widgets::toggle_button(p.row_labels.shows_pictures(), icons::IMAGE, &labels)
+                .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+        )
+        .clicked()
+    {
+        events.push(MenuEvent::Project(ProjectEvent::RowLabels(
+            p.row_labels.next(),
+        )));
+    }
+    // It stays open, so the change can be seen.
+    if ui
+        .add(
+            widgets::toggle_button(p.bar_line, icons::DOTS_THREE, &tr!("menu-bar-line"))
+                .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+        )
+        .clicked()
+    {
+        events.push(MenuEvent::Project(ProjectEvent::BarLine(!p.bar_line)));
+    }
+    if let Some(landscape) = p.landscape
+        && ui
+            .add(
+                widgets::toggle_button(landscape, icons::DEVICE_ROTATE, &tr!("menu-landscape"))
+                    .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+            )
+            .clicked()
+    {
+        events.push(MenuEvent::Project(ProjectEvent::Landscape(!landscape)));
+    }
+    if ui.add(item(icons::GLOBE, &tr!("menu-language"))).clicked() {
+        open(Shown::Language);
+        ui.close();
+    }
+    // The item names the output chosen, shortened to fit.
+    if let Some(midi) = &view.midi {
+        let device = midi.choice.map_or_else(
+            || tr!("menu-midi-output-none"),
+            |name| crate::midi::shorten(name, crate::midi::SHORT_NAME),
+        );
+        let text = tr!("menu-midi-output-choice", device = device);
+        let mut response = ui.add(item(icons::MUSIC_NOTES, &text));
+        if let Some(name) = midi.choice
+            && name.chars().count() > crate::midi::SHORT_NAME
+        {
+            response = response.on_hover_text(name);
+        }
+        if response.clicked() {
+            open(Shown::MidiOutput);
+            events.push(MenuEvent::ListMidiOutputs);
+            ui.close();
+        }
+    }
+}
+
+impl Menu {
     /// Shows the dialog a menu item opened, if any. Call it every frame.
     pub(crate) fn dialogs(&mut self, ctx: &egui::Context, view: &MenuView) -> Vec<MenuEvent> {
         let mut events = Vec::new();
@@ -381,6 +605,61 @@ impl Menu {
                 })
                 .closed
             }
+            Shown::PasteTab { text, refusal } => {
+                let options = &mut self.tab_options;
+                widgets::dialog_at_top(ctx, "paste-tab", &tr!("menu-paste-tab"), |ui| {
+                    done = paste_tab(ui, text, refusal, options, &mut events);
+                })
+                .closed
+            }
+            Shown::AddLink { text, error, focus } => {
+                widgets::dialog_at_top(ctx, "add-link", &tr!("grooves-add-from-link"), |ui| {
+                    done = add_link(ui, text, error, focus, view.downloading, &mut events);
+                })
+                .closed
+            }
+            Shown::Grooves { focus } => {
+                let mut ask = None;
+                let mut list_events = Vec::new();
+                let closed = widgets::dialog(ctx, "grooves", &tr!("grooves-title"), |ui| {
+                    grooves::list(ui, &view.grooves, focus, &mut ask, &mut list_events);
+                })
+                .closed;
+                if let Some(ask) = ask {
+                    self.ask = Some(Ask::Groove(ask));
+                }
+                events.extend(list_events.into_iter().map(MenuEvent::Grooves));
+                closed
+            }
+            Shown::Magenta => {
+                let mut list_events = Vec::new();
+                let closed = widgets::dialog(ctx, "magenta", &tr!("grooves-magenta-title"), |ui| {
+                    grooves::magenta_list(ui, &view.grooves, &mut list_events);
+                })
+                .closed;
+                for event in list_events {
+                    match event {
+                        // Load replaces the project, as a ready-made style does, so it asks
+                        // first when there are unsaved changes.
+                        GrooveEvent::Add { groove, .. } => {
+                            let name = view
+                                .grooves
+                                .magenta
+                                .grooves
+                                .get(groove)
+                                .map_or_else(String::new, |g| g.name.clone());
+                            if p.unsaved {
+                                self.ask = Some(Ask::Magenta(groove, name));
+                            } else {
+                                events.push(MenuEvent::Project(ProjectEvent::Magenta(groove)));
+                                done = true;
+                            }
+                        }
+                        other => events.push(MenuEvent::Grooves(other)),
+                    }
+                }
+                closed
+            }
             Shown::New => match widgets::confirm(
                 ctx,
                 "new",
@@ -420,6 +699,12 @@ impl Menu {
                     tr!("menu-start"),
                     tr!("menu-keep-this"),
                 ),
+                Ask::Magenta(_, name) => (
+                    tr!("menu-preset-question", name = name.as_str()),
+                    tr!("menu-start"),
+                    tr!("menu-keep-this"),
+                ),
+                Ask::Groove(ask) => ask.words(),
             };
             match widgets::confirm(ctx, "menu-question", &question, &yes, &no) {
                 Some(true) => {
@@ -441,6 +726,12 @@ impl Menu {
                             events.push(MenuEvent::Project(ProjectEvent::Preset(name)));
                             done = true;
                         }
+                        Ask::Magenta(index, _) => {
+                            events.push(MenuEvent::Project(ProjectEvent::Magenta(index)));
+                            done = true;
+                        }
+                        // The list stays open, to play, add or delete another.
+                        Ask::Groove(ask) => events.push(MenuEvent::Grooves(ask.event())),
                     }
                 }
                 Some(false) => self.ask = None,
@@ -449,7 +740,9 @@ impl Menu {
         }
         if closed || done {
             self.ask = None;
-        } else {
+        } else if self.dialog.is_none() {
+            // Put back, unless the dialog opened another, as Ready-made styles opens the
+            // grooves that come with the app.
             self.dialog = Some(dialog);
         }
         events
@@ -525,6 +818,18 @@ impl Menu {
     /// The preset beats. Returns true when one was chosen.
     fn presets(&mut self, ui: &mut egui::Ui, unsaved: bool, events: &mut Vec<MenuEvent>) -> bool {
         let mut done = false;
+        // The grooves that come with the app, in a list of their own: beats by real drummers,
+        // each added as a new pattern instead of replacing the project.
+        if ui
+            .add(widgets::button(
+                icons::PLAYLIST,
+                &tr!("grooves-magenta-title"),
+            ))
+            .clicked()
+        {
+            self.open(Shown::Magenta);
+        }
+        ui.separator();
         ui.label(tr!("menu-presets-intro"));
         // Each beat: its button, then its description on a line of its own, so a long
         // description does not wrap around the button.
@@ -598,6 +903,159 @@ fn save_as(
             done = true;
         }
     });
+    done
+}
+
+/// The Paste a drum tab dialog: a box for the tab, a choice to leave out bars that do not fit,
+/// and why the last try was refused. "Add as pattern" sends the text and leaves the dialog open:
+/// the app closes it once the pattern is added, or shows why not. Returns true when cancelled.
+fn paste_tab(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    refusal: &mut Option<String>,
+    options: &mut dm_tab::Options,
+    events: &mut Vec<MenuEvent>,
+) -> bool {
+    let mut done = false;
+    ui.label(tr!("menu-paste-tab-hint"));
+    page_links(ui, &tr!("menu-paste-tab-sources"), &TAB_PAGES);
+    ui.separator();
+    // The box is not focused when the dialog opens. A tap on it brings up a phone's keyboard,
+    // with its paste button, and nothing then asks for focus again, which on Android would
+    // close and reopen the keyboard.
+    let edit = egui::ScrollArea::vertical()
+        .max_height(240.0)
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(text)
+                    .code_editor()
+                    .desired_rows(8)
+                    .desired_width(f32::INFINITY),
+            )
+        })
+        .inner;
+    // Off by default: leaving bars out changes the music, so the person asks for it.
+    let skip = ui.checkbox(
+        &mut options.skip_odd_bars,
+        big(&tr!("menu-paste-tab-skip-odd-bars")),
+    );
+    // A refusal is about the text and the choice as they were, so it goes once either changes.
+    if edit.changed() || skip.changed() {
+        *refusal = None;
+    }
+    if let Some(message) = refusal.as_deref() {
+        ui.label(big(message).color(ui.visuals().warn_fg_color));
+    }
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .add_enabled(
+                !text.trim().is_empty(),
+                widgets::button(icons::MUSIC_NOTES_PLUS, &tr!("menu-paste-tab-add")),
+            )
+            .clicked()
+        {
+            events.push(MenuEvent::Project(ProjectEvent::PasteTab(
+                text.clone(),
+                *options,
+            )));
+        }
+        if ui.add(word_button(&tr!("menu-cancel"))).clicked() {
+            done = true;
+        }
+    });
+    done
+}
+
+/// The Add grooves from a link dialog: a box for the link, and Add. While the download runs, the
+/// box is disabled and its progress shows, with Stop. Why the last try failed shows below the
+/// box. Add sends the link and leaves the dialog open: the app closes it once the grooves are in,
+/// or shows why not. Returns true when cancelled.
+fn add_link(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    error: &mut Option<String>,
+    focus: &mut bool,
+    downloading: Option<link::Progress>,
+    events: &mut Vec<MenuEvent>,
+) -> bool {
+    let mut done = false;
+    ui.label(tr!("grooves-link-hint"));
+    let edit = ui.add_enabled(
+        downloading.is_none(),
+        egui::TextEdit::singleline(text)
+            .hint_text("https://")
+            .desired_width(f32::INFINITY)
+            .font(egui::TextStyle::Heading),
+    );
+    // Focus the box once, when the dialog opens from the menu. Asking every frame would also
+    // interrupt the input method each frame, which on Android closes and reopens the on-screen
+    // keyboard over and over.
+    if *focus {
+        edit.request_focus();
+        *focus = false;
+    }
+    // An error is about the link as it was, so it goes once the link changes.
+    if edit.changed() {
+        *error = None;
+    }
+    let link = dm_groove::link_address(text);
+    // Enter adds, as it saves in the Save as dialog, and for the same reason.
+    let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+    match downloading {
+        Some((so_far, total)) => {
+            ui.label(big(&link::progress_text(so_far)));
+            ui.horizontal_wrapped(|ui| {
+                match total.filter(|&t| t > 0) {
+                    Some(total) => {
+                        let fraction = (so_far as f64 / total as f64).min(1.0) as f32;
+                        ui.add(
+                            egui::ProgressBar::new(fraction)
+                                .show_percentage()
+                                .desired_width(200.0),
+                        );
+                    }
+                    None => {
+                        ui.spinner();
+                    }
+                }
+                if ui
+                    .add(widgets::button(icons::STOP, &tr!("grooves-stop")))
+                    .clicked()
+                {
+                    events.push(MenuEvent::Grooves(GrooveEvent::StopDownload));
+                }
+            });
+        }
+        None => {
+            if let Some(message) = error.as_deref() {
+                ui.label(big(message).color(ui.visuals().warn_fg_color));
+            }
+            ui.horizontal_wrapped(|ui| {
+                let add = ui
+                    .add_enabled(
+                        link.is_some(),
+                        widgets::button(icons::PLUS, &tr!("grooves-link-add")),
+                    )
+                    .clicked();
+                if (add || enter)
+                    && let Some(link) = link
+                {
+                    *error = None;
+                    events.push(MenuEvent::Grooves(GrooveEvent::Download(link)));
+                }
+                if ui.add(word_button(&tr!("menu-cancel"))).clicked() {
+                    done = true;
+                }
+            });
+            ui.separator();
+            ui.label(big(&tr!("grooves-sources")).strong());
+            ui.label(tr!("grooves-sources-hint"));
+            for (label, address) in GROOVE_PAGES {
+                ui.hyperlink_to(big(&crate::i18n::tr(label)), address)
+                    .on_hover_text(address);
+            }
+        }
+    }
     done
 }
 

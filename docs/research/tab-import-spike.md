@@ -122,6 +122,20 @@ By source, the GitHub tabs did best (48% clean) and Tabcrawler worst (21% clean,
   was fixed score 70%, close enough to suggest the fixes are right. A one-column error would put
   the snare on the wrong step and drop that share sharply.
 
+### Repetition
+
+A later question was whether collapsing repeated bars would make whole tabs small enough. Bars
+were compared by which drums play on which steps, velocity ignored, over the 215 tabs that did not
+fail:
+
+- A tab has a median of 77 bars after repeat marks, and 26 different bars (p90: 151 and 65).
+- Only 39% of a tab's bars are distinct, so repetition is common, but 26 different bars is still
+  far more than a simple pattern. Only 63 tabs have 16 or fewer different bars.
+- The most common bar covers a median of 18% of a tab; it covers half or more in 21 tabs.
+
+So collapsing repeats does not turn a song into a groove. It does help a paste of a few bars:
+the app keeps one pattern per paste and collapses bars that are a shorter unit repeated exactly.
+
 ## What was checked and what was not
 
 - **Checked:** all 256 tabs were read; every result above is counted, not estimated. Four tabs,

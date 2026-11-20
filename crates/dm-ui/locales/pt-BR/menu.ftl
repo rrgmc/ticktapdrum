@@ -22,13 +22,15 @@ menu-open = Abrir
 menu-new = Novo
 # Abre uma lista de batidas prontas em estilos conhecidos (rock, funk etc.).
 menu-presets = Estilos prontos
+# Uma tablatura de bateria é a bateria
+# escrita como texto, uma linha por peça, como "SD |----o-------o---|".
+menu-paste-tab = Colar uma tablatura de bateria
 menu-sounds = Sons
 menu-song = Música
 menu-export = Exportar
 # Trava a tela na horizontal.
 menu-landscape = Manter na horizontal
-# Uma versão mais simples do app: um padrão, sem música.
-menu-basic = Modo básico
+menu-bar-line = Mostrar compassos abaixo dos botões
 menu-language = Idioma
 # A primeira escolha da janela Idioma: seguir o idioma do sistema. $language é o nome desse
 # idioma nele mesmo, como "English".
@@ -114,7 +116,18 @@ menu-export-place = Local das exportações: { $place }.
 ## O grupo Ajustes no fim do menu.
 
 menu-settings = Ajustes
+menu-import = Importar
 # Como cada linha aparece na grade: pelo nome, por um desenho da peça, ou pelos dois.
 menu-rows-names = Linhas: nomes
 menu-rows-pictures-and-names = Linhas: desenhos e nomes
 menu-rows-pictures = Linhas: desenhos
+
+## A janela Colar uma tablatura de bateria. O título dela é menu-paste-tab.
+
+menu-paste-tab-hint = Cole alguns compassos de uma tablatura de bateria, com o nome da peça no começo de cada linha.
+# Adiciona a tablatura colada ao projeto como um padrão novo.
+menu-paste-tab-add = Adicionar como padrão
+menu-paste-tab-skip-odd-bars = Deixar de fora os compassos que não cabem
+menu-paste-tab-sources = Onde encontrar tablaturas de bateria
+menu-paste-tab-source-ultimate-guitar = Ultimate Guitar: tablaturas de bateria
+menu-paste-tab-source-tabcrawler = Tabcrawler

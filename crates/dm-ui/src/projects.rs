@@ -24,8 +24,12 @@ pub(crate) enum ProjectEvent {
     CancelExport,
     /// Keep the screen in landscape, or let it turn freely.
     Landscape(bool),
-    /// Turn basic mode on or off.
-    Basic(bool),
+    /// Add the pasted drum tab as a new pattern, with what the person chose for reading it.
+    PasteTab(String, dm_tab::Options),
+    /// Start a new project from this groove that comes with the app, as a ready-made style.
+    Magenta(usize),
+    /// Show the bar thumbnails under the strip all the time, or only in the bar pop-up.
+    BarLine(bool),
     /// Show row names as names, pictures and names, or pictures.
     RowLabels(crate::pictures::RowLabels),
 }
@@ -51,8 +55,8 @@ pub(crate) struct ProjectsView<'a> {
     pub(crate) export_place: Option<&'a str>,
     /// Whether the screen is kept in landscape. `None` where the host cannot lock it.
     pub(crate) landscape: Option<bool>,
-    /// Whether the app is in basic mode: one pattern of one bar, and no song.
-    pub(crate) basic: bool,
     /// How row names show in the grid.
     pub(crate) row_labels: crate::pictures::RowLabels,
+    /// Whether the bar thumbnails show under the strip.
+    pub(crate) bar_line: bool,
 }

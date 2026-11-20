@@ -22,13 +22,16 @@ menu-open = Open
 menu-new = New
 # Opens a list of ready-made beats in well-known styles (rock, funk and so on).
 menu-presets = Load default style
+# A drum tab is drums written as text,
+# one row per drum, such as "SD |----o-------o---|".
+menu-paste-tab = Paste a drum tab
 menu-sounds = Sounds
 menu-song = Song
 menu-export = Export
 # Locks the screen in landscape orientation.
 menu-landscape = Keep in landscape
-# A simpler version of the app: one pattern, no song.
-menu-basic = Basic mode
+# Shows the bars as small pictures under the buttons all the time.
+menu-bar-line = Show bars under the buttons
 menu-language = Language
 # The first choice in the Language dialog: follow the system's language. $language is that
 # language's own name, such as "English".
@@ -113,7 +116,22 @@ menu-export-place = Exports are saved in { $place }.
 ## The Settings group at the bottom of the menu.
 
 menu-settings = Settings
+# A heading in the menu that opens to show the items for adding grooves and drum tabs.
+menu-import = Import
 # How each row is labelled in the grid: by its name, a picture of the drum, or both.
 menu-rows-names = Rows: names
 menu-rows-pictures-and-names = Rows: pictures and names
 menu-rows-pictures = Rows: pictures
+
+## The Paste a drum tab dialog. Its title is menu-paste-tab.
+
+menu-paste-tab-hint = Paste a few bars of a drum tab, with the drum names at the start of each row.
+# Adds the pasted tab to the project as a new pattern.
+menu-paste-tab-add = Add as pattern
+# A checkbox, off by default. When on, bars that cannot be read, such as triplet fills, are left
+# out instead of refusing the whole tab.
+menu-paste-tab-skip-odd-bars = Leave out bars that do not fit
+# A heading over links to web sites with drum tabs, in the Paste a drum tab dialog.
+menu-paste-tab-sources = Where to find drum tabs
+menu-paste-tab-source-ultimate-guitar = Ultimate Guitar: drum tabs
+menu-paste-tab-source-tabcrawler = Tabcrawler

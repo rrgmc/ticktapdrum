@@ -12,3 +12,5 @@ bars-remove-question = Remove bar { $number }? Its notes go too.
 bars-remove = Remove
 # Answers the question: do not remove the bar.
 bars-keep = Cancel
+# A button that starts playing the pattern from the first step of bar $bar.
+bars-play-from = Play from bar { $bar }

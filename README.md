@@ -10,7 +10,9 @@ at that moment. It runs on Windows, macOS, Linux, Android, iPhone and iPad.
 - **A grid of steps.** Each row is a drum, such as kick, snare or hi-hat. Each box is a moment in
   time. Tap a box to turn it on or off, or drag to paint several.
 - **Beats to start from.** Rock, Pop, Hip-hop, Funk, Bossa nova, House and Reggae, each with a
-  fitting tempo and usually a fill.
+  fitting tempo and usually a fill. Also 359 beats and fills played by real drummers, in 24 styles.
+- **Grooves from files and links.** Add drum grooves from MIDI files or zip packs, from a link,
+  or shared from another app on Android. Paste a few bars of a drum tab.
 - **Patterns and songs.** A pattern is a loop of one or more bars. A song plays patterns in order,
   such as A A B A.
 - **Kits.** Choose a drum kit, such as Standard, Room, TR-808, TR-909, Jazz or Brush, from 63 kits.
@@ -78,6 +80,13 @@ Rangel Reale ([realerangel@gmail.com](mailto:realerangel@gmail.com))
 
 TickTapDrum is released under the [MIT licence](LICENSE). The instrument bank it downloads has
 its own licence, CC-BY-SA 4.0.
+
+The beats by real drummers come from the
+[Groove MIDI Dataset](https://magenta.tensorflow.org/datasets/groove) by Google Magenta (Gillick,
+Roberts, Engel, Eck and Bamman, 2019), licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The app keeps some of its beats, whole
+takes of up to 16 bars, moved onto a 16-step grid; see
+[`crates/dm-ui/assets/MAGENTA-CREDITS.txt`](crates/dm-ui/assets/MAGENTA-CREDITS.txt).
 
 ## Build it yourself
 

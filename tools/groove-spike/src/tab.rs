@@ -757,7 +757,27 @@ impl TabReport {
         }
     }
 
-    pub const CSV_HEADER: &str = "file,verdict,systems,guitar_systems,drum_lines,misaligned,bars_read,bars_after_repeats,standard_bars,fixed_bars,triplet_bars,unpiped_lines,bar_repeats,widths,hits,moved,merged,ornaments,ghosts,accents,unknown_labels,unknown_symbols,legend_labels,legend_used,count_lines,repeats,tempo";
+    pub const CSV_HEADER: &str = "file,verdict,systems,guitar_systems,drum_lines,misaligned,bars_read,bars_after_repeats,standard_bars,fixed_bars,triplet_bars,unpiped_lines,bar_repeats,widths,hits,moved,merged,ornaments,ghosts,accents,unknown_labels,unknown_symbols,legend_labels,legend_used,count_lines,repeats,tempo,bar_ids";
+
+    /// The bars after repeats as ids, equal ids for bars with the same hits (velocity ignored),
+    /// numbered in order of first appearance: "0 0 1 0 2".
+    pub fn bar_ids(&self) -> String {
+        let mut seen: Vec<Vec<(u8, usize)>> = Vec::new();
+        let mut ids = Vec::new();
+        for bar in &self.grid {
+            let mut shape: Vec<(u8, usize)> = bar.iter().map(|h| (h.0, h.1)).collect();
+            shape.sort_unstable();
+            let id = match seen.iter().position(|s| *s == shape) {
+                Some(i) => i,
+                None => {
+                    seen.push(shape);
+                    seen.len() - 1
+                }
+            };
+            ids.push(id.to_string());
+        }
+        ids.join(" ")
+    }
 
     pub fn csv_row(&self) -> String {
         let widths: Vec<String> = self
@@ -776,7 +796,7 @@ impl TabReport {
             .map(|(s, c)| format!("{}:{c}", *s as u32))
             .collect();
         format!(
-            "\"{}\",{:?},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},\"{}\",{},{},{},{},{},{}",
+            "\"{}\",{:?},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},\"{}\",{},{},{},{},{},{},{}",
             self.path.display(),
             self.verdict(),
             self.systems,
@@ -804,6 +824,7 @@ impl TabReport {
             self.count_lines,
             self.repeats,
             self.tempo.map_or(String::new(), |t| t.to_string()),
+            self.bar_ids(),
         )
     }
 

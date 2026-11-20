@@ -7,7 +7,8 @@
     <!-- hasCode is true for one small Java class, MainActivity, which extends Android's
          NativeActivity. NativeActivity loads libticktapdrum.so, which holds the whole app.
          MainActivity adds only the system file picker, whose answer reaches the activity that
-         started it and which NativeActivity cannot receive.
+         started it and which NativeActivity cannot receive, and passes on what other apps share
+         with this one (see the intent filters below).
 
          enableOnBackInvokedCallback is false so the Back button reaches the app as a key press.
          Otherwise Android handles Back itself and closes the activity. The app closes its open
@@ -30,7 +31,10 @@
         <!-- configChanges lists the changes the app handles itself, so rotating the screen or
              resizing the window does not destroy and restart the activity. With locale listed,
              a change of language reaches the running app, which reads it from the
-             configuration (see Host in apps/dm-android/src/lib.rs). -->
+             configuration (see Host in apps/dm-android/src/lib.rs).
+
+             singleTask keeps one copy of the activity: a share into the running app reaches it
+             through onNewIntent instead of starting a second copy. -->
         <activity
             android:name=".MainActivity"
             android:label="@string/app_name"
@@ -43,6 +47,47 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Share a link with the app: Share in a browser, for example. The app downloads
+                 the groove file the link points to. Any shared text matches; the app decides
+                 what to do with it. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- Share a MIDI or zip file with the app: Share in a file manager, for example.
+                 The app imports the grooves in it. Only these types are listed, not every type,
+                 so the app does not appear in the Share sheet for photos and the like. A file
+                 the sender labels with another type cannot be shared; it can still be opened
+                 from the menu. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/midi" />
+                <data android:mimeType="audio/x-midi" />
+                <data android:mimeType="audio/mid" />
+                <data android:mimeType="application/x-midi" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+            </intent-filter>
+
+            <!-- Open a MIDI or zip file with the app: "Open with" in a file manager, or tapping
+                 a downloaded file. The same types as above, from a content:// or file://
+                 address. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="audio/midi" />
+                <data android:mimeType="audio/x-midi" />
+                <data android:mimeType="audio/mid" />
+                <data android:mimeType="application/x-midi" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
             </intent-filter>
         </activity>
     </application>
