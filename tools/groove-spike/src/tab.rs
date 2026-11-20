@@ -686,16 +686,17 @@ pub fn label_key(label: &str) -> Option<u8> {
     Some(match l.as_str() {
         "h" | "hh" | "hat" | "hihat" | "hhat" | "chh" | "hc" | "hho" | "hhc" | "hh1" | "hi" => 42,
         "oh" | "ohh" | "ho" => 46,
-        "hf" | "hhf" | "hp" | "ph" | "p" | "pd" | "ped" | "pedal" | "hfoot" | "fh" | "hhp" => 44,
+        "hf" | "hhf" | "hp" | "ph" | "p" | "pd" | "ped" | "pedal" | "hfoot" | "fh" | "hhp"
+        | "lf" => 44,
         "s" | "sd" | "sn" | "snr" | "snare" | "sr" | "snd" => 38,
         "b" | "bd" | "k" | "kd" | "kick" | "bass" | "bassdrum" | "b1" | "b2" | "bd1" | "bd2"
-        | "k1" | "k2" | "kk" | "bs" | "bb" => 36,
+        | "k1" | "k2" | "kk" | "bs" | "bb" | "bk" | "kck" => 36,
         "c" | "cc" | "cr" | "crash" | "c1" | "cr1" | "cc1" | "cy" | "cym" | "cym1" => 49,
         "c2" | "cr2" | "cc2" | "cym2" | "c3" | "cr3" => 57,
         "r" | "rd" | "ride" | "rc" | "ri" | "rcy" => 51,
         "rb" | "bell" => 53,
-        "ch" | "cn" | "chn" | "china" => 52,
-        "sp" | "spl" | "splash" => 55,
+        "ch" | "cn" | "chn" | "china" | "ch1" | "ch2" => 52,
+        "sp" | "spl" | "splash" | "sp1" | "sp2" => 55,
         "t" | "t1" | "ht" | "tom" | "tom1" | "tt" | "rt" | "ht1" => 50,
         "t2" | "mt" | "m" | "tom2" | "ht2" => 47,
         "t3" | "lt" | "tom3" => 45,
