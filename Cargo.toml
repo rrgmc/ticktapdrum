@@ -10,6 +10,7 @@ members = [
     "apps/dm-android",
     "apps/dm-ios",
     "tools/icons",
+    "tools/groove-spike",
 ]
 
 [workspace.package]
