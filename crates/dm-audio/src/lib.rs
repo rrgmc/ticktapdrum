@@ -218,6 +218,12 @@ const MIDI_NOTE_ON: u8 = 0x90 | DRUM_CHANNEL as u8;
 const MIDI_NOTE_OFF: u8 = 0x80 | DRUM_CHANNEL as u8;
 /// The status byte of a MIDI program change on the drum channel.
 const MIDI_PROGRAM_CHANGE: u8 = 0xC0 | DRUM_CHANNEL as u8;
+/// The status byte of a MIDI control change on the drum channel.
+const MIDI_CONTROL_CHANGE: u8 = 0xB0 | DRUM_CHANNEL as u8;
+/// Controller 7, "Channel volume". General MIDI devices scale the whole channel by it.
+const MIDI_CHANNEL_VOLUME: u8 = 7;
+/// The channel volume MIDI out sends until [`Engine::set_midi_volume`] says otherwise: full.
+pub const DEFAULT_MIDI_VOLUME: u8 = 127;
 
 /// Marks a key that has no note-off pending.
 const NO_NOTE_OFF: u64 = u64::MAX;
@@ -431,6 +437,10 @@ enum Command {
     /// Turns MIDI out on or off.
     SetMidiOut {
         on: bool,
+    },
+    /// The channel volume MIDI out sends, 0..=127.
+    SetMidiVolume {
+        volume: u8,
     },
     /// Stops the preview if it plays, and clears all its hits.
     ClearPreview,
@@ -986,7 +996,10 @@ impl Sequencer {
                     self.halt(now);
                 }
             }
-            Command::NoteOn { .. } | Command::ProgramChange { .. } | Command::SetMidiOut { .. } => {
+            Command::NoteOn { .. }
+            | Command::ProgramChange { .. }
+            | Command::SetMidiOut { .. }
+            | Command::SetMidiVolume { .. } => {
                 // The renderer applies these; they do not touch the sequencer.
             }
         }
@@ -1172,6 +1185,8 @@ pub(crate) struct Renderer {
     midi_out: bool,
     /// The last kit program applied. It is sent again when MIDI out is turned on.
     program: u8,
+    /// The channel volume for MIDI out, 0..=127. It is sent again when MIDI out is turned on.
+    midi_volume: u8,
     /// The moment the current `render` call started, taken the first time a MIDI message needs
     /// it. Only used while MIDI out is on.
     callback_now: Option<Instant>,
@@ -1220,6 +1235,7 @@ impl Renderer {
             midi_events: Some(midi_events),
             midi_out: false,
             program: 0,
+            midi_volume: DEFAULT_MIDI_VOLUME,
             callback_now: None,
             block_offset: 0,
         };
@@ -1375,13 +1391,17 @@ impl Renderer {
         }
     }
 
-    /// Turns MIDI out on or off. Turning it on queues a program change for the current kit
-    /// first. Turning it off queues a note-off for every key that still has one pending, so no
+    /// Turns MIDI out on or off. Turning it on queues a program change for the current kit and
+    /// the channel volume first. Turning it off queues a note-off for every key that still has one pending, so no
     /// note hangs on the MIDI device, and cuts the notes the silent synthesizer still plays.
     fn set_midi_out(&mut self, on: bool) {
         if on {
             self.midi_out = true;
             self.send_midi([MIDI_PROGRAM_CHANGE, self.program, 0], 2);
+            self.send_midi(
+                [MIDI_CONTROL_CHANGE, MIDI_CHANNEL_VOLUME, self.midi_volume],
+                3,
+            );
         } else if self.midi_out {
             for key in 0..=127_u8 {
                 if self.midi_off_at[usize::from(key)] != NO_NOTE_OFF {
@@ -1410,6 +1430,14 @@ impl Renderer {
                 self.send_midi([MIDI_PROGRAM_CHANGE, self.program, 0], 2);
             }
             Command::SetMidiOut { on } => self.set_midi_out(on),
+            Command::SetMidiVolume { volume } => {
+                // The synthesizer does not hear it: the volume is the MIDI device's alone.
+                self.midi_volume = volume.min(127);
+                self.send_midi(
+                    [MIDI_CONTROL_CHANGE, MIDI_CHANNEL_VOLUME, self.midi_volume],
+                    3,
+                );
+            }
             other => self.sequencer.apply(other, self.clock),
         }
     }
@@ -1552,9 +1580,19 @@ impl Engine {
 
     /// Turns MIDI out on or off. While on, the audio thread queues a MIDI message for every note
     /// it plays and the internal synthesizer is silent. Turning it on also queues a program
-    /// change for the current kit.
+    /// change for the current kit and the channel volume.
     pub fn set_midi_out(&mut self, on: bool) {
         self.commands.send(Command::SetMidiOut { on });
+    }
+
+    /// Sets the channel volume MIDI out sends, 0..=127 (controller 7 on the drum channel). It is
+    /// sent now if MIDI out is on, and again each time MIDI out is turned on, because the device
+    /// keeps the last value it got, from any program. It does not change the internal
+    /// synthesizer. A new engine starts at [`DEFAULT_MIDI_VOLUME`].
+    pub fn set_midi_volume(&mut self, volume: u8) {
+        self.commands.send(Command::SetMidiVolume {
+            volume: volume.min(127),
+        });
     }
 
     /// The kits of the bank the engine started with, sorted by program.
@@ -3230,7 +3268,7 @@ mod tests {
         let sent = midi_sent(&mut events);
         // Each note ends before the next step, which comes later than the MIDI note length.
         let velocities = [100, 90, 80, 100, 90, 80];
-        let mut expected = vec![vec![0xC9, 0]];
+        let mut expected = vec![vec![0xC9, 0], vec![0xB9, 7, 127]];
         for &v in &velocities {
             expected.push(vec![0x99, 36, v]);
             expected.push(vec![0x89, 36, 0]);
@@ -3241,11 +3279,12 @@ mod tests {
         let latency = Duration::from_secs_f64(960.0 / f64::from(RATE));
         assert!(sent[0].at >= before + latency && sent[0].at <= after + latency);
         assert_eq!(sent[1].at, sent[0].at);
+        assert_eq!(sent[2].at, sent[0].at);
         // Each step is due at the start of the block it fires in: the block holding its frame.
         // Its note-off follows one MIDI note length later.
         let first = sent[0].at;
         let note = midi_note(&renderer);
-        for (pair, step) in sent[1..].chunks(2).zip([0_u64, 1, 3, 4, 5, 7]) {
+        for (pair, step) in sent[2..].chunks(2).zip([0_u64, 1, 3, 4, 5, 7]) {
             let frame = step * 6000 / BLOCK * BLOCK;
             let expected = first + Duration::from_secs_f64(frame as f64 / f64::from(RATE));
             let error = pair[0].at.max(expected) - pair[0].at.min(expected);
@@ -3270,9 +3309,14 @@ mod tests {
         let sent = midi_sent(&mut events);
         assert_eq!(
             messages(&sent),
-            [vec![0xC9, 0], vec![0x99, 42, 100], vec![0x89, 42, 0]]
+            [
+                vec![0xC9, 0],
+                vec![0xB9, 7, 127],
+                vec![0x99, 42, 100],
+                vec![0x89, 42, 0]
+            ]
         );
-        let error = (sent[2].at - sent[1].at).abs_diff(midi_note(&renderer));
+        let error = (sent[3].at - sent[2].at).abs_diff(midi_note(&renderer));
         assert!(error < Duration::from_micros(1), "{error:?}");
         // The synthesizer's own note-off still waits for the whole ring.
         assert!(renderer.midi_note_frames < renderer.ring_frames);
@@ -3294,12 +3338,13 @@ mod tests {
             messages(&sent),
             [
                 vec![0xC9, 0],
+                vec![0xB9, 7, 127],
                 vec![0x99, 42, 100],
                 vec![0x89, 42, 0],
                 vec![0x99, 42, 90],
             ]
         );
-        assert_eq!(sent[2].at, sent[3].at);
+        assert_eq!(sent[3].at, sent[4].at);
         assert_note_offs_between(&sent);
     }
 
@@ -3346,7 +3391,56 @@ mod tests {
         renderer.render(&mut out, 2);
         commands.set_kit(16);
         renderer.render(&mut out, 2);
-        assert_eq!(messages(&midi_sent(&mut events)), [[0xC9, 8], [0xC9, 16]]);
+        assert_eq!(
+            messages(&midi_sent(&mut events)),
+            [vec![0xC9, 8], vec![0xB9, 7, 127], vec![0xC9, 16]]
+        );
+    }
+
+    #[test]
+    fn midi_out_sends_the_volume_on_enable_and_on_change() {
+        let font = soundfont_or_skip!();
+        let (mut commands, mut renderer, mut events) = midi_renderer(&font, 36);
+        let mut out = vec![0.0_f32; 2 * 640];
+        // A volume set while MIDI out is off is kept and sent when it is turned on.
+        commands.send(Command::SetMidiVolume { volume: 90 });
+        renderer.render(&mut out, 2);
+        assert!(midi_sent(&mut events).is_empty());
+        commands.send(Command::SetMidiOut { on: true });
+        renderer.render(&mut out, 2);
+        commands.send(Command::SetMidiVolume { volume: 0 });
+        renderer.render(&mut out, 2);
+        assert_eq!(
+            messages(&midi_sent(&mut events)),
+            [vec![0xC9, 0], vec![0xB9, 7, 90], vec![0xB9, 7, 0]]
+        );
+        // Off and on again sends it again.
+        commands.send(Command::SetMidiOut { on: false });
+        commands.send(Command::SetMidiOut { on: true });
+        renderer.render(&mut out, 2);
+        assert_eq!(
+            messages(&midi_sent(&mut events)),
+            [vec![0xC9, 0], vec![0xB9, 7, 0]]
+        );
+    }
+
+    #[test]
+    fn the_midi_volume_leaves_the_synthesizer_alone() {
+        let font = soundfont_or_skip!();
+        let loud = {
+            let (mut commands, mut renderer, _events) = midi_renderer(&font, 36);
+            commands.hit(38, 100);
+            let mut out = vec![0.0_f32; 2 * 6000];
+            renderer.render(&mut out, 2);
+            out
+        };
+        let (mut commands, mut renderer, _events) = midi_renderer(&font, 36);
+        commands.send(Command::SetMidiVolume { volume: 0 });
+        commands.hit(38, 100);
+        let mut out = vec![0.0_f32; 2 * 6000];
+        renderer.render(&mut out, 2);
+        assert!(energy(&loud) > 1e-3);
+        assert_eq!(out, loud);
     }
 
     #[test]
@@ -3377,7 +3471,8 @@ mod tests {
         let mut out = vec![0.0_f32; 2 * 2400];
         renderer.render(&mut out, 2);
         assert!(out.iter().all(|&s| s == 0.0));
-        assert_eq!(midi_sent(&mut events).len(), 3);
+        // The program change, the volume and the two notes.
+        assert_eq!(midi_sent(&mut events).len(), 4);
 
         commands.send(Command::SetMidiOut { on: false });
         commands.hit(38, 100);
@@ -3687,6 +3782,7 @@ mod tests {
             sent,
             [
                 vec![0xC9, 0],
+                vec![0xB9, 7, 127],
                 vec![0x99, 42, 90],
                 vec![0x99, 36, 110],
                 vec![0x99, 42, 90],

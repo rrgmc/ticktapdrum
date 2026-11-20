@@ -28,6 +28,8 @@ const LANDSCAPE: &str = "landscape.lock";
 const LANGUAGE: &str = "language";
 /// Holds the name of the chosen MIDI output. Missing while none is chosen.
 const MIDI_OUTPUT: &str = "midi.output";
+/// Holds the MIDI output volume in percent. Missing while it is the default, 100.
+const MIDI_VOLUME: &str = "midi.volume";
 /// Holds how row names show, when not as names.
 const ROW_LABELS: &str = "row.labels";
 /// Holds "on" or "off" for the bar strip under the buttons. Missing until the person chooses,
@@ -249,6 +251,27 @@ impl Store {
                 _ => Ok(()),
             },
         }
+    }
+
+    /// The MIDI output volume in percent, 0..=100; 100 when none was chosen or the file does
+    /// not hold a number. A device setting, not part of any project.
+    pub(crate) fn midi_volume(&self) -> u8 {
+        fs::read_to_string(self.dir.join(MIDI_VOLUME))
+            .ok()
+            .and_then(|text| text.trim().parse::<u8>().ok())
+            .map_or(100, |percent| percent.min(100))
+    }
+
+    pub(crate) fn set_midi_volume(&self, percent: u8) -> Result<(), String> {
+        let path = self.dir.join(MIDI_VOLUME);
+        if percent >= 100 {
+            return match fs::remove_file(path) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(delete_error(e)),
+                _ => Ok(()),
+            };
+        }
+        fs::create_dir_all(&self.dir).map_err(folder_error)?;
+        fs::write(path, percent.to_string()).map_err(write_error)
     }
 
     /// How row names show in the grid. A device setting, not part of any project.
@@ -607,6 +630,26 @@ mod tests {
         store.set_midi_output(None).unwrap();
         store.set_midi_output(None).unwrap();
         assert_eq!(store.midi_output(), None);
+    }
+
+    #[test]
+    fn the_midi_volume_is_kept_in_percent() {
+        let store = temp_store("midi-volume");
+        assert_eq!(store.midi_volume(), 100);
+        store.set_midi_volume(40).unwrap();
+        assert_eq!(store.midi_volume(), 40);
+        store.set_midi_volume(0).unwrap();
+        assert_eq!(store.midi_volume(), 0);
+        // 100 is the default, so its file goes.
+        store.set_midi_volume(100).unwrap();
+        store.set_midi_volume(100).unwrap();
+        assert!(!store.dir.join(MIDI_VOLUME).exists());
+        assert_eq!(store.midi_volume(), 100);
+        // A file that does not hold a percent reads as the default.
+        fs::write(store.dir.join(MIDI_VOLUME), "loud").unwrap();
+        assert_eq!(store.midi_volume(), 100);
+        fs::write(store.dir.join(MIDI_VOLUME), "250").unwrap();
+        assert_eq!(store.midi_volume(), 100);
     }
 
     #[test]

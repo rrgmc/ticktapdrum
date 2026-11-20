@@ -35,6 +35,12 @@ pub(crate) enum MenuEvent {
     ListMidiOutputs,
     /// Send the drums to this MIDI output, or play them on this device if `None`.
     MidiOutput(Option<String>),
+    /// The MIDI output volume in percent moved. `keep` is true once the slider is let go (or
+    /// moved without a drag), when the setting is worth writing down.
+    MidiVolume {
+        percent: u8,
+        keep: bool,
+    },
     /// Import grooves, or use the groove list.
     Grooves(GrooveEvent),
 }
@@ -47,6 +53,8 @@ pub(crate) struct MidiView<'a> {
     pub(crate) connected: bool,
     /// The outputs listed when the dialog opened.
     pub(crate) outputs: &'a [String],
+    /// The MIDI output volume in percent.
+    pub(crate) volume: u8,
 }
 
 /// What the menu and its dialogs need to know to draw themselves.
@@ -1231,7 +1239,8 @@ fn language(ui: &mut egui::Ui, view: &MenuView, events: &mut Vec<MenuEvent>) -> 
 
 /// The MIDI output dialog: "None" first, then each output the system reports. A chosen output
 /// that is not there now is listed too, so the choice still shows. A tap chooses and closes;
-/// nothing asks. Returns true when an entry was tapped.
+/// nothing asks. Below the list, while an output is chosen, the volume the device plays at.
+/// Returns true when an entry was tapped.
 fn midi_output(ui: &mut egui::Ui, midi: &MidiView, events: &mut Vec<MenuEvent>) -> bool {
     let mut done = false;
     ui.label(tr!("menu-midi-output-about"));
@@ -1269,6 +1278,26 @@ fn midi_output(ui: &mut egui::Ui, midi: &MidiView, events: &mut Vec<MenuEvent>) 
         && !midi.connected
     {
         ui.label(tr!("menu-midi-output-waiting", device = name));
+    }
+    // Channel volume, which the device applies to every drum. Moving it does not close.
+    if midi.choice.is_some() {
+        ui.add_space(8.0);
+        ui.label(big(&format!(
+            "{} {}",
+            icons::SPEAKER_HIGH,
+            tr!("menu-midi-volume")
+        )));
+        ui.scope(|ui| {
+            ui.spacing_mut().slider_width = ITEM_WIDTH - 64.0;
+            ui.spacing_mut().interact_size.y = 40.0;
+            let mut percent = midi.volume;
+            let slider = ui.add(egui::Slider::new(&mut percent, 0..=100).suffix("%"));
+            let keep = slider.drag_stopped() || (slider.changed() && !slider.dragged());
+            if slider.changed() || keep {
+                events.push(MenuEvent::MidiVolume { percent, keep });
+            }
+        });
+        ui.label(tr!("menu-midi-volume-about"));
     }
     done
 }

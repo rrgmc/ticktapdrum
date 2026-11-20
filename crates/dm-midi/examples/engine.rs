@@ -5,6 +5,7 @@
 //!
 //! This is the path the app takes: the engine's audio callback queues the messages, and the
 //! `dm-midi` thread sends them. It checks the two crates together without the interface.
+//! Halfway through, the channel volume drops from full to half.
 
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -79,7 +80,10 @@ fn main() {
     engine.set_tempo(120.0);
     engine.set_kit(0);
     engine.play_pattern(0);
-    thread::sleep(Duration::from_secs(seconds));
+    // Halfway through, half the channel volume: the second half should sound quieter.
+    thread::sleep(Duration::from_millis(seconds * 500));
+    engine.set_midi_volume(64);
+    thread::sleep(Duration::from_millis(seconds * 500));
     engine.stop();
     // Let pending note-offs (four seconds after each hit) go out before turning MIDI out off.
     thread::sleep(Duration::from_millis(4200));
@@ -90,12 +94,19 @@ fn main() {
     let sent = sent.lock().unwrap();
     let count = |status: u8| sent.iter().filter(|(b, _)| b[0] == status).count();
     println!(
-        "sent {} messages: {} note-on, {} note-off, {} program change",
+        "sent {} messages: {} note-on, {} note-off, {} program change, {} control change",
         sent.len(),
         count(0x99),
         count(0x89),
-        count(0xC9)
+        count(0xC9),
+        count(0xB9)
     );
+    let volumes: Vec<u8> = sent
+        .iter()
+        .filter(|(b, _)| b[0] == 0xB9 && b[1] == 7)
+        .map(|(b, _)| b[2])
+        .collect();
+    println!("channel volumes sent, in order: {volumes:?}");
     let mut errors: Vec<i64> = sent.iter().map(|(_, e)| *e).collect();
     if errors.is_empty() {
         return;
