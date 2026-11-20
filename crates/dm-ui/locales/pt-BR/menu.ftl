@@ -30,8 +30,8 @@ menu-song = Música
 menu-export = Exportar
 # Trava a tela na horizontal.
 menu-landscape = Manter na horizontal
-menu-key-names = Teclas do teclado
-menu-key-names-tip = Com a entrada MIDI ligada, mostra ao lado de cada peça a tecla que a toca.
+menu-key-names = Notas do teclado
+menu-key-names-tip = Com a entrada MIDI ligada, mostra ao lado de cada peça a nota do teclado que a toca.
 menu-bar-line = Mostrar compassos abaixo dos botões
 menu-language = Idioma
 # A primeira escolha da janela Idioma: seguir o idioma do sistema. $language é o nome desse

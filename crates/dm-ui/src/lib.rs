@@ -1355,7 +1355,7 @@ impl DrumApp {
                 ProjectEvent::KeyNames(on) => {
                     self.key_names = on;
                     if let Err(e) = self.store.set_key_names(on) {
-                        log::warn!("the keyboard keys setting was not saved: {e}");
+                        log::warn!("the keyboard notes setting was not saved: {e}");
                     }
                 }
                 ProjectEvent::Landscape(on) => {

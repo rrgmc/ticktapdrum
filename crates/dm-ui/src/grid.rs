@@ -230,7 +230,7 @@ impl Grid {
     }
 
     /// Shows in each name box the keyboard key that plays its drum, or stops. The caller sets it
-    /// every frame before [`Grid::ui`]: on while MIDI in is on and the "Keyboard keys" setting
+    /// every frame before [`Grid::ui`]: on while MIDI in is on and the "Keyboard notes" setting
     /// is on.
     pub(crate) fn set_show_keys(&mut self, show: bool) {
         self.show_keys = show;

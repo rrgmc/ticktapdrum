@@ -1609,7 +1609,7 @@ there; see "Android, later".
   out, when another project opens or a new one starts, and on Undo or Redo, which work on the
   project alone. They do not play: only the keyboard sounded them.
 - **Rows can show the keyboard key that plays them.** Not every keyboard marks its keys with
-  drums, so with the "Keyboard keys" setting on (☰, under Settings) and MIDI in on, each name box
+  drums, so with the "Keyboard notes" setting on (☰, under Settings) and MIDI in on, each name box
   shows its key, small and on the right: C1 for the kick, D1 for the snare. Keys are named as
   Yamaha names them, with middle C (60) as C3. A keyboard whose voice is shifted by an octave
   sends other notes, so the names then sit an octave off the keys pressed. The setting is off

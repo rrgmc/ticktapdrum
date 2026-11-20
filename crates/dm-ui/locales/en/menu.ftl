@@ -31,8 +31,8 @@ menu-export = Export
 # Locks the screen in landscape orientation.
 menu-landscape = Keep in landscape
 # A setting: while MIDI in is on, each row's name shows the keyboard key that plays it, such as C1.
-menu-key-names = Keyboard keys
-menu-key-names-tip = With MIDI in on, show beside each drum the keyboard key that plays it.
+menu-key-names = Keyboard notes
+menu-key-names-tip = With MIDI in on, show beside each drum the keyboard note that plays it.
 # Shows the bars as small pictures under the buttons all the time.
 menu-bar-line = Show bars under the buttons
 menu-language = Language
