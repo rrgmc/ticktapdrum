@@ -28,8 +28,8 @@ pub(crate) enum ProjectEvent {
     Basic(bool),
     /// Offer pasting a drum tab in the menu, or stop offering it.
     PasteTabs(bool),
-    /// Add the pasted drum tab as a new pattern.
-    PasteTab(String),
+    /// Add the pasted drum tab as a new pattern, with what the person chose for reading it.
+    PasteTab(String, dm_tab::Options),
     /// Show row names as names, pictures and names, or pictures.
     RowLabels(crate::pictures::RowLabels),
 }

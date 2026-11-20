@@ -1277,7 +1277,10 @@ exists, **off by default**, for the author to try from time to time.
   - Rows with an unknown name are left out if they hold at most 10% of the hits; otherwise the
     paste is refused, naming them.
   - After fixing a spacer column or a bar one column short, every bar must be 4, 8, 16 or 32
-    characters wide. Triplets and other widths are refused, not guessed.
+    characters wide. Triplets and other widths are refused, not guessed. A checkbox in the
+    dialog, "Leave out bars that do not fit", off by default and kept while the app runs, leaves
+    those bars out instead and says how many; the paste is still refused if none is left. It
+    exists because a whole song is often refused for one triplet fill.
   - Rows of one system with different numbers of bars are refused.
   - Repeat marks such as `x4` repeat the system; `%` repeats the bar before.
 - **The parser is the crate `dm-tab`,** ported from the spike's tab parser, with tests.

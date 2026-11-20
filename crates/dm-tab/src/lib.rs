@@ -17,7 +17,7 @@
 //! Each bar's width is its grid: 16 columns are 16ths, 8 are 8ths, 4 are quarters and 32 are
 //! 32nds. A bar one column wider than that, with an empty first or last column in every row, has
 //! a spacer column, which is trimmed. A bar one column short is padded. Any other width is
-//! refused. A legend in the tab, such as `T = Tambourine`, wins over the built-in label table.
+//! refused, or, when the user asks for it ([`Options::skip_odd_bars`]), left out. A legend in the tab, such as `T = Tambourine`, wins over the built-in label table.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -53,6 +53,17 @@ pub struct Tab {
     pub dropped_labels: Vec<String>,
     /// Hits merged into another on the same step and drum (32nd notes, flams).
     pub merged: usize,
+    /// Bars left out because their width does not fit the grid, as written (before repeats).
+    /// Only with [`Options::skip_odd_bars`].
+    pub odd_bars_left_out: usize,
+}
+
+/// Choices the user makes before a paste is read.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Options {
+    /// Leave out bars whose width does not fit the grid, such as triplet fills, instead of
+    /// refusing the whole paste. The paste is still refused when no bar fits.
+    pub skip_odd_bars: bool,
 }
 
 /// Why a paste cannot be imported.
@@ -72,6 +83,7 @@ pub enum Refusal {
 /// What [`parse`] gathers while it reads the systems one by one.
 #[derive(Default)]
 struct Reader {
+    options: Options,
     bars: Vec<Vec<Hit>>,
     /// Drum systems that hold at least one hit symbol.
     systems: usize,
@@ -82,6 +94,7 @@ struct Reader {
     unknown_hits: usize,
     unknown_labels: Vec<String>,
     merged: usize,
+    odd_bars_left_out: usize,
 }
 
 /// Reads pasted text. Refuses when the result would need guessing beyond the rules below.
@@ -90,14 +103,23 @@ struct Reader {
 /// 2. Rows whose label names no drum are dropped if they hold at most 10% of the hits, else
 ///    [`Refusal::UnknownDrums`].
 /// 3. After trimming spacers, padding short bars and copying `%` bars, every bar must be 4, 8,
-///    16 or 32 columns wide, else [`Refusal::OddBars`].
+///    16 or 32 columns wide, else [`Refusal::OddBars`]. With [`Options::skip_odd_bars`], the
+///    other bars are left out instead, and the paste is refused only if none is left.
 /// 4. The rows of each system must have the same number of bars, else [`Refusal::Misaligned`].
 /// 5. Repeat marks such as `x4` give total plays, at most 16. The bars come out repeated.
 pub fn parse(text: &str) -> Result<Tab, Refusal> {
+    parse_with(text, Options::default())
+}
+
+/// [`parse`] with the user's [`Options`].
+pub fn parse_with(text: &str, options: Options) -> Result<Tab, Refusal> {
     let legend = labels::parse_legend(text);
     let normalized: Vec<String> = text.lines().map(read::normalize).collect();
     let lines: Vec<&str> = normalized.iter().map(String::as_str).collect();
-    let mut reader = Reader::default();
+    let mut reader = Reader {
+        options,
+        ..Reader::default()
+    };
     let mut i = 0;
     while i < lines.len() {
         let Some(first) = (!is_count_line(lines[i]))
@@ -135,7 +157,7 @@ pub fn parse(text: &str) -> Result<Tab, Refusal> {
     if reader.misaligned {
         return Err(Refusal::Misaligned);
     }
-    if !reader.odd_widths.is_empty() {
+    if !reader.odd_widths.is_empty() && (!options.skip_odd_bars || reader.bars.is_empty()) {
         return Err(Refusal::OddBars(reader.odd_widths.into_iter().collect()));
     }
     let all = reader.known_hits + reader.unknown_hits;
@@ -147,6 +169,7 @@ pub fn parse(text: &str) -> Result<Tab, Refusal> {
         tempo: read::find_tempo(text),
         dropped_labels: reader.unknown_labels,
         merged: reader.merged,
+        odd_bars_left_out: reader.odd_bars_left_out,
     })
 }
 
@@ -184,7 +207,7 @@ impl Reader {
             }
         }
 
-        let bars = system[0].bars.len();
+        let mut bars = system[0].bars.len();
         if system.iter().any(|l| l.bars.len() != bars) {
             self.misaligned = true;
             return;
@@ -212,7 +235,22 @@ impl Reader {
             .collect();
         if !odd.is_empty() {
             self.odd_widths.extend(odd);
-            return;
+            if !self.options.skip_odd_bars {
+                return;
+            }
+            // Leave out every bar that is odd in any row, from all rows, so the rest line up.
+            let keep: Vec<bool> = (0..bars)
+                .map(|b| system.iter().all(|l| STANDARD.contains(&l.bars[b].len())))
+                .collect();
+            for line in &mut system {
+                let mut kept = keep.iter();
+                line.bars.retain(|_| kept.next() == Some(&true));
+            }
+            self.odd_bars_left_out += bars - system[0].bars.len();
+            bars = system[0].bars.len();
+            if bars == 0 {
+                return;
+            }
         }
 
         let repeat = system

@@ -177,6 +177,27 @@ fn triplet_width_bars_are_refused() {
 }
 
 #[test]
+fn odd_bars_are_left_out_when_asked() {
+    // A beat, then a triplet fill 18 columns wide.
+    let text = "\
+C |X---------------|X--X--X--X--X--X--|
+S |----o-------o---|---------o--o--o--|
+B |o---o---o---o---|o--o--o--o--o--o--|
+";
+    let skip = Options {
+        skip_odd_bars: true,
+    };
+    assert_eq!(parse(text), Err(Refusal::OddBars(vec![18])));
+    let tab = parse_with(text, skip).unwrap();
+    assert_eq!(tab.bars.len(), 1);
+    assert_eq!(tab.odd_bars_left_out, 1);
+    assert_eq!(steps(&tab.bars[0], 38), vec![4, 12]);
+    // Nothing is left when every bar is odd, so it is still refused.
+    let text = "HH|x-x-x-x-x-x-|\nS |---x-----x--|\n";
+    assert_eq!(parse_with(text, skip), Err(Refusal::OddBars(vec![12])));
+}
+
+#[test]
 fn rows_with_different_bar_counts_are_refused() {
     let text = "HH|x-x-x-x-x-x-x-x-|x-x-x-x-x-x-x-x-|\nS |----x-------x---|\n";
     assert_eq!(parse(text), Err(Refusal::Misaligned));

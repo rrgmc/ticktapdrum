@@ -129,3 +129,4 @@ menu-rows-pictures = Linhas: desenhos
 menu-paste-tab-hint = Cole alguns compassos de uma tablatura de bateria, com o nome da peça no começo de cada linha.
 # Junta a tablatura colada ao projeto como um padrão novo.
 menu-paste-tab-add = Juntar como padrão
+menu-paste-tab-skip-odd-bars = Deixar de fora os compassos que não cabem

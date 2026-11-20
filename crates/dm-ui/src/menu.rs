@@ -113,6 +113,9 @@ enum Ask {
 pub(crate) struct Menu {
     dialog: Option<Shown>,
     ask: Option<Ask>,
+    /// How the Paste a drum tab dialog reads a tab. Kept while the app runs, so a second paste
+    /// reads like the first.
+    tab_options: dm_tab::Options,
 }
 
 /// The width of a menu item.
@@ -543,8 +546,9 @@ impl Menu {
                 .closed
             }
             Shown::PasteTab { text, refusal } => {
+                let options = &mut self.tab_options;
                 widgets::dialog_at_top(ctx, "paste-tab", &tr!("menu-paste-tab"), |ui| {
-                    done = paste_tab(ui, text, refusal, &mut events);
+                    done = paste_tab(ui, text, refusal, options, &mut events);
                 })
                 .closed
             }
@@ -790,13 +794,14 @@ fn save_as(
     done
 }
 
-/// The Paste a drum tab dialog: a box for the tab, and why the last try was refused. "Add as
-/// pattern" sends the text and leaves the dialog open: the app closes it once the pattern is
-/// added, or shows why not. Returns true when cancelled.
+/// The Paste a drum tab dialog: a box for the tab, a choice to leave out bars that do not fit,
+/// and why the last try was refused. "Add as pattern" sends the text and leaves the dialog open:
+/// the app closes it once the pattern is added, or shows why not. Returns true when cancelled.
 fn paste_tab(
     ui: &mut egui::Ui,
     text: &mut String,
     refusal: &mut Option<String>,
+    options: &mut dm_tab::Options,
     events: &mut Vec<MenuEvent>,
 ) -> bool {
     let mut done = false;
@@ -815,8 +820,13 @@ fn paste_tab(
             )
         })
         .inner;
-    // A refusal is about the text as it was, so it goes once the text changes.
-    if edit.changed() {
+    // Off by default: leaving bars out changes the music, so the person asks for it.
+    let skip = ui.checkbox(
+        &mut options.skip_odd_bars,
+        big(&tr!("menu-paste-tab-skip-odd-bars")),
+    );
+    // A refusal is about the text and the choice as they were, so it goes once either changes.
+    if edit.changed() || skip.changed() {
         *refusal = None;
     }
     if let Some(message) = refusal.as_deref() {
@@ -830,7 +840,10 @@ fn paste_tab(
             )
             .clicked()
         {
-            events.push(MenuEvent::Project(ProjectEvent::PasteTab(text.clone())));
+            events.push(MenuEvent::Project(ProjectEvent::PasteTab(
+                text.clone(),
+                *options,
+            )));
         }
         if ui.add(word_button(&tr!("menu-cancel"))).clicked() {
             done = true;

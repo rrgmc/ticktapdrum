@@ -2,7 +2,7 @@
 //! the bars, the bars left once exact repeats collapse, and what was dropped. For trying tabs
 //! without the app.
 //!
-//! Usage: `cargo run -p dm-tab --example read -- <tab.txt>`
+//! Usage: `cargo run -p dm-tab --example read -- <tab.txt> [--skip-odd-bars]`
 
 use dm_project::{BarHit, repeat_unit};
 
@@ -18,7 +18,10 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let tab = match dm_tab::parse(&text) {
+    let options = dm_tab::Options {
+        skip_odd_bars: std::env::args().any(|a| a == "--skip-odd-bars"),
+    };
+    let tab = match dm_tab::parse_with(&text, options) {
         Ok(tab) => tab,
         Err(refusal) => {
             println!("refused: {refusal:?}");
@@ -50,6 +53,7 @@ fn main() {
     println!("different bars: {}", distinct.len());
     println!("dropped rows: {:?}", tab.dropped_labels);
     println!("merged hits: {}", tab.merged);
+    println!("odd bars left out: {}", tab.odd_bars_left_out);
 }
 
 /// Whether two bars have the same drums on the same steps, velocity ignored.

@@ -128,3 +128,6 @@ menu-rows-pictures = Rows: pictures
 menu-paste-tab-hint = Paste a few bars of a drum tab, with the drum names at the start of each row.
 # Adds the pasted tab to the project as a new pattern.
 menu-paste-tab-add = Add as pattern
+# A checkbox, off by default. When on, bars that cannot be read, such as triplet fills, are left
+# out instead of refusing the whole tab.
+menu-paste-tab-skip-odd-bars = Leave out bars that do not fit

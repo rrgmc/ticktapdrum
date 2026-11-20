@@ -36,6 +36,12 @@ pub(crate) fn added(added: &Added, tab: &Tab, pattern: char) -> String {
             count = added.bars_left_out
         ));
     }
+    if tab.odd_bars_left_out > 0 {
+        notes.push(tr!(
+            "patterns-tab-odd-bars-left-out",
+            count = tab.odd_bars_left_out
+        ));
+    }
     if !tab.dropped_labels.is_empty() {
         notes.push(tr!(
             "patterns-tab-labels-left-out",

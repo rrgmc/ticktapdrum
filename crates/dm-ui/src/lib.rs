@@ -1235,7 +1235,7 @@ impl DrumApp {
                         log::warn!("the paste tabs setting was not saved: {e}");
                     }
                 }
-                ProjectEvent::PasteTab(text) => self.paste_tab(engine, &text),
+                ProjectEvent::PasteTab(text, options) => self.paste_tab(engine, &text, options),
                 ProjectEvent::RowLabels(labels) => {
                     self.row_labels = labels;
                     if let Err(e) = self.store.set_row_labels(labels) {
@@ -1435,8 +1435,8 @@ impl DrumApp {
 
     /// Adds a pasted drum tab as a new pattern and shows it. If the tab cannot be read or added,
     /// the project stays as it was and the dialog says why, keeping the text to fix.
-    fn paste_tab(&mut self, engine: &mut Engine, text: &str) {
-        let tab = match dm_tab::parse(text) {
+    fn paste_tab(&mut self, engine: &mut Engine, text: &str, options: dm_tab::Options) {
+        let tab = match dm_tab::parse_with(text, options) {
             Ok(tab) => tab,
             Err(refusal) => {
                 self.menu.refuse_paste(paste_tab::refusal(&refusal));
