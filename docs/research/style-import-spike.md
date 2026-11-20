@@ -2,7 +2,8 @@
 
 Findings from 2026-11-20 on whether the app can import the drums of a Yamaha style file, the
 reverse of "Export as a keyboard style" in [`DESIGN.md`](../DESIGN.md). These are findings, not
-decisions. Nothing in the app reads styles yet.
+decisions. Nothing in the app reads styles yet. The programs used are throwaway and not in the
+repository.
 
 ## What was tried
 
@@ -49,14 +50,57 @@ sections are mostly 1, 2, 4 or 8 bars long; only a few are longer than 16.
 - **Channel 9 is mostly percussion** (keys 60 to 81: congas, shakers, cowbells), which the app's
   rows and its 90% drum-kit rule do not expect.
 
+## The kits' own keys
+
+The SX720 Data List names the sound on every key of its 56 drum and SFX kits (sheet "Drum&SFX
+Kit List SX720" of the spreadsheet on Yamaha's PSR-SX720 support page, under Manuals &
+Documents; it downloads as a `.zip` holding `psrsx920_sx720_en_dl_a0.xlsx`). In the list,
+program numbers count from 1, so program 73 in a style file is kit 74, PopDrumKit.
+
+- **The extra keys are mostly ordinary drums.** In the kits most styles use (PopDrumKit,
+  RockDrumKit), keys 13 to 22 are hi-hat articulations ("Hi-Hat Tip 00" to "Hi-Hat Edge 99",
+  where the number is how open the hi-hat is, and the pedal). Keys 25 to 34 are other snares, a
+  snare roll and a second kick. Keys 23, 24 and 32 are clicks and a count-in.
+- **Kits from the older standard keep General MIDI's extras there:** surdo, Hi Q, scratches,
+  metronome clicks, brushes, castanets.
+- **Some kits are made of loops and effects:** SchlagerKit's low keys are "Loop Element" slices,
+  EDM Kit has glitches, impacts and reverses. Those have no place on the app's rows.
+- **The SFX kits on channel 9** (bank MSB 126) are hand percussion: djembe, cajon, congas, bongos,
+  udu, triangles.
+
+## With the keys mapped
+
+A second program gave every key of every kit a General MIDI key from its sound's name: a hi-hat
+from "Tip"/"Edge" 00 to 25 becomes the closed hi-hat (42), 50 and over the open one (46), and the
+pedal 44; snares become 38, kicks 36, congas 63, shakers 70, and so on. A sound already on a
+General MIDI key of its own family keeps that key, so toms keep their pitch. Clicks, loops,
+glitches, noises and effects are left out. The test then ran again with each channel's notes
+mapped through the kit its setup bar chose.
+
+| Version | Accepted | Refused as "made for another drum program" | Off the grid | Not 4/4 |
+|---|---|---|---|---|
+| Channel 10, mapped | 1,596 | 381 | 354 | 71 |
+| Channels 9 and 10, mapped | 705 | 1,440 | 213 | 75 |
+
+- **Mapping is the fix.** With channel 10 mapped, 65% of the sections import, against 20%
+  before, and 152 of the 172 styles have at least one section that imports.
+- **Little is lost.** With both channels mapped, 2,140 of 2,451 sections lose less than 10% of
+  their notes, and only 37 lose more than half.
+- **What is still refused:** kits that are mostly percussion or effects; sections whose hi-hats
+  are played off the grid (more of them now that the hi-hat notes count); and the styles in 3/4.
+- **Channel 9 needs its own rule.** Its congas and shakers fail the 90% drum-kit rule when
+  merged, though they are on General MIDI keys after mapping.
+- **Not checked:** how the imported grooves sound. Nobody has listened to one next to the
+  keyboard's own playing.
+
 ## What an import would need
 
-- **A key map for each Yamaha kit.** The SX720 Data List ("Drum&SFX Kit List") gives, for each
-  kit, the sound on each key. With it, a key such as 13 in kit 73 could become the app's closest
-  row (a closed hi-hat, say), and the 90% rule could count mapped keys. This is the deciding piece
-  of work. The Data List is a PDF and a spreadsheet on Yamaha's PSR-SX720 downloads page.
-- **A rule for channel 9.** Either merge it with its own key map, or offer it as a separate
-  groove ("Main A, percussion").
+- **The key map, shipped with the app.** A table from (bank, program, key) to a General MIDI key
+  or "leave out", made once from the Data List as above, with Yamaha's kits from other models
+  added the same way. Notes from a kit not in the table keep their key if it is a General MIDI
+  one.
+- **A rule for channel 9.** Either count General MIDI percussion keys (60 to 81) as drum keys for
+  styles, or offer channel 9 as a separate groove ("Main A, percussion").
 - **No other new parts.** Splitting by markers, the tempo, the time signature and the grid fit
   all work with what `dm-groove` already does. Styles in 3/4 stay refused.
 - **Where it would go:** "Add grooves from a file" would take a style as a pack, one groove per
@@ -64,6 +108,7 @@ sections are mostly 1, 2, 4 or 8 bars long; only a few are longer than 16.
 
 ## Suggested next steps
 
-1. Get the SX720 Data List and check what keys 13 to 26 and 88 to 91 play in the kits above.
-2. Rerun this test with those keys mapped, and see how many sections import and how they sound.
-3. Only then design the import in `DESIGN.md`.
+1. Listen to a few imported sections next to the keyboard playing the same style, to check the
+   hi-hat openness threshold and the snare choices.
+2. Decide the channel 9 rule.
+3. Then design the import in `DESIGN.md`.
