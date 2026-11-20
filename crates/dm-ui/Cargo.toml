@@ -18,6 +18,7 @@ dm-audio = { workspace = true }
 dm-bank = { workspace = true }
 dm-midi = { workspace = true, optional = true }
 dm-project = { workspace = true }
+dm-tab = { workspace = true }
 egui = { workspace = true }
 fluent-bundle = { workspace = true }
 log = { workspace = true }

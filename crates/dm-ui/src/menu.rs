@@ -1,5 +1,5 @@
 //! The menu under ☰, and the dialogs its items open: Save as, Open, Load default style, Export,
-//! Language, MIDI output, and the tempo when the strip has no room for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
+//! Language, MIDI output, Paste a drum tab, and the tempo when the strip has no room for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
 //!
 //! It does everything the old Projects screen did. Starting a new project, opening one, opening
 //! a file or starting from a beat asks first when there are unsaved changes, and deleting always
@@ -71,6 +71,11 @@ enum Shown {
     Tempo,
     Language,
     MidiOutput,
+    /// The tab being pasted, and why the last try was refused, if it was.
+    PasteTab {
+        text: String,
+        refusal: Option<String>,
+    },
     /// "Start new?" when there are unsaved changes.
     New,
 }
@@ -116,6 +121,22 @@ impl Menu {
     /// Whether one of the menu's dialogs is open.
     pub(crate) fn dialog_open(&self) -> bool {
         self.dialog.is_some()
+    }
+
+    /// Shows why a pasted tab was refused, in the Paste a drum tab dialog, which stays open with
+    /// the text so it can be fixed.
+    pub(crate) fn refuse_paste(&mut self, message: String) {
+        if let Some(Shown::PasteTab { refusal, .. }) = &mut self.dialog {
+            *refusal = Some(message);
+        }
+    }
+
+    /// Closes the Paste a drum tab dialog once its tab has been added.
+    pub(crate) fn close_paste(&mut self) {
+        if matches!(self.dialog, Some(Shown::PasteTab { .. })) {
+            self.dialog = None;
+            self.ask = None;
+        }
     }
 
     /// Opens a dialog, dropping any question left from before.
@@ -239,6 +260,20 @@ impl Menu {
             self.open(Shown::Presets);
             ui.close();
         }
+        // An experiment, offered only when its setting is on. Basic mode has one pattern only,
+        // so it has no room for another.
+        if p.paste_tabs
+            && !p.basic
+            && ui
+                .add(item(icons::MUSIC_NOTES_PLUS, &tr!("menu-paste-tab")))
+                .clicked()
+        {
+            self.open(Shown::PasteTab {
+                text: String::new(),
+                refusal: None,
+            });
+            ui.close();
+        }
         if ui
             .add(item(icons::SPEAKER_HIGH, &tr!("menu-sounds")))
             .clicked()
@@ -304,6 +339,19 @@ impl Menu {
                 events.push(MenuEvent::ListMidiOutputs);
                 ui.close();
             }
+        }
+        if ui
+            .add(
+                widgets::toggle_button(
+                    p.paste_tabs,
+                    icons::MUSIC_NOTES_PLUS,
+                    &tr!("menu-paste-tabs"),
+                )
+                .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+            )
+            .clicked()
+        {
+            events.push(MenuEvent::Project(ProjectEvent::PasteTabs(!p.paste_tabs)));
         }
         // Basic mode always comes last.
         if ui
@@ -378,6 +426,12 @@ impl Menu {
                         .midi
                         .as_ref()
                         .is_none_or(|midi| midi_output(ui, midi, &mut events));
+                })
+                .closed
+            }
+            Shown::PasteTab { text, refusal } => {
+                widgets::dialog_at_top(ctx, "paste-tab", &tr!("menu-paste-tab"), |ui| {
+                    done = paste_tab(ui, text, refusal, &mut events);
                 })
                 .closed
             }
@@ -593,6 +647,55 @@ fn save_as(
         {
             events.push(MenuEvent::Project(ProjectEvent::SaveAs(name)));
             done = true;
+        }
+        if ui.add(word_button(&tr!("menu-cancel"))).clicked() {
+            done = true;
+        }
+    });
+    done
+}
+
+/// The Paste a drum tab dialog: a box for the tab, and why the last try was refused. "Add as
+/// pattern" sends the text and leaves the dialog open: the app closes it once the pattern is
+/// added, or shows why not. Returns true when cancelled.
+fn paste_tab(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    refusal: &mut Option<String>,
+    events: &mut Vec<MenuEvent>,
+) -> bool {
+    let mut done = false;
+    ui.label(tr!("menu-paste-tab-hint"));
+    // The box is not focused when the dialog opens. A tap on it brings up a phone's keyboard,
+    // with its paste button, and nothing then asks for focus again, which on Android would
+    // close and reopen the keyboard.
+    let edit = egui::ScrollArea::vertical()
+        .max_height(240.0)
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(text)
+                    .code_editor()
+                    .desired_rows(8)
+                    .desired_width(f32::INFINITY),
+            )
+        })
+        .inner;
+    // A refusal is about the text as it was, so it goes once the text changes.
+    if edit.changed() {
+        *refusal = None;
+    }
+    if let Some(message) = refusal.as_deref() {
+        ui.label(big(message).color(ui.visuals().warn_fg_color));
+    }
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .add_enabled(
+                !text.trim().is_empty(),
+                widgets::button(icons::MUSIC_NOTES_PLUS, &tr!("menu-paste-tab-add")),
+            )
+            .clicked()
+        {
+            events.push(MenuEvent::Project(ProjectEvent::PasteTab(text.clone())));
         }
         if ui.add(word_button(&tr!("menu-cancel"))).clicked() {
             done = true;

@@ -22,6 +22,9 @@ menu-open = Open
 menu-new = New
 # Opens a list of ready-made beats in well-known styles (rock, funk and so on).
 menu-presets = Load default style
+# Shown only while the setting menu-paste-tabs is on. A drum tab is drums written as text,
+# one row per drum, such as "SD |----o-------o---|".
+menu-paste-tab = Paste a drum tab
 menu-sounds = Sounds
 menu-song = Song
 menu-export = Export
@@ -29,6 +32,8 @@ menu-export = Export
 menu-landscape = Keep in landscape
 # A simpler version of the app: one pattern, no song.
 menu-basic = Basic mode
+# Offers menu-paste-tab in the menu. Experimental: it may not read every tab.
+menu-paste-tabs = Experimental: paste drum tabs
 menu-language = Language
 # The first choice in the Language dialog: follow the system's language. $language is that
 # language's own name, such as "English".
@@ -117,3 +122,9 @@ menu-settings = Settings
 menu-rows-names = Rows: names
 menu-rows-pictures-and-names = Rows: pictures and names
 menu-rows-pictures = Rows: pictures
+
+## The Paste a drum tab dialog. Its title is menu-paste-tab.
+
+menu-paste-tab-hint = Paste a few bars of a drum tab, with the drum names at the start of each row.
+# Adds the pasted tab to the project as a new pattern.
+menu-paste-tab-add = Add as pattern

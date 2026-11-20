@@ -1212,6 +1212,33 @@ list"; a pack shows the list.
   "General MIDI" version.
 - **Choosing bars from a longer file**, and any other MIDI: songs, live recordings, other meters.
 
+## Experimental: paste a drum tab
+
+Plain-text drum tabs are mostly whole-song transcriptions with no standard (see
+[`research/tab-import-spike.md`](research/tab-import-spike.md)), so they do not fit a simple app
+as a song import. Copying a few bars of a beat from a tab is still worth trying, so this feature
+exists, **off by default**, for the author to try from time to time.
+
+- **A device setting, "Experimental: paste drum tabs"**, in the ☰ menu's settings, turns it on.
+  It is stored like basic mode and changes nothing else.
+- **When it is on, the ☰ menu offers "Paste a drum tab"**: a text box, and "Add as pattern".
+- **The paste becomes one new pattern** after the existing ones, at most 16 bars; the rest is
+  left out and the message says how many bars. The pattern uses rows that already play each
+  drum and adds rows for the drums the project lacks. Tempo, swing, kit and song do not change.
+  Undo removes it.
+- **Nothing is ever asked.** The app reads what it can recognise on its own and refuses the rest,
+  with a reason, keeping the text so it can be fixed:
+  - Drum names come from the tab's own legend first, then a built-in table of common labels.
+  - Rows with an unknown name are left out if they hold at most 10% of the hits; otherwise the
+    paste is refused, naming them.
+  - After fixing a spacer column or a bar one column short, every bar must be 4, 8, 16 or 32
+    characters wide. Triplets and other widths are refused, not guessed.
+  - Rows of one system with different numbers of bars are refused.
+  - Repeat marks such as `x4` repeat the system; `%` repeats the bar before.
+- **The parser is the crate `dm-tab`,** ported from the spike's tab parser, with tests.
+- **On Android, pasting into the text box may not work** (see "Groove import", Risks). Sharing
+  text to the app would cover it, once milestone 12 exists.
+
 ## Open questions
 
 None at present. The three earlier ones were researched in

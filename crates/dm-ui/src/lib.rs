@@ -28,6 +28,7 @@ mod history;
 mod icons;
 mod menu;
 mod midi;
+mod paste_tab;
 mod patterns;
 mod picker;
 mod pictures;
@@ -83,6 +84,8 @@ pub struct DrumApp {
     basic: bool,
     /// How row names show: names, pictures and names, or pictures. A device setting.
     row_labels: pictures::RowLabels,
+    /// Whether the menu offers pasting a drum tab, an experiment. A device setting.
+    paste_tabs: bool,
     grid: grid::Grid,
     bar_strip: bars::BarStrip,
     tabs: patterns::PatternTabs,
@@ -160,6 +163,7 @@ impl DrumApp {
         let language_choice = store.language();
         let system_language = i18n::system_language();
         let row_labels = store.row_labels();
+        let paste_tabs = store.paste_tabs();
         let midi = midi::Midi::new(store.midi_output());
         let app = Self {
             bank: BankState::new(data_dir),
@@ -172,6 +176,7 @@ impl DrumApp {
             follow: true,
             basic,
             row_labels,
+            paste_tabs,
             grid: grid::Grid::default(),
             bar_strip: bars::BarStrip::default(),
             tabs: patterns::PatternTabs::default(),
@@ -725,6 +730,7 @@ impl DrumApp {
                 export_place: export_place.as_deref(),
                 landscape: self.orientation.is_some().then(|| self.store.landscape()),
                 basic: self.basic,
+                paste_tabs: self.paste_tabs,
                 row_labels: self.row_labels,
             },
             hidden: strip.hidden,
@@ -1162,6 +1168,13 @@ impl DrumApp {
                         log::warn!("the basic mode setting was not saved: {e}");
                     }
                 }
+                ProjectEvent::PasteTabs(on) => {
+                    self.paste_tabs = on;
+                    if let Err(e) = self.store.set_paste_tabs(on) {
+                        log::warn!("the paste tabs setting was not saved: {e}");
+                    }
+                }
+                ProjectEvent::PasteTab(text) => self.paste_tab(engine, &text),
                 ProjectEvent::RowLabels(labels) => {
                     self.row_labels = labels;
                     if let Err(e) = self.store.set_row_labels(labels) {
@@ -1343,6 +1356,28 @@ impl DrumApp {
         } else if self.playing {
             // In song mode, choosing a pattern to edit stops following the song.
             self.follow = false;
+        }
+    }
+
+    /// Adds a pasted drum tab as a new pattern and shows it. If the tab cannot be read or added,
+    /// the project stays as it was and the dialog says why, keeping the text to fix.
+    fn paste_tab(&mut self, engine: &mut Engine, text: &str) {
+        let tab = match dm_tab::parse(text) {
+            Ok(tab) => tab,
+            Err(refusal) => {
+                self.menu.refuse_paste(paste_tab::refusal(&refusal));
+                return;
+            }
+        };
+        match dm_tab::add_to_project(&mut self.project, &tab) {
+            Ok((added, changes)) => {
+                apply(engine, changes);
+                self.select_pattern(engine, added.index);
+                self.menu.close_paste();
+                let pattern = self.project.patterns()[added.index].name();
+                self.message = Some(paste_tab::added(&added, &tab, pattern));
+            }
+            Err(error) => self.menu.refuse_paste(paste_tab::add_error(&error)),
         }
     }
 

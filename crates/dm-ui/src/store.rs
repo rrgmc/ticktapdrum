@@ -24,6 +24,8 @@ const AUTOSAVE_NAME: &str = "autosave.name";
 const LANDSCAPE: &str = "landscape.lock";
 /// Exists while the app is in basic mode.
 const BASIC: &str = "basic.mode";
+/// Exists while the menu offers pasting a drum tab, an experiment that is off by default.
+const PASTE_TABS: &str = "paste.tabs";
 /// Holds the tag of the language the person chose. Missing while the app follows the system.
 const LANGUAGE: &str = "language";
 /// Holds the name of the chosen MIDI output. Missing while none is chosen.
@@ -119,6 +121,15 @@ impl Store {
 
     pub(crate) fn set_basic(&self, on: bool) -> Result<(), String> {
         self.set_flag(BASIC, on)
+    }
+
+    /// Whether the menu offers pasting a drum tab. A device setting, not part of any project.
+    pub(crate) fn paste_tabs(&self) -> bool {
+        self.flag(PASTE_TABS)
+    }
+
+    pub(crate) fn set_paste_tabs(&self, on: bool) -> Result<(), String> {
+        self.set_flag(PASTE_TABS, on)
     }
 
     /// The language the person chose, or `None` to follow the system. A device setting, not
@@ -433,6 +444,18 @@ mod tests {
         assert!(!store.landscape());
         store.set_basic(false).unwrap();
         assert!(!store.basic());
+    }
+
+    #[test]
+    fn the_paste_tabs_setting_is_off_until_turned_on() {
+        let store = temp_store("paste-tabs");
+        assert!(!store.paste_tabs());
+        store.set_paste_tabs(true).unwrap();
+        assert!(store.paste_tabs());
+        assert!(!store.basic() && !store.landscape());
+        store.set_paste_tabs(false).unwrap();
+        store.set_paste_tabs(false).unwrap();
+        assert!(!store.paste_tabs());
     }
 
     #[test]
