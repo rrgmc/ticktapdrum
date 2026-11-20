@@ -6,8 +6,10 @@
 # Tests that need a SoundFont (DM_TEST_SF2) or the network skip themselves, since CI has neither.
 #
 # A change that touches only documentation (Markdown files, docs/, .gitignore) skips the build
-# jobs. The workflow still starts, so the required checks report as skipped, which GitHub counts as
-# passed; with paths-ignore they would never report and the pull request could not merge.
+# jobs. The last job, "CI result", always runs and fails if any job before it failed or was
+# cancelled; skipped jobs count as passed. It is the one check master's branch protection requires.
+# Requiring the jobs themselves does not work: a skipped matrix job reports a single check named
+# "Tests (${{ matrix.os }})", so the per-system names never report and the pull request cannot merge.
 #
 # The Rust version is the one in rust-toolchain.toml. setup-rust-toolchain reads it, and also
 # caches cargo's build output.
@@ -162,3 +164,19 @@ jobs:
 
       - name: Simulator app, and the device app unsigned
         run: bash tools/ios/build.sh
+
+  result:
+    name: CI result
+    needs: [changes, lint, test, android, ios]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed or was skipped
+        env:
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          if [ "$FAILED" = "true" ]; then
+            echo "A job failed or was cancelled."
+            exit 1
+          fi
+          echo "Every job passed or was skipped."
