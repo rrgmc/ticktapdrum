@@ -30,6 +30,14 @@ Push the worktree's branch and open a pull request with `gh pr create`; never me
 locally or push to it. Open the pull request when the user asks to push, and merge it only when the
 user asks.
 
+## Releases
+
+A release is a pull request that sets the workspace version, then a `v<version>` tag on master.
+The tag runs `.github/workflows/release.yml`. The version pull request changes only the version:
+the `version` line under `[workspace.package]` in `Cargo.toml`, and the workspace crates' versions
+in `Cargo.lock` (refresh them with `cargo metadata`). CI skips the build jobs for such a change
+alone, so put anything else in a pull request of its own.
+
 ## Nothing committed describes the local machine
 
 No tracked file may name a local drive or folder, a LAN address, personal hardware, or a person's
