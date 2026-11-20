@@ -158,8 +158,12 @@ The app's swing delays every second 16th. It cannot express 8th-note swing or tr
 - **Checked:** every file parsed. Seven sample files, chosen to cover clean, swung, triplet, live
   and long cases, were converted to projects. Each loaded back through the app's `from_json`
   unchanged. Each was rendered both ways through the same SoundFont.
-- **Not checked:** nobody has listened to the renders. The projects were not opened in the app's
-  interface. Nothing was tried on Android.
+- **Listened:** the user compared the original and imported renders of all seven samples, plus the
+  jazz take in half time. Each pair sounded very similar. Both renders of a file use the same key
+  mapping, so this says nothing about whether a mapping is right. The Perfect Drums sample plays
+  congas in both.
+- **Not checked:** the projects were not opened in the app's interface. Nothing was tried on
+  Android.
 
 ## Recommendations for MIDI import
 
