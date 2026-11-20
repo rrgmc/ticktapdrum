@@ -87,7 +87,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   test:
     name: Tests (${{ matrix.os }})
@@ -113,7 +113,7 @@ jobs:
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libdbus-1-dev pkg-config
 
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
   android:
     name: Android (debug build)
