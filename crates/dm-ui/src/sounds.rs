@@ -129,8 +129,10 @@ fn kit_row(ui: &mut egui::Ui, kit: &Kit, selected: bool) -> egui::Response {
 
     let description = kit_description(kit);
     let height = if description.is_some() { 60.0 } else { TAP };
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), height), egui::Sense::click());
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), height),
+        egui::Sense::click(),
+    );
     if ui.is_rect_visible(rect) {
         let visuals = ui.style().interact_selectable(&response, selected);
         let painter = ui.painter();
