@@ -217,7 +217,6 @@ impl Menu {
         }
     }
 
-
     /// Opens the groove list, showing the pack with key `focus` if there is one.
     pub(crate) fn open_grooves(&mut self, focus: Option<String>) {
         self.open(Shown::Grooves { focus });

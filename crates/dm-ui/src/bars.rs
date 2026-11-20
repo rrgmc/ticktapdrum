@@ -164,8 +164,14 @@ impl BarStrip {
                     events.push(BarEvent::PlayFrom(bar));
                 }
             }
-            // A line between the buttons and the bars they act on.
-            ui.separator();
+            // A line between the buttons and the bars they act on, as tall as a thumbnail. egui's
+            // separator would take all the height left in the window and push the grid away.
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(8.0, POPUP_THUMB.y), Sense::hover());
+            ui.painter().vline(
+                rect.center().x,
+                rect.y_range(),
+                ui.visuals().widgets.noninteractive.bg_stroke,
+            );
             // A solid scroll bar takes its own room under the thumbnails; the default floating
             // one is drawn over them.
             ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
