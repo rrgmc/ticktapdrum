@@ -167,8 +167,10 @@ pub use rustysynth::SoundFont;
 
 #[cfg(target_os = "android")]
 mod aaudio;
+mod live;
 mod midi;
 mod offline;
+pub use live::{HeardHit, HeardPosition, LIVE_QUEUE_CAPACITY, LiveHit, LiveHits};
 pub use midi::{MIDI_QUEUE_CAPACITY, MidiEvent, MidiEvents};
 pub use offline::{OfflineRender, write_wav, write_wav_to};
 
