@@ -36,9 +36,14 @@ fn family_order(key: u8) -> u8 {
 }
 
 pub fn project(a: &Analysis) -> Built {
+    from_grid(&a.grid, a.bpm, a.swing)
+}
+
+/// Builds a project from bars of hits, at a tempo and swing.
+pub fn from_grid(grid: &[Vec<Hit>], bpm: f64, swing: f64) -> Built {
+    let bars = grid.len().max(1);
     let mut project = Project::new();
-    let mut keys: Vec<u8> = a
-        .grid
+    let mut keys: Vec<u8> = grid
         .iter()
         .flatten()
         .map(|h| h.0)
@@ -63,17 +68,13 @@ pub fn project(a: &Analysis) -> Built {
     }
     let row_of = |key: u8| keys.iter().position(|&k| k == key);
 
-    let wanted = a.bpm as f32;
+    let wanted = bpm as f32;
     let tempo = wanted.clamp(dm_audio::MIN_BPM, dm_audio::MAX_BPM);
     project.tempo = tempo;
-    project.set_swing(a.swing as f32);
+    project.set_swing(swing as f32);
 
-    let chunk = if a.bars <= MAX_BARS {
-        a.bars
-    } else {
-        CHUNK_BARS
-    };
-    let chunks: Vec<&[Vec<Hit>]> = a.grid.chunks(chunk).collect();
+    let chunk = if bars <= MAX_BARS { bars } else { CHUNK_BARS };
+    let chunks: Vec<&[Vec<Hit>]> = grid.chunks(chunk).collect();
     let mut distinct: Vec<&[Vec<Hit>]> = Vec::new();
     let mut order = Vec::new();
     let mut chunks_without_pattern = 0;

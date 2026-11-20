@@ -131,3 +131,27 @@ fn apply(offline: &mut OfflineRender, change: Change) {
         Change::Swing(thousandths) => offline.set_swing(f32::from(thousandths) / 1000.0),
     }
 }
+
+/// Parses a tab, writes it as a project and renders it through the app's offline renderer.
+pub fn tab(path: &Path, bank: &Path, out: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all(out)?;
+    let stem = path.file_stem().unwrap().to_string_lossy().into_owned();
+    let report = crate::tab::parse(path, &crate::read_text(path)?);
+    let built = crate::build::from_grid(&report.grid, report.tempo.unwrap_or(100.0), 0.0);
+    println!("{}\n{}", report.report(), built.report());
+    std::fs::write(
+        out.join(format!("{stem}.drums")),
+        dm_project::to_json(&built.project),
+    )?;
+    let soundfont = dm_audio::load_soundfont(bank)?;
+    let mut offline = OfflineRender::new(soundfont, RATE)?;
+    offline.set_tempo(built.project.tempo);
+    for change in built.project.full_sync() {
+        apply(&mut offline, change);
+    }
+    let cancel = AtomicBool::new(false);
+    let samples = offline.render_song(TAIL_SECONDS, &mut |_| {}, &cancel)?;
+    write_wav(&out.join(format!("{stem}.wav")), &samples, RATE)?;
+    println!("  wrote {stem}.drums and {stem}.wav");
+    Ok(())
+}
