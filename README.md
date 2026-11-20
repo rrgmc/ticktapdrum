@@ -1,4 +1,4 @@
-# TickTapDrum
+# TickTapDrum <img src="apps/dm-desktop/assets/icon-256.png" alt="" height="40" align="top">
 
 TickTapDrum makes drum beats. You need no music knowledge: tap a box in the grid, and a drum plays
 at that moment. It runs on Windows, macOS, Linux, Android, iPhone and iPad.
