@@ -37,6 +37,7 @@ mod patterns;
 mod picker;
 mod pictures;
 mod projects;
+mod record;
 mod rows;
 mod song;
 mod sounds;
@@ -114,8 +115,13 @@ pub struct DrumApp {
     export_dir: Option<PathBuf>,
     /// The message that tells people where `export_dir` is, if its path means little to them.
     export_place: Option<&'static str>,
-    /// The MIDI output the drums go to, if one is chosen. Started beside the engine.
+    /// The MIDI output the drums go to, if one is chosen, and the input drum hits come from.
+    /// Started beside the engine.
     midi: midi::Midi,
+    /// The number of the take being recorded from the MIDI input, while one is.
+    recording: Option<u64>,
+    /// How many takes have started, to number the next one.
+    takes: u64,
     /// A one-line notice shown over the grid, and the time (egui's clock, in seconds) it goes.
     notice: Option<(String, f64)>,
     /// The language the person chose in the menu, or `None` to follow the system.
@@ -213,6 +219,8 @@ impl DrumApp {
             export_dir: None,
             export_place: None,
             midi,
+            recording: None,
+            takes: 0,
             notice: None,
             language_choice,
             system_language,
@@ -415,7 +423,16 @@ impl DrumApp {
             // After the editor, so a new engine has the project, and its kit, before MIDI out
             // turns on and sends the kit.
             self.style_transfer(ui.ctx());
-            if let Some(note) = self.midi.frame(ui.ctx(), &mut engine) {
+            let mut notes: Vec<midi::Note> =
+                self.midi.frame(ui.ctx(), &mut engine).into_iter().collect();
+            // An input that goes away ends the take. What was recorded stays. Its one line
+            // replaces the output's, since a keyboard takes both away at once.
+            if self.recording.is_some() && !self.midi.input_connected() {
+                self.recording = None;
+                let name = self.midi.choice().unwrap_or_default().to_owned();
+                notes = vec![midi::Note::InputGone(name)];
+            }
+            for note in notes {
                 let text = note.text();
                 let until = ui.input(|i| i.time) + NOTICE_SECONDS;
                 self.notice = Some((text.clone(), until));
@@ -536,6 +553,7 @@ impl DrumApp {
             }
             self.unsaved_since = Some(now);
         }
+        self.record_hits(engine, now);
         // The autosave waits for a pause in editing, but not when the app loses focus: a phone
         // may end the app soon after the user leaves it.
         let focused = ui.input(|i| i.focused);
@@ -702,6 +720,10 @@ impl DrumApp {
             can_redo,
             step_levels: self.project.step_levels(),
             midi_device: self.midi.choice().filter(|_| self.midi.connected()),
+            record: self.midi.input_connected().then_some(strip::RecordView {
+                recording: self.recording.is_some(),
+                enabled: self.mode == Mode::Pattern,
+            }),
         };
         let strip = strip::ui(ui, &state);
         ui.add_space(4.0);
@@ -932,7 +954,9 @@ impl DrumApp {
                 strip::StripEvent::Stop => {
                     engine.stop();
                     self.playing = false;
+                    self.recording = None;
                 }
+                strip::StripEvent::Record => self.toggle_recording(engine),
                 strip::StripEvent::PrevPage => self.page(split, shown_bars, false),
                 strip::StripEvent::NextPage => self.page(split, shown_bars, true),
                 strip::StripEvent::Undo => self.undo(engine),
@@ -1539,6 +1563,57 @@ impl DrumApp {
         self.preview = None;
         self.playing = true;
         self.follow = true;
+    }
+
+    /// Record in the strip: starts a take, or ends the one being recorded. A take records into
+    /// the pattern being edited while it loops, so Record starts it if nothing plays. In song
+    /// mode the button is not offered.
+    fn toggle_recording(&mut self, engine: &mut Engine) {
+        if self.recording.take().is_some() || self.mode != Mode::Pattern {
+            return;
+        }
+        if !self.playing {
+            self.play(engine);
+        }
+        self.takes += 1;
+        self.recording = Some(self.takes);
+    }
+
+    /// Takes the hits the engine played from the MIDI input, and while a take is being
+    /// recorded, turns those heard in the pattern being edited into steps. The hits are taken
+    /// every frame, recording or not, so their queue never fills. Each take undoes as one step.
+    fn record_hits(&mut self, engine: &mut Engine, now: f64) {
+        let hits = engine.take_heard_hits();
+        // Anything that stops the pattern looping ends the take: Stop, a song that is played,
+        // a groove preview, opening a project.
+        if self.recording.is_some() && (!self.playing || self.mode != Mode::Pattern) {
+            self.recording = None;
+        }
+        let Some(take) = self.recording else {
+            return;
+        };
+        let slot = self.project.patterns()[self.current].slot();
+        let heard: Vec<_> = hits
+            .into_iter()
+            .filter_map(|hit| {
+                let p = hit.position?;
+                (p.song_index.is_none() && p.pattern == slot).then_some((hit, p.step))
+            })
+            .collect();
+        if heard.is_empty() {
+            return;
+        }
+        let before = self.project.clone();
+        for (hit, step) in heard {
+            match record::record_hit(&mut self.project, self.current, hit.key, hit.velocity, step) {
+                Ok(changes) => apply(engine, changes),
+                Err(refused) => log::info!("recording refused: {refused:?}"),
+            }
+        }
+        if self.project != before {
+            self.history.record(&before, Group::Recording(take), now);
+            self.unsaved_since = Some(now);
+        }
     }
 
     /// Plays the pattern being edited from the first step of `bar`, and follows it.

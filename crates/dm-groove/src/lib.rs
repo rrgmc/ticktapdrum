@@ -16,7 +16,7 @@ mod midi;
 mod zipped;
 
 pub use dm_project::BarHit;
-pub use groove::{MAX_GROOVE_BARS, MAX_MIDI_BYTES};
+pub use groove::{MAX_GROOVE_BARS, MAX_MIDI_BYTES, snap};
 pub use json::PACK_FORMAT;
 pub use link::{LinkError, download, link_address};
 

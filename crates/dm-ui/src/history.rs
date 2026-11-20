@@ -2,7 +2,8 @@
 //!
 //! A project is small (a few kilobytes for a typical one), so keeping copies is simpler and safer
 //! than recording each change's inverse. Edits that belong to one gesture, such as a drag that
-//! paints several steps or one slide of a volume slider, share a group and undo together.
+//! paints several steps or one slide of a volume slider, share a group and undo together. So do
+//! the notes of one MIDI recording take.
 
 use dm_project::Project;
 
@@ -22,6 +23,9 @@ pub(crate) enum Group {
     Tempo,
     /// The swing amount while its slider moves.
     Swing,
+    /// The notes one MIDI recording take added, numbered per take. A take undoes as one step
+    /// however long it lasts, so it merges whatever the time between edits.
+    Recording(u64),
     /// Anything else: always its own undo step.
     Single,
 }
@@ -40,7 +44,7 @@ impl History {
         if group != Group::Single
             && let Some((open, at)) = self.open
             && open == group
-            && now - at < MERGE_WINDOW
+            && (matches!(group, Group::Recording(_)) || now - at < MERGE_WINDOW)
         {
             self.open = Some((group, now));
             return;

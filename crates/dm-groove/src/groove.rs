@@ -218,8 +218,10 @@ fn fit_swing(positions: &[f64]) -> (f64, f64) {
 }
 
 /// The step a position snaps to on the swung grid, and the distance moved, both in steps. In
-/// each pair of steps the grid points are at 0 and `1 + swing`.
-fn snap(x: f64, swing: f64) -> (usize, f64) {
+/// each pair of steps the grid points are at 0 and `1 + swing`. `x` is in straight steps and
+/// not negative; `swing` is the fraction of a step every odd step is delayed, as in
+/// `dm_project::Project::swing`. The step may be one past the last, for the caller to wrap.
+pub fn snap(x: f64, swing: f64) -> (usize, f64) {
     let pair = (x / 2.0).floor();
     let r = x - pair * 2.0;
     let (offset, distance) = [(0, 0.0), (1, 1.0 + swing), (2, 2.0)]

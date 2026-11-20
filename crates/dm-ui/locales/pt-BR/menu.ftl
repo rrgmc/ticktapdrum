@@ -55,6 +55,8 @@ menu-midi-volume-about = A saída escolhida toca todas as peças neste volume. O
 menu-midi-sending = Enviando para { $device }.
 menu-midi-gone = { $device } não está mais disponível. Tocando neste aparelho de novo.
 menu-midi-in-use = { $device } está em uso por outro programa.
+# Mensagem de uma linha quando a entrada MIDI some durante a gravação. $device é o nome dela.
+menu-midi-input-gone = { $device } não está mais disponível. A gravação parou.
 # O título da janela que ajusta o andamento e o swing.
 menu-tempo = Andamento
 

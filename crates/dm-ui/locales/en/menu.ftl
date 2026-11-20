@@ -55,6 +55,8 @@ menu-midi-volume-about = The chosen output plays every drum at this volume. Each
 menu-midi-sending = Sending to { $device }.
 menu-midi-gone = { $device } is gone. Playing on this device again.
 menu-midi-in-use = { $device } is in use by another program.
+# A one-line message when the MIDI input goes away while recording. $device is its name.
+menu-midi-input-gone = { $device } is gone. Recording stopped.
 # The title of the dialog that sets the tempo and the swing.
 menu-tempo = Tempo
 

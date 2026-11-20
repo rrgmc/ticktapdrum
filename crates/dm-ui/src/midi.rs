@@ -1,5 +1,6 @@
 //! The MIDI output setting: which output the drums go to, kept by name in the store, and what
-//! the interface does when that output connects, disappears or will not open.
+//! the interface does when that output connects, disappears or will not open. The drum hits
+//! for MIDI in come from the input of the same device (see "Milestone 14: MIDI in").
 //!
 //! Setting it up is one choice and no questions (see "Milestone 9: MIDI out" in
 //! `docs/DESIGN.md`). While the chosen output is connected, the engine's MIDI out is on, which
@@ -7,9 +8,13 @@
 
 use dm_audio::Engine;
 #[cfg(feature = "midi")]
-pub(crate) use dm_midi::{KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus};
+pub(crate) use dm_midi::{
+    InputChoice, KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus,
+};
 #[cfg(not(feature = "midi"))]
-pub(crate) use off::{KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus};
+pub(crate) use off::{
+    InputChoice, KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus,
+};
 
 /// Stands in for `dm-midi` in a build without the `midi` feature: it reports no MIDI, so the
 /// setting is not offered and the engine's MIDI out stays off.
@@ -45,6 +50,14 @@ mod off {
             MidiStatus::Off
         }
 
+        pub(crate) fn listen(&mut self, _hits: dm_audio::LiveHits) {}
+
+        pub(crate) fn select_input(&mut self, _choice: InputChoice) {}
+
+        pub(crate) fn input_status(&self) -> MidiStatus {
+            MidiStatus::Off
+        }
+
         pub(crate) fn send_style(
             &mut self,
             _target: KeyboardTarget,
@@ -56,6 +69,15 @@ mod off {
         pub(crate) fn transfer(&self) -> TransferStatus {
             TransferStatus::Idle
         }
+    }
+
+    #[allow(dead_code)]
+    #[derive(Debug, Clone, Default, PartialEq, Eq)]
+    pub(crate) enum InputChoice {
+        #[default]
+        SameAsOutput,
+        Named(String),
+        None,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +122,8 @@ pub(crate) enum Note {
     Gone(String),
     /// The output is there but another program holds it.
     InUse(String),
+    /// The input went away while recording. Recording stopped and kept its notes.
+    InputGone(String),
 }
 
 impl Note {
@@ -109,6 +133,7 @@ impl Note {
             Note::Sending(name) => tr!("menu-midi-sending", device = name.as_str()),
             Note::Gone(name) => tr!("menu-midi-gone", device = name.as_str()),
             Note::InUse(name) => tr!("menu-midi-in-use", device = name.as_str()),
+            Note::InputGone(name) => tr!("menu-midi-input-gone", device = name.as_str()),
         }
     }
 }
@@ -167,6 +192,8 @@ pub(crate) struct Midi {
     outputs: Vec<String>,
     /// The MIDI output volume in percent, 0..=100. A device setting, kept in the store.
     volume: u8,
+    /// Whether the input of the chosen device was open when last looked at.
+    input_connected: bool,
 }
 
 impl Midi {
@@ -178,6 +205,12 @@ impl Midi {
             volume: volume.min(100),
             ..Self::default()
         }
+    }
+
+    /// Whether the input of the chosen device is open now, so drum hits arrive and Record can
+    /// be offered.
+    pub(crate) fn input_connected(&self) -> bool {
+        self.input_connected
     }
 
     /// The MIDI output volume in percent.
@@ -264,12 +297,18 @@ impl Midi {
             engine.set_midi_volume(channel_volume(self.volume));
             let mut out = MidiOut::start(events);
             out.select(self.choice.clone());
+            if let Some(hits) = engine.take_live_hits() {
+                out.listen(hits);
+            }
+            // The hits come from the input named like the output: one choice for a keyboard.
+            out.select_input(InputChoice::SameAsOutput);
             self.out = Some(out);
             self.last = None;
             self.sending = false;
             self.by_hand = false;
         }
         let out = self.out.as_ref()?;
+        self.input_connected = out.input_status() == MidiStatus::Connected;
         let now = out.status();
         let last = self.last.replace(now.clone()).unwrap_or(MidiStatus::Off);
 
