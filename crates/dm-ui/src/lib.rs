@@ -650,7 +650,10 @@ impl DrumApp {
         let pattern_bars = self.project.patterns()[self.current].bars();
         // The grid's height is not known yet: the strip and the bar line come first. The height
         // left now is a little more, so near the edge the guess may pick the narrower column.
-        let rows_tall = grid::row_height(ui.available_height(), self.project.rows().len());
+        let rows_tall = grid::row_height(
+            ui.available_height() - bars::INDICATOR_HEIGHT - bars::INDICATOR_GAP,
+            self.project.rows().len(),
+        );
         let labels = grid::label_width(ui.ctx(), &self.project, self.row_labels, width, rows_tall);
         let fits = ((width - labels) / (STEPS_PER_BAR as f32 * min_step)).floor() as usize;
         let split = fits == 0;
@@ -842,12 +845,30 @@ impl DrumApp {
         self.grid.set_row_labels(self.row_labels);
         self.grid.set_step_levels(self.project.step_levels());
         let grid_playhead = playhead.filter(|_| heard).map(|p| p.step);
-        let grid_events = self.grid.ui(
+        // The grid takes the rest of the screen but a thin line at the bottom, the bar
+        // indicator, which is inside the safe area so a phone's gesture bar does not hide it.
+        let rest = ui.available_rect_before_wrap();
+        let indicator_top = rest.bottom() - bars::INDICATOR_HEIGHT;
+        let grid_rect = egui::Rect::from_min_max(
+            rest.min,
+            egui::pos2(rest.right(), indicator_top - bars::INDICATOR_GAP),
+        );
+        let grid_events = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(grid_rect), |ui| {
+                self.grid.ui(
+                    ui,
+                    &self.project,
+                    &self.project.patterns()[self.current],
+                    view,
+                    grid_playhead,
+                )
+            })
+            .inner;
+        bars::indicator(
             ui,
-            &self.project,
-            &self.project.patterns()[self.current],
-            view,
-            grid_playhead,
+            egui::Rect::from_min_max(egui::pos2(rest.left(), indicator_top), rest.max),
+            pattern_bars,
+            shown.clone(),
         );
         for event in &grid_events {
             if let grid::GridEvent::OpenRow { row, rect } = event {
