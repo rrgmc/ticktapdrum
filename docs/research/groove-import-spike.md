@@ -127,6 +127,10 @@ GMD takes are human performances, not loops:
   never happen in human playing, so pattern reuse does not help. A 29-bar funk take became 8
   patterns for 8 chunks. A 251-bar jazz take used all 26 patterns, and 37 of its 63 chunks were
   left out of the song.
+- Many takes start with silence. In 91 of 503 GMD beats (18%) the first note comes a beat or more
+  after the start. Usually the drummer comes in with a pickup that leads into bar 2. In the 80 BPM
+  funk sample, bar 1 holds only a soft snare pickup on its last five steps. The silence is in the
+  recording, not caused by the import. No file in the three packs starts late.
 - Merging bars that differ by up to two hits barely helps: the funk take went from 27 distinct bars
   to 23, the jazz take from 111 to 95.
 - GMD velocities are low: 65% of notes are below 80. The app keeps every velocity from 1 to 127 per
@@ -176,6 +180,8 @@ The app's swing delays every second 16th. It cannot express 8th-note swing or tr
 4. **Report what changed:** notes moved more than a quarter step, notes merged, keys dropped.
 5. **For files longer than 16 bars, ask which bars to import** into one pattern instead of
    building dozens of patterns. Pattern reuse by exact match does not work on live playing.
+   Start the suggested range at the first full bar, so a count-in or pickup does not become a
+   silent first bar in a loop.
 6. **Demo grooves:** GMD is the only source that can be bundled. Clean GMD fills and short beats
    would work, with attribution under CC BY 4.0.
 

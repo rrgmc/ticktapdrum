@@ -69,6 +69,8 @@ pub struct Analysis {
     /// Notes that snapped past the last bar and were wrapped to step 0.
     pub wrapped: usize,
     pub bars: usize,
+    /// The step of the first note after snapping: how much silence the file starts with.
+    pub first_step: usize,
     pub grid: Vec<Vec<Hit>>,
     pub distinct_bars: usize,
     /// Bars left after merging bars that differ in at most two hits.
@@ -181,6 +183,11 @@ pub fn analyze(path: &Path, file: &MidiFile, map: KeyMap) -> Analysis {
         cell.0 = cell.0.max(velocity);
         cell.1 += 1;
     }
+    let first_step = cells
+        .keys()
+        .map(|&(bar, _, step)| bar * STEPS_PER_BAR + step)
+        .min()
+        .unwrap_or(0);
     let collisions = cells.values().map(|c| c.1 - 1).sum();
     let mut grid: Vec<Vec<Hit>> = vec![Vec::new(); bars];
     for (&(bar, key, step), &(velocity, _)) in &cells {
@@ -243,6 +250,7 @@ pub fn analyze(path: &Path, file: &MidiFile, map: KeyMap) -> Analysis {
         collisions,
         wrapped,
         bars,
+        first_step,
         grid,
         distinct_bars,
         near_distinct_bars: clusters.len(),
@@ -324,7 +332,7 @@ impl Analysis {
         }
     }
 
-    pub const CSV_HEADER: &str = "file,verdict,format,ppq,bpm,tempo_changes,time_sig,ts_changes,map,channels,notes,drum_notes,dropped,gs_extra,err_straight,swing,offset,err_swing,err_trip8,err_trip16,tight,far,moved_ms_mean,moved_ms_p95,collisions,wrapped,bars,distinct_bars,near_distinct_bars,distinct_velocities,soft,normal,loud";
+    pub const CSV_HEADER: &str = "file,verdict,format,ppq,bpm,tempo_changes,time_sig,ts_changes,map,channels,notes,drum_notes,dropped,gs_extra,err_straight,swing,offset,err_swing,err_trip8,err_trip16,tight,far,moved_ms_mean,moved_ms_p95,collisions,wrapped,bars,first_step,distinct_bars,near_distinct_bars,distinct_velocities,soft,normal,loud";
 
     pub fn csv_row(&self) -> String {
         let ts = self
@@ -332,7 +340,7 @@ impl Analysis {
             .map_or("none".to_owned(), |(n, d)| format!("{n}/{d}"));
         let channels: Vec<String> = self.channels.iter().map(|c| (c + 1).to_string()).collect();
         format!(
-            "\"{}\",{:?},{},{},{:.2},{},{},{},{},{},{},{},{},{},{:.4},{:.2},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.2},{},{},{},{},{},{},{},{},{}",
+            "\"{}\",{:?},{},{},{:.2},{},{},{},{},{},{},{},{},{},{:.4},{:.2},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.2},{},{},{},{},{},{},{},{},{},{}",
             self.path.display(),
             self.verdict(),
             self.format,
@@ -360,6 +368,7 @@ impl Analysis {
             self.collisions,
             self.wrapped,
             self.bars,
+            self.first_step,
             self.distinct_bars,
             self.near_distinct_bars,
             self.distinct_velocities,
@@ -458,6 +467,10 @@ pub fn print_summary(results: &[Analysis], failed: &[(PathBuf, String)]) {
     println!("  with dropped keys: {c} ({:.1}%)", pct(c));
     let c = count(&|a| a.gs_extra_notes > 0);
     println!("  with GS extra keys: {c} ({:.1}%)", pct(c));
+    let c = count(&|a| a.first_step >= 4);
+    println!("  first note a beat or more late: {c} ({:.1}%)", pct(c));
+    let c = count(&|a| a.first_step >= 16);
+    println!("  first bar empty: {c} ({:.1}%)", pct(c));
     let c = count(&|a| a.collisions > 0);
     println!("  with collisions: {c} ({:.1}%)", pct(c));
     let c = count(&|a| !a.channels.contains(&9));
