@@ -915,8 +915,9 @@ switches.
 - **Listened to on macOS, after that fix.** The `engine` example played its beat through the real
   audio engine to the same keyboard, through the Bluetooth adapter, for 90 seconds, and the user
   heard it play throughout. It sent 542 note-ons, 542 note-offs and 2 program changes. Messages
-  went out a median of 0.37 ms after their due time (95th percentile 0.89 ms, worst 1.0 ms). The
-  desktop app's interface and the iPad were not tried with the fix.
+  went out a median of 0.37 ms after their due time (95th percentile 0.89 ms, worst 1.0 ms). Then
+  the user played the desktop app to the keyboard, and everything played well. A release build with the fix also worked from the
+  iPad over a cable.
 - **Notices.** Messages in the menu's status line are seen only when ☰ opens, so MIDI messages
   also show for four seconds as a line at the bottom of the screen.
 - **WinMM truncates port names** to 31 characters. Listing and connecting see the same truncated
@@ -940,7 +941,7 @@ switches.
   refresh, but that was not checked.
 - **Not checked:** another program as the output; unplugging and
   replugging a USB device while connected; a port held by another program. On macOS: the "MIDI output" dialog by hand, choosing None or another output, the IAC bus, and the list
-  picking up a port added while the app runs. iOS was compiled but not run. Linux has not even
+  picking up a port added while the app runs. On iOS, only a cable to the keyboard was tried. Linux has not even
   been compiled. On Linux, ALSA port names include client numbers, which may change when a device
   is plugged in again and break reconnecting by name.
 
