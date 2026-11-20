@@ -412,6 +412,8 @@ enum Command {
     },
     PlayPattern {
         pattern: u8,
+        /// The step to start at; a step past the pattern's end starts at step 0.
+        from: u16,
     },
     CuePattern {
         pattern: u8,
@@ -895,14 +897,19 @@ impl Sequencer {
                 self.song_len = usize::from(entries).min(MAX_SONG);
             }
             Command::SetSongLoop { looped } => self.song_loop = looped,
-            Command::PlayPattern { pattern } => {
+            Command::PlayPattern { pattern, from } => {
                 let pattern = usize::from(pattern);
                 if pattern < MAX_PATTERNS {
+                    let from = usize::from(from);
                     self.start(
                         Mode::Pattern,
                         Playhead {
                             pattern,
-                            step: 0,
+                            step: if from < self.lengths[pattern] {
+                                from
+                            } else {
+                                0
+                            },
                             song_index: None,
                         },
                         now,
@@ -1605,9 +1612,16 @@ impl Engine {
     /// and stops the preview. `pattern` must be below [`MAX_PATTERNS`]; larger values are
     /// ignored.
     pub fn play_pattern(&mut self, pattern: usize) {
+        self.play_pattern_from(pattern, 0);
+    }
+
+    /// Like [`Engine::play_pattern`], but starts at step `from`, such as the first step of a
+    /// bar. A step past the pattern's end starts at step 0.
+    pub fn play_pattern_from(&mut self, pattern: usize, from: usize) {
         if pattern < MAX_PATTERNS {
             self.send_transport(Command::PlayPattern {
                 pattern: pattern as u8,
+                from: from.min(usize::from(u16::MAX)) as u16,
             });
             self.expect_playing = true;
             self.expect_previewing = false;
@@ -1893,7 +1907,7 @@ mod tests {
     /// A sequencer with pattern `pattern` playing from frame 0.
     fn playing(pattern: u8) -> Sequencer {
         let mut sequencer = Sequencer::new(RATE);
-        sequencer.apply(Command::PlayPattern { pattern }, 0);
+        sequencer.apply(Command::PlayPattern { pattern, from: 0 }, 0);
         sequencer
     }
 
@@ -1921,6 +1935,38 @@ mod tests {
             .map(|k| (block_of(k as f64 * 6000.0), pat(0, k)))
             .collect();
         assert_eq!(fired, expected);
+    }
+
+    #[test]
+    fn a_pattern_can_start_at_a_later_step_and_wraps_to_its_start() {
+        let mut sequencer = Sequencer::new(RATE);
+        sequencer.apply(
+            Command::SetLength {
+                pattern: 0,
+                steps: 32,
+            },
+            0,
+        );
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 16,
+            },
+            0,
+        );
+        let fired = run(&mut sequencer, 0, 18 * 6000 - BLOCK);
+        let expected: Vec<usize> = (16..32).chain(0..2).collect();
+        assert_eq!(steps(&fired), expected);
+        // A step past the end starts at the beginning.
+        let mut sequencer = Sequencer::new(RATE);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 999,
+            },
+            0,
+        );
+        assert_eq!(steps(&run(&mut sequencer, 0, 6000 - BLOCK)), [0]);
     }
 
     #[test]
@@ -1955,7 +2001,7 @@ mod tests {
             0,
         );
         for (pattern, length) in [(0, 16), (1, 5), (2, 32)] {
-            sequencer.apply(Command::PlayPattern { pattern }, 0);
+            sequencer.apply(Command::PlayPattern { pattern, from: 0 }, 0);
             let fired = run(&mut sequencer, 0, 70 * 6000 - BLOCK);
             assert_eq!(fired.len(), 70);
             for (k, (_, position)) in fired.iter().enumerate() {
@@ -2004,7 +2050,13 @@ mod tests {
     fn play_restarts_at_step_zero_in_the_same_block() {
         let mut sequencer = playing(0);
         run(&mut sequencer, 0, 20_000);
-        sequencer.apply(Command::PlayPattern { pattern: 0 }, 20_032);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            20_032,
+        );
         let fired = run(&mut sequencer, 20_032, 26_100);
         assert_eq!(
             fired,
@@ -2033,7 +2085,13 @@ mod tests {
             },
             0,
         );
-        sequencer.apply(Command::PlayPattern { pattern: 0 }, 0);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            0,
+        );
         let per_step = f64::from(rate) * 60.0 / (133.0 * 4.0);
         let fired = run(&mut sequencer, 0, (10_000.0 * per_step) as u64 - BLOCK);
         assert_eq!(fired.len(), 10_000);
@@ -2087,7 +2145,13 @@ mod tests {
         let mut sequencer = Sequencer::new(rate);
         sequencer.apply(Command::SetTempo { bpm: 133.0 }, 0);
         sequencer.apply(Command::swing(0.33).unwrap(), 0);
-        sequencer.apply(Command::PlayPattern { pattern: 0 }, 0);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            0,
+        );
         let per_step = f64::from(rate) * 60.0 / (133.0 * 4.0);
         let swing = f64::from(0.33_f32) * per_step;
         let fired = run(&mut sequencer, 0, (10_000.0 * per_step) as u64 - BLOCK);
@@ -2193,7 +2257,13 @@ mod tests {
             },
             0,
         );
-        sequencer.apply(Command::PlayPattern { pattern: 0 }, 0);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            0,
+        );
         // Into step 21 of pattern 0, which is in bar 1. Runs start and end on whole blocks.
         let now = 1971 * BLOCK;
         let fired = run(&mut sequencer, 0, now);
@@ -2425,7 +2495,10 @@ mod tests {
         }
         commands.send(set(1, 4, 90));
         commands.send(set(0, 4, 0));
-        commands.send(Command::PlayPattern { pattern: 0 });
+        commands.send(Command::PlayPattern {
+            pattern: 0,
+            from: 0,
+        });
         drain(&mut consumer, &mut sequencer, 0);
 
         let mut notes = Vec::new();
@@ -2458,7 +2531,7 @@ mod tests {
             0,
         );
         for (pattern, expected) in [(0, 0), (1, 1), (2, 0)] {
-            sequencer.apply(Command::PlayPattern { pattern }, 0);
+            sequencer.apply(Command::PlayPattern { pattern, from: 0 }, 0);
             let mut notes = 0;
             sequencer.advance(0, BLOCK, |_| {}, |_, _| notes += 1);
             assert_eq!(notes, expected, "pattern {pattern}");
@@ -2525,7 +2598,13 @@ mod tests {
         }
         sequencer.apply(Command::SetRowGain { row: 1, gain: 0.5 }, 0);
         sequencer.apply(Command::SetRowGain { row: 2, gain: 0.0 }, 0);
-        sequencer.apply(Command::PlayPattern { pattern: 0 }, 0);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            0,
+        );
         assert_eq!(notes(&mut sequencer, 0, BLOCK), [(0, 36, 100), (0, 38, 50)]);
         // Gain is per row, so it holds in every pattern.
         sequencer.apply(
@@ -2537,7 +2616,13 @@ mod tests {
             },
             BLOCK,
         );
-        sequencer.apply(Command::PlayPattern { pattern: 5 }, BLOCK);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 5,
+                from: 0,
+            },
+            BLOCK,
+        );
         assert_eq!(notes(&mut sequencer, BLOCK, 2 * BLOCK), [(0, 38, 40)]);
     }
 
@@ -2558,7 +2643,10 @@ mod tests {
                 velocity: 100,
             });
         }
-        commands.send(Command::PlayPattern { pattern: 0 });
+        commands.send(Command::PlayPattern {
+            pattern: 0,
+            from: 0,
+        });
         drain(&mut consumer, &mut sequencer, 0);
         // Into step 1, which has already started at full velocity.
         let now = block_of(6000.0) + 10 * BLOCK;
@@ -2726,7 +2814,13 @@ mod tests {
     fn the_playhead_allows_for_latency() {
         let mut sequencer = Sequencer::new(RATE);
         assert_eq!(sequencer.history.at(0), None);
-        sequencer.apply(Command::PlayPattern { pattern: 0 }, 0);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            0,
+        );
         let mut start = 0;
         while start < 3 * 6000 - BLOCK {
             sequencer.advance(start, BLOCK, |_| {}, |_, _| {});
@@ -2842,7 +2936,10 @@ mod tests {
                 step: 0,
                 velocity: 100,
             });
-            commands.send(Command::PlayPattern { pattern: 0 });
+            commands.send(Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            });
         } else {
             commands.hit(38, 100);
         }
@@ -2933,7 +3030,10 @@ mod tests {
             pattern: 0,
             steps: 4,
         });
-        commands.send(Command::PlayPattern { pattern: 0 });
+        commands.send(Command::PlayPattern {
+            pattern: 0,
+            from: 0,
+        });
         // Most of step 0: the kick sounds and step 1 has not started.
         let mut out = vec![0.0_f32; 2 * 5900];
         renderer.render(&mut out, 2);
@@ -3026,7 +3126,10 @@ mod tests {
             commands.send(Command::step(0, 0, step, velocity).unwrap());
         }
         commands.send(Command::SetMidiOut { on: true });
-        commands.send(Command::PlayPattern { pattern: 0 });
+        commands.send(Command::PlayPattern {
+            pattern: 0,
+            from: 0,
+        });
         // Two loops of the pattern in one call, so the message times share one start moment.
         let mut out = vec![1.0_f32; 2 * 8 * 6000];
         let before = Instant::now();
@@ -3094,7 +3197,10 @@ mod tests {
         let font = soundfont_or_skip!();
         let (mut commands, mut renderer, mut events) = midi_renderer(&font, 36);
         commands.send(Command::step(0, 0, 0, 127).unwrap());
-        commands.send(Command::PlayPattern { pattern: 0 });
+        commands.send(Command::PlayPattern {
+            pattern: 0,
+            from: 0,
+        });
         commands.set_kit(8);
         commands.hit(38, 100);
         let mut out = vec![0.0_f32; 2 * 4 * 6000];
@@ -3246,7 +3352,13 @@ mod tests {
         assert!(timed_notes(&mut sequencer, 3 * 6000 - BLOCK, 10 * 6000).is_empty());
 
         // While a project pattern plays, stop_preview leaves it playing.
-        sequencer.apply(Command::PlayPattern { pattern: 0 }, 10 * 6000);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            10 * 6000,
+        );
         sequencer.apply(Command::StopPreview, 10 * 6000);
         assert!(sequencer.plays_project());
 
@@ -3264,7 +3376,13 @@ mod tests {
         preview(&mut sequencer, &[hit(0, 36, 100)], 1, 0);
         assert_eq!(timed_notes(&mut sequencer, 0, 6000 - BLOCK), [(0, 36, 100)]);
 
-        sequencer.apply(Command::PlayPattern { pattern: 0 }, 6000 - BLOCK);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            6000 - BLOCK,
+        );
         assert!(!sequencer.plays_preview());
         let notes = timed_notes(&mut sequencer, 6000 - BLOCK, 17 * 6000);
         assert!(notes.iter().all(|&(_, key, _)| key == 38), "{notes:?}");

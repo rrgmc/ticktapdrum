@@ -30,6 +30,8 @@ pub(crate) enum BarEvent {
     /// Copy the first bar shown in the grid.
     CopyBar,
     ToggleFollow,
+    /// Play the pattern from the first step of this bar.
+    PlayFrom(usize),
 }
 
 #[derive(Default)]
@@ -46,6 +48,9 @@ impl BarStrip {
     /// The contents of the bar pop-up: the thumbnails, wrapping onto more lines, then the bar
     /// commands. `shown` is the range of bars the grid shows; `playing_bar` the bar being heard,
     /// if it is in this pattern. Tapping a thumbnail shows that bar; the pop-up stays open.
+    /// `with_thumbnails` is false while the line under the strip already shows them.
+    /// `can_play_from` offers playing from the first bar shown, which only a pattern can do.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn popup_contents(
         &mut self,
         ui: &mut egui::Ui,
@@ -53,15 +58,32 @@ impl BarStrip {
         shown: std::ops::Range<usize>,
         playing_bar: Option<usize>,
         follow: bool,
+        with_thumbnails: bool,
+        can_play_from: bool,
     ) -> Vec<BarEvent> {
         let mut events = Vec::new();
         ui.set_width(crate::patterns::popup_width(ui, POPUP_MAX_WIDTH));
 
         // The pop-up stays open, so several bars can be looked at in turn.
-        ui.horizontal_wrapped(|ui| {
-            thumbnails(ui, pattern, &shown, playing_bar, None, &mut events);
-        });
-        ui.separator();
+        if with_thumbnails {
+            ui.horizontal_wrapped(|ui| {
+                thumbnails(ui, pattern, &shown, playing_bar, None, &mut events);
+            });
+            ui.separator();
+        }
+        if can_play_from {
+            let bar = shown.start;
+            if ui
+                .add(widgets::button(
+                    icons::PLAY,
+                    &tr!("bars-play-from", bar = bar + 1),
+                ))
+                .clicked()
+            {
+                events.push(BarEvent::PlayFrom(bar));
+                ui.close();
+            }
+        }
 
         ui.horizontal_wrapped(|ui| {
             if ui
@@ -104,27 +126,37 @@ impl BarStrip {
         events
     }
 
-    /// The thumbnails on one line under the strip, scrolling sideways when they do not fit. The
-    /// line scrolls to the bars the grid shows whenever those change, such as while following
-    /// the music.
+    /// The thumbnails on one line under the strip, scrolling sideways when they do not fit,
+    /// after the Follow button, which stays put. The line scrolls to the bars the grid shows
+    /// whenever those change, such as while following the music.
     pub(crate) fn line(
         &mut self,
         ui: &mut egui::Ui,
         pattern: &Pattern,
         shown: std::ops::Range<usize>,
         playing_bar: Option<usize>,
+        follow: bool,
     ) -> Vec<BarEvent> {
         let mut events = Vec::new();
         let moved = self.last_shown.replace(shown.start) != Some(shown.start);
-        egui::ScrollArea::horizontal()
-            .id_salt("bar-line")
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let scroll_to = moved.then_some(shown.start);
-                    thumbnails(ui, pattern, &shown, playing_bar, scroll_to, &mut events);
+        ui.horizontal(|ui| {
+            if ui
+                .add(widgets::toggle_button(follow, EYE, "").min_size(POPUP_THUMB))
+                .on_hover_text(tr!("bars-follow"))
+                .clicked()
+            {
+                events.push(BarEvent::ToggleFollow);
+            }
+            egui::ScrollArea::horizontal()
+                .id_salt("bar-line")
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let scroll_to = moved.then_some(shown.start);
+                        thumbnails(ui, pattern, &shown, playing_bar, scroll_to, &mut events);
+                    });
                 });
-            });
+        });
         events
     }
 

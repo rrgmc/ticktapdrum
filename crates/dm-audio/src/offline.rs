@@ -147,6 +147,7 @@ impl OfflineRender {
         let steps = self.renderer.sequencer.lengths[pattern] * times;
         let play = Command::PlayPattern {
             pattern: pattern as u8,
+            from: 0,
         };
         self.render(play, steps, tail_seconds, progress, cancel)
     }
@@ -582,7 +583,10 @@ mod tests {
             commands.send(Command::step(0, 0, step, 110).unwrap());
             commands.send(Command::step(0, 1, step + 1, 100).unwrap());
         }
-        commands.send(Command::PlayPattern { pattern: 0 });
+        commands.send(Command::PlayPattern {
+            pattern: 0,
+            from: 0,
+        });
         let mut out = vec![0.0_f32; rendered.len()];
         live.render(&mut out, 2);
         assert!(energy(&out) > 1e-3);

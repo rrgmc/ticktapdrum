@@ -125,7 +125,7 @@ pub struct DrumApp {
     /// The system's language, if the interface is translated into it.
     system_language: Option<i18n::Language>,
     /// The language the window title was last set in.
-    titled: Option<i18n::Language>,
+    titled: Option<(i18n::Language, Option<String>)>,
     /// A WAV export in progress.
     wav_job: Option<export::WavJob>,
     /// A download from a link in progress. It runs only while the link dialog is open.
@@ -374,9 +374,15 @@ impl DrumApp {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let language = self.effective_language();
-        if self.titled != Some(language) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(tr!("app-name")));
-            self.titled = Some(language);
+        // The window's title names the project, once it has a name.
+        let titled = Some((language, self.name.clone()));
+        if self.titled != titled {
+            let title = match &self.name {
+                Some(name) => tr!("app-title-named", name = name.as_str()),
+                None => tr!("app-name"),
+            };
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+            self.titled = titled;
         }
         if !self.fonts_installed {
             icons::install(&ctx);
@@ -698,12 +704,14 @@ impl DrumApp {
         ui.add_space(4.0);
         // The bar thumbnails, all the time, when the setting says so. Basic mode has one bar.
         let bar_line = self.bar_line.unwrap_or_else(|| bar_line_default(ui.ctx()));
-        let line_events = if bar_line && !self.basic {
+        let line_shown = bar_line && !self.basic;
+        let line_events = if line_shown {
             let events = self.bar_strip.line(
                 ui,
                 &self.project.patterns()[self.current],
                 shown.clone(),
                 playing_bar,
+                self.follow,
             );
             ui.add_space(4.0);
             events
@@ -748,6 +756,8 @@ impl DrumApp {
                         shown.clone(),
                         playing_bar,
                         self.follow,
+                        !line_shown,
+                        self.mode == Mode::Pattern,
                     )
                 })
             })
@@ -996,6 +1006,10 @@ impl DrumApp {
                 }
                 bars::BarEvent::ToggleFollow => {
                     self.follow = !self.follow;
+                    Ok(Vec::new())
+                }
+                bars::BarEvent::PlayFrom(bar) => {
+                    self.play_from_bar(engine, bar);
                     Ok(Vec::new())
                 }
             };
@@ -1435,6 +1449,20 @@ impl DrumApp {
         self.preview = None;
         self.playing = true;
         self.follow = true;
+    }
+
+    /// Plays the pattern being edited from the first step of `bar`, and follows it.
+    fn play_from_bar(&mut self, engine: &mut Engine, bar: usize) {
+        let pattern = &self.project.patterns()[self.current];
+        if self.mode != Mode::Pattern || bar >= pattern.bars() {
+            return;
+        }
+        engine.play_pattern_from(pattern.slot(), bar * STEPS_PER_BAR);
+        self.preview = None;
+        self.playing = true;
+        self.follow = true;
+        self.view_bar = bar;
+        self.half = 0;
     }
 
     fn select_pattern(&mut self, engine: &mut Engine, index: usize) {

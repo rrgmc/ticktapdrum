@@ -8,3 +8,4 @@ bars-follow = Seguir
 bars-remove-question = Remover o compasso { $number }? As notas dele também vão embora.
 bars-remove = Remover
 bars-keep = Cancelar
+bars-play-from = Tocar a partir do compasso { $bar }
