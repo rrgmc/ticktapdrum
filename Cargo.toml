@@ -41,7 +41,7 @@ eframe = { version = "0.37.0", default-features = false }
 
 ureq = "3"
 sha2 = "0.10"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 hex = "0.4"
 thiserror = "2"
 log = "0.4"
