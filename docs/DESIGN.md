@@ -1546,12 +1546,12 @@ Not checked:
 
 ## Milestone 14: MIDI in
 
-The keyboard chosen under "MIDI output" also becomes a way to write beats. With a drum kit
-selected on the keyboard, the user taps Record and plays along to the loop. Each hit lands on the
+The keyboard chosen under "MIDI output" also becomes a way to write beats. With MIDI input on and
+a drum kit selected on the keyboard, the user plays a pattern and plays along to the loop. Each hit lands on the
 nearest step. Placing notes on a grid is hard for some beginners; playing a beat is easier.
 
-**It must stay as simple as the rest of the app.** There is no new setting and no question. The
-only thing a person sees is a Record button, while a keyboard is connected.
+**It must stay as simple as the rest of the app.** There is one button and no question, and no
+Record button: with MIDI in on, playing a pattern records.
 
 **No mapping is needed.** A keyboard with a drum kit selected sends the General MIDI key for each
 drum: 36 is the kick, 38 the snare, 42 the closed hi-hat. The app's rows use the same keys.
@@ -1561,6 +1561,12 @@ there; see "Android, later".
 
 ### Definition of done
 
+- **MIDI input is off until the person turns it on.** A "MIDI in" button in the strip, after
+  Play, turns it on and off. It shows while a MIDI output is connected, and looks pressed while
+  on. It is a device setting, kept in the data folder as `midi.input`, so it survives a restart. While it is off, the app ignores the keyboard's keys. Turning it
+  off during a take ends the take. Off is the default
+  because people also play the keyboard over the drums: a melody's keys fall in the drum range,
+  and the app would take them for drums.
 - **The input is the MIDI output's own device.** The app listens to the input with the same name
   as the chosen output, which Send to keyboard and the switch-off check already open. With no
   output chosen, the app listens to nothing.
@@ -1572,16 +1578,16 @@ there; see "Android, later".
   keeps the style out. This needs checking on a real keyboard.
 - **Keys outside the drum kit are ignored.** General MIDI drums are keys 35 to 81. Some kits use
   keys beyond that range (XG kits go from 13 to 87); the app has no sound to match them.
-- **A Record button shows in the strip while the keyboard is connected.** Tapping it starts the
-  pattern on a loop if it is stopped, and records until Record or Stop is tapped. It records into
-  the pattern being edited, not into the song. The button glows red while recording.
+- **Playing a pattern records.** While MIDI input is on and the keyboard connected, each run of the
+  pattern being edited, from Play to Stop, is a take. Playing the song records nothing, and
+  neither does a key pressed while stopped: it only flashes its row. A small red dot on Play, by
+  the MIDI badge, shows that playing records.
 - **Each hit lands on the nearest step**, measured from when the user heard the beat, not from
   when the message arrived. A hit just before the loop's start lands on its first step. Swing
   counts: a hit is snapped to the swung grid, with groove import's snapping
   (`dm-groove`, `snap`).
 - **Recording only adds notes.** A hit on a step already on keeps the louder of the two levels.
-  Removing notes stays a tap on the grid. One take, from Record on to Record off, undoes as one
-  step.
+  Removing notes stays a tap on the grid. One take, from Play to Stop, undoes as one step.
 - **Velocity sets the level.** A light hit makes a soft step, a middling one a normal step, and a
   hard one a loud step. The step levels button moves up to show the levels the take used, as a
   beat to start from does. The thresholds are set by ear on a real keyboard.
@@ -1651,7 +1657,8 @@ beat at the app's tempo into the pair's other port, on channel 1.
 - **The engine can also sound live hits,** and `dm-midi` can open any input by name
   (`InputChoice`). The app uses neither: its input is always the output's device, which sounds
   its own keys.
-- **Record showed beside Play** once the loopback input connected, and turned red while recording.
+- **The first build had a Record button,** which showed beside Play once the loopback input
+  connected and turned red while recording. It was replaced by the MIDI in button.
 - **The take landed as played** (before inactive rows; see below). Loud kicks on every beat, normal snares on beats 2 and 4, soft
   closed hi-hats on every second step, all evenly spaced, with no hit doubled or moved by jitter.
   A cowbell, which had no row, got a Cowbell row at the bottom. A crash sent on channel 10 after
@@ -1673,8 +1680,6 @@ Not checked:
 - **The "gone" line,** shown when the keyboard disappears during a take.
 - **Hits at the very start of the first loop.** A hit a fraction of a frame before play starts
   has no position and is dropped.
-- **Song mode.** Record is greyed out while Play is set to Song; its hover text cannot be seen on
-  a touch screen.
 - **macOS, iOS and Linux.**
 
 ## Open questions
