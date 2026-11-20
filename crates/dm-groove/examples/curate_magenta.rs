@@ -66,18 +66,15 @@ fn main() {
 
     let mut picked = Vec::new();
     for (style, mut beats) in styles {
-        // Beats that repeat first, as they loop cleanly; then longer ones, up to 4 bars, so a
-        // pattern stays simple to read.
+        // Beats that repeat first, as they loop cleanly; then longer ones, with more of the
+        // drummer's playing.
         beats.sort_by_key(|(take, unit, groove)| {
-            (
-                *unit >= groove.bars.len(),
-                std::cmp::Reverse((*unit).min(4)),
-                *take,
-            )
+            (*unit >= groove.bars.len(), std::cmp::Reverse(*unit), *take)
         });
         let label = style_label(&style);
         for (n, (_, unit, groove)) in beats.into_iter().take(PER_STYLE).enumerate() {
-            let bars: Vec<Vec<BarHit>> = groove.bars[..unit.min(4)].to_vec();
+            // The whole take, as the import gives it: at most 16 bars, exact repeats collapsed.
+            let bars: Vec<Vec<BarHit>> = groove.bars[..unit].to_vec();
             println!(
                 "{label} {}: {} ({} bars of {}, {} BPM)",
                 n + 1,

@@ -496,7 +496,7 @@ mod tests {
         let pack = magenta_pack();
         assert_eq!(pack.grooves.len(), 25);
         for groove in &pack.grooves {
-            assert!((1..=4).contains(&groove.bars.len()), "{}", groove.name);
+            assert!((1..=16).contains(&groove.bars.len()), "{}", groove.name);
             assert!(groove.bars.iter().any(|bar| !bar.is_empty()), "{}", groove.name);
         }
     }

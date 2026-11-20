@@ -1290,9 +1290,10 @@ eframe's `links` feature opens a link in the system browser on the desktop and o
 
 25 beats from Google Magenta's Groove MIDI Dataset (CC BY 4.0) ship with the app, so there are
 grooves by real drummers without a download. `dm-groove`'s `curate_magenta` example chooses
-them from the dataset's MIDI zip and writes `crates/dm-ui/assets/magenta-grooves.json` (19 KB):
-beats only, from the files the app accepts, up to three per style, at most their first four
-bars. The dataset's "grooveN" takes count as their style, and a file name is taken once. That
+them from the dataset's MIDI zip and writes `crates/dm-ui/assets/magenta-grooves.json` (60 KB):
+beats only, from the files the app accepts, up to three per style, whole takes of up to 16
+bars. A first version kept only the first four bars, for short loops; most takes do not repeat,
+so that cut the drummers' variations and fills, and the author chose whole takes. The dataset's "grooveN" takes count as their style, and a file name is taken once. That
 gives 12 styles: baião, funk, hip hop, jazz, jazz fusion, pop, soft pop, punk, rock, indie rock,
 soul and Motown soul.
 

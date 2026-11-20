@@ -84,8 +84,8 @@ its own licence, CC-BY-SA 4.0.
 The beats by real drummers come from the
 [Groove MIDI Dataset](https://magenta.tensorflow.org/datasets/groove) by Google Magenta (Gillick,
 Roberts, Engel, Eck and Bamman, 2019), licensed under
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The app keeps the first bars of some
-of its beats, moved onto a 16-step grid; see
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The app keeps some of its beats, whole
+takes of up to 16 bars, moved onto a 16-step grid; see
 [`crates/dm-ui/assets/MAGENTA-CREDITS.txt`](crates/dm-ui/assets/MAGENTA-CREDITS.txt).
 
 ## Build it yourself
