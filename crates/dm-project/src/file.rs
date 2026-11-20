@@ -19,7 +19,7 @@ use serde_json::ser::Formatter;
 
 use crate::{
     DEFAULT_KIT, DEFAULT_TEMPO, DEFAULT_VOLUME, MAX_BARS, MAX_PATTERNS, MAX_ROWS, MAX_SONG,
-    MAX_STEPS, MAX_SWING, Pattern, Project, Row, StepLevels, drum_name, slot_name,
+    MAX_STEPS, MAX_SWING, Pattern, Project, Row, StepLevels, drum_name,
 };
 
 /// The file format this version writes. Files with a higher number are refused.
@@ -176,7 +176,7 @@ pub fn to_json(project: &Project) -> String {
             order: project
                 .song
                 .iter()
-                .map(|&slot| slot_name(slot).to_string())
+                .map(|&slot| project.slot_name(slot).to_string())
                 .collect(),
             looping: project.song_loop,
         },
@@ -297,8 +297,10 @@ fn build(file: FileIn) -> Result<Project, LoadError> {
                 }
             }
         }
+        // A file's letter is also the slot it loads into, so every letter has a slot.
         patterns.push(Pattern {
             slot,
+            name: crate::letter(slot),
             bars: pattern.bar_count.clamp(1, MAX_BARS as i64) as usize,
             steps,
         });

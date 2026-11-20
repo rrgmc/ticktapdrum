@@ -149,9 +149,10 @@ impl Project {
     pub fn from_imported(bars: &[Vec<BarHit>], bpm: f32) -> Result<(Project, Imported), Refused> {
         let mut project = Project::new();
         let (imported, _) = project.add_imported_pattern(bars)?;
-        // The new pattern takes the place and the engine slot of the empty pattern A.
+        // The new pattern takes the place, the engine slot and the letter of the empty pattern A.
         let mut pattern = project.patterns.remove(imported.index);
         pattern.slot = project.patterns[0].slot;
+        pattern.name = project.patterns[0].name;
         project.patterns[0] = pattern;
         project.tempo = bpm;
         Ok((
