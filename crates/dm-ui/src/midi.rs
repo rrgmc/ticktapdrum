@@ -99,6 +99,11 @@ pub(crate) fn note(
     }
 }
 
+/// The MIDI channel volume, 0..=127, for a volume in percent: 100% is 127, the controller's top.
+fn channel_volume(percent: u8) -> u8 {
+    ((u16::from(percent.min(100)) * 127 + 50) / 100) as u8
+}
+
 /// `name` cut to at most `max` characters, the last of them an ellipsis, for a narrow label.
 pub(crate) fn shorten(name: &str, max: usize) -> String {
     if name.chars().count() <= max {
@@ -124,15 +129,31 @@ pub(crate) struct Midi {
     by_hand: bool,
     /// The outputs listed when the dialog last opened.
     outputs: Vec<String>,
+    /// The MIDI output volume in percent, 0..=100. A device setting, kept in the store.
+    volume: u8,
 }
 
 impl Midi {
-    /// Follows the choice kept in the store. Nothing is sent until an engine exists.
-    pub(crate) fn new(choice: Option<String>) -> Self {
+    /// Follows the choice and the volume kept in the store. Nothing is sent until an engine
+    /// exists.
+    pub(crate) fn new(choice: Option<String>, volume: u8) -> Self {
         Self {
             choice,
+            volume: volume.min(100),
             ..Self::default()
         }
+    }
+
+    /// The MIDI output volume in percent.
+    pub(crate) fn volume(&self) -> u8 {
+        self.volume
+    }
+
+    /// Sets the MIDI output volume in percent. The engine sends it to the device now if MIDI
+    /// out is on, and again each time it turns on. The caller keeps the setting.
+    pub(crate) fn set_volume(&mut self, engine: &mut Engine, percent: u8) {
+        self.volume = percent.min(100);
+        engine.set_midi_volume(channel_volume(self.volume));
     }
 
     /// The chosen output, or `None`.
@@ -180,7 +201,8 @@ impl Midi {
             return None;
         }
         if let Some(events) = engine.take_midi_events() {
-            // A new engine starts with MIDI out off.
+            // A new engine starts with MIDI out off and the default volume, not the chosen one.
+            engine.set_midi_volume(channel_volume(self.volume));
             let mut out = MidiOut::start(events);
             out.select(self.choice.clone());
             self.out = Some(out);
@@ -218,6 +240,16 @@ impl Midi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn percent_maps_onto_the_channel_volume() {
+        assert_eq!(channel_volume(0), 0);
+        assert_eq!(channel_volume(1), 1);
+        assert_eq!(channel_volume(50), 64);
+        assert_eq!(channel_volume(79), 100);
+        assert_eq!(channel_volume(100), 127);
+        assert_eq!(channel_volume(200), 127);
+    }
 
     const OFF: MidiStatus = MidiStatus::Off;
     const CONNECTED: MidiStatus = MidiStatus::Connected;
@@ -277,7 +309,7 @@ mod tests {
 
     #[test]
     fn a_choice_is_kept_before_any_engine_exists() {
-        let mut midi = Midi::new(Some("Synth".into()));
+        let mut midi = Midi::new(Some("Synth".into()), 100);
         assert_eq!(midi.choice(), Some("Synth"));
         assert!(!midi.connected());
         midi.list();

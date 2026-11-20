@@ -177,7 +177,7 @@ impl DrumApp {
         let system_language = i18n::system_language();
         let row_labels = store.row_labels();
         let bar_line = store.bar_strip();
-        let midi = midi::Midi::new(store.midi_output());
+        let midi = midi::Midi::new(store.midi_output(), store.midi_volume());
         // Only the names: reading the packs waits until the list opens.
         let app = Self {
             bank: BankState::new(data_dir),
@@ -799,6 +799,7 @@ impl DrumApp {
                 choice: self.midi.choice(),
                 connected: self.midi.connected(),
                 outputs: self.midi.outputs(),
+                volume: self.midi.volume(),
             }),
             grooves: grooves::GroovesView {
                 magenta: &self.magenta,
@@ -949,6 +950,12 @@ impl DrumApp {
                         log::warn!("could not keep the MIDI output setting: {e}");
                     }
                     self.midi.choose(choice);
+                }
+                menu::MenuEvent::MidiVolume { percent, keep } => {
+                    self.midi.set_volume(engine, percent);
+                    if keep && let Err(e) = self.store.set_midi_volume(percent) {
+                        log::warn!("could not keep the MIDI volume setting: {e}");
+                    }
                 }
                 menu::MenuEvent::Language(choice) => {
                     self.set_language_choice(choice);

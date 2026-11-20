@@ -48,6 +48,9 @@ menu-midi-output-about = A bateria toca na saída escolhida em vez de neste apar
 menu-midi-output-not-connected = { $device } (sem conexão)
 # Abaixo da lista, quando a saída escolhida aparece na lista mas não está conectada (ainda).
 menu-midi-output-waiting = { $device } ainda está sem conexão.
+# O controle de volume abaixo da lista, mostrado enquanto há uma saída escolhida.
+menu-midi-volume = Volume
+menu-midi-volume-about = A saída escolhida toca todas as peças neste volume. O volume de cada peça continua valendo.
 # Mensagens de uma linha no estado do menu. $device é o nome da saída.
 menu-midi-sending = Enviando para { $device }.
 menu-midi-gone = { $device } não está mais disponível. Tocando neste aparelho de novo.

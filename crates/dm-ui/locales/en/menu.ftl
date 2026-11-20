@@ -48,6 +48,9 @@ menu-midi-output-about = The drums play on the chosen output instead of on this 
 menu-midi-output-not-connected = { $device } (not connected)
 # Under the list, when the chosen output is listed but not connected (yet).
 menu-midi-output-waiting = { $device } is not connected yet.
+# The volume slider under the list, shown while an output is chosen.
+menu-midi-volume = Volume
+menu-midi-volume-about = The chosen output plays every drum at this volume. Each drum's own volume still applies.
 # One-line messages in the menu's status. $device is the output's name.
 menu-midi-sending = Sending to { $device }.
 menu-midi-gone = { $device } is gone. Playing on this device again.
