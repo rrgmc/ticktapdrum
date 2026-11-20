@@ -1377,7 +1377,7 @@ for the grid.
 
 ## Export as a keyboard style (proposed)
 
-Not started; a proposal from research. Arranger keyboards play a "style": a drum and band backing
+Not started; a proposal from research, partly tried on a keyboard. Arranger keyboards play a "style": a drum and band backing
 with several sections (main variations, fills, intros, endings) that follows the player's chords.
 A beat made in the app could become the drum part of such a style.
 [`research/arranger-style-export.md`](research/arranger-style-export.md) has the findings.
@@ -1390,8 +1390,13 @@ A beat made in the app could become the drum part of such a style.
 - **Roland and Casio are left out:** no open format or import route was found.
 - **The ☰ menu's Export would offer "Export style"** with a choice of keyboard brand. Its dialog
   shows which pattern becomes each section, lets the person change it, and says what is missing.
-- **Before any code,** load a style made by hand (or by Yamaha's free MIDI Song to Style app) on
-  the SX720, to confirm the keyboard accepts a drum-only style and to find its drum kit numbers.
+- **The SX720 accepts a drum-only style** (checked 2026-11-20). Two test files, one marked SFF1 and
+  one SFF2, with no CASM block, loaded from the User list and played.
+- **A style can be sent straight to the keyboard over MIDI,** into its User drive, using Yamaha's
+  file transfer messages. This worked over Bluetooth MIDI. The research note lists the messages.
+  Whether the app offers this beside saving a file is not decided.
+- **Before the export is designed,** find the SX720's drum kit numbers and try a fuller style with
+  all its sections.
 
 ## Open questions
 

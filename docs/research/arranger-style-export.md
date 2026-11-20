@@ -5,7 +5,7 @@ keyboard, starting with the Yamaha PSR-SX720. These are findings, not decisions.
 binding only when [`DESIGN.md`](../DESIGN.md) records it.
 
 Claims marked *unverified* could not be confirmed from a primary source. Nothing here has been
-tried on a keyboard yet.
+tried on a keyboard, except where "Tried on the SX720" says so.
 
 ## Terms
 
@@ -74,9 +74,9 @@ must be spelled exactly, spaces included:
 ### The PSR-SX720
 
 - Yamaha lists the SX720 among the "SFF GE" models (with the PSR-SX600, PSR-SX920 and Genos2).
-  SFF GE extends SFF2 with guitar-part data, which drums do not use. Whether the SX720 loads a
-  minimal SFF1 or SFF2 file without CASM is *unverified*; forum users load older styles on SX
-  models, which suggests it does.
+  SFF GE extends SFF2 with guitar-part data, which drums do not use. The SX720 loads and plays a
+  minimal drum-only file without CASM, with either the `SFF1` or the `SFF2` marker (see "Tried
+  on the SX720").
 - **Drum kit numbers:** older Yamaha keyboards put drum kits on bank MSB 127, LSB 0, with the
   kit as the program number. The SX720's own numbers, including its Revo kits, are in its Data
   List ("Drum&SFX Kit List"). Yamaha publishes one Data List for the SX920 and SX720 together,
@@ -87,6 +87,63 @@ must be spelled exactly, spaces included:
 - One user saw "content incomplete" when loading a style they had edited, so a malformed file
   is refused rather than played wrongly.
 - Audio styles do not load on the SX720. They are not needed here.
+
+### Tried on the SX720
+
+Findings from 2026-11-20. The example program `yamaha_style` wrote two test styles: one with the
+`SFF1` marker and one with `SFF2`. Each is 541 bytes, at 1920 ticks per beat, with no CASM, OTS
+or MDB block. Each holds a two-bar `Main A` and a one-bar `Fill In AA` on channel 10, with the
+standard kit (bank MSB 127, LSB 0, program 0).
+
+- **Both files were sent to the keyboard over MIDI,** with the file transfer described in
+  "Sending a style over MIDI". The link was Bluetooth MIDI, through an adapter on the keyboard's
+  MIDI ports, not the USB cable.
+- **Both appear in the style list under User and both play.** So the SX720 accepts a drum-only
+  style without CASM, and the first-bar setup described above is enough.
+- Not checked: whether each drum sound and the fill are exactly right, how the keyboard treats a
+  missing Intro or Ending, and the SX720's own drum kit numbers.
+
+### Sending a style over MIDI
+
+A Yamaha arranger accepts files over MIDI, so a style can go straight into its User drive without
+a USB stick. StylePlayer.io does this from the browser with Web MIDI. The messages below come from
+reading its page script; a test program sending the same messages worked on the SX720 (see "Tried
+on the SX720"). Yamaha does not document them.
+
+**Encoding.** All messages are SysEx starting `F0 43 50`. Texts end with a zero byte. Paths and
+file data use a 7-bit packing: each group of up to 7 bytes becomes one byte of high bits followed
+by the 7 low-bit bytes. In the first byte, bit 6 is the high bit of the group's first byte, bit 5
+of the second, and so on. Lengths and sizes are 7-bit numbers, most significant first.
+
+**Every request gets one reply.** The sender waits for it, up to 3 seconds, before the next one.
+The reply should be ignored only if it is active sensing or a channel message.
+
+| Step | Sent | Reply |
+|---|---|---|
+| Model | `F0 43 50 00 00 07 01 F7` | `F0 43 50 00 00 07 02`, packed name, `F7`. The SX720 answers `PSR-SX720`. |
+| Start | `F0 43 50 00 00 00 01 F7` | `F0 43 50 00 00 00 02 01 nn F7`; `nn` is the number of drives. |
+| | `F0 43 50 00 00 02 01 F7` | Any. |
+| Reset | `F0 43 50 00 00 01 01 F7` | `F0 43 50 00 00 01 02 00 F7` |
+| Connect on | `F0 43 50 00 00 01 00 01 F7` | `F0 43 50 00 00 01 02 01 F7` |
+| | `F0 43 50 00 05 0B 00 00 F7`, then `F0 43 50 00 05 06 00 00 F7` | Any. |
+| Drive name | `F0 43 50 00 05 0B 00 dd F7` | `F0 43 50 00 05 0B 01`, 3 bytes, packed name, `F7`. Drive 0 of the SX720 is `USER`. |
+| List files | `F0 43 50 00 05 04 00 3F`, length (2 bytes), packed path such as `0:\STYLE\*.*`, `F7` | One entry per reply; ask for the next with `F0 43 50 00 05 05 00 F7`. A reply of 27 bytes or fewer ends the list. |
+| Open a file | `F0 43 50 00 06 01 00 05`, file size (5 bytes), `05 00 00 00 00 00`, length (2 bytes), packed path such as `0:\STYLE\Name.sty`, `F7` | `F0 43 50 00 03 00 F7` |
+| Data | `F0 43 50 01`, length of the block (2 bytes), block, checksum, `F7`. The block is `02 02`, the packet number (counting from 0, modulo 128), then up to 210 bytes of the file, packed. The checksum makes the sum of the block's bytes a multiple of 128. | `F0 43 50 00 03 00 F7` after each packet. |
+| Close | `F0 43 50 00 03 02 F7` | `F0 43 50 00 03 03 F7` |
+| Connect off | `F0 43 50 00 00 01 00 00 F7` | `F0 43 50 00 00 01 02 00 F7` |
+
+- **The SX720's User drive** holds the folders `SONG`, `STYLE`, `VOICE`, `REGIST`, `MULTI PAD`,
+  `SYSTEM`, `TEXT`, `PLAYLIST`, `CHORDLOOPER`, `MIDI` and `Expansion`. A style goes in `STYLE`.
+- **StylePlayer avoids overwriting** by listing the folder first and adding `_1`, `_2` and so on
+  to a name already in use.
+- **StylePlayer's "Preview"** loads a style without keeping it. It writes the style, then a
+  registration file that selects it, loads that registration with
+  `F0 43 73 01 52 26 03 00 00 00`, path, `00 F7`, and deletes both files. The registration
+  format was not studied.
+- **StylePlayer says the transfer works on the PSR-SX models and later,** through the USB "To
+  Host" port. It also worked over Bluetooth MIDI. On Android, Web MIDI reaches the keyboard over
+  USB; iOS has no Web MIDI.
 
 ### Yamaha's own converter
 
@@ -187,27 +244,21 @@ possible mapping:
 
 ## Suggested next steps
 
-1. **Make one style with the converter and try it on the SX720.** This shows whether the keyboard
-   accepts a drum-only style. The `.sty` file it produces is the reference for a direct export.
-   1. Export a beat from the app as MIDI.
-   2. Add the section names as lyric events, in the layout of `MarkerTemplate.mid` (see "What the
-      installed converter shows"). A small script can do this from the exported file.
-   3. Open the result in MIDI Song to Style, check the sections it finds, and save the style for
-      the SX720.
-   4. Load the style on the SX720 from a USB stick and play it.
-   5. Analyse the saved `.sty` file byte by byte. It shows what a direct export must write: the
-      setup marker (`SFF1`, `SFF2` or `SFF4`), ticks per beat, the setup bar, the drum kit's bank
-      and program, and the CASM block.
-2. **Load the hand-made test file on the SX720.** The example program `yamaha_style` writes it:
-   SFF1, no CASM, 1920 ticks per beat, a two-bar Main A and a one-bar Fill In AA, all on
-   channel 10 with the standard kit (bank MSB 127, LSB 0, program 0).
+1. **Done: load the hand-made test file on the SX720.** Both the SFF1 and the SFF2 file load and
+   play (see "Tried on the SX720"). The example program `yamaha_style` writes them:
    - `cargo run -p dm-project --example yamaha_style -- test1.sty` writes the SFF1 file.
    - Add `--sff2` for the SFF2 file, and `--name <name>` to change the style's name.
-   - Load the SFF1 file first. If it is refused, try the SFF2 one.
-   - The file's bytes were checked against the layout above; nobody has loaded it on a keyboard
-     yet.
-3. **Read the SX720 Data List** for its drum kit bank and program numbers.
-4. **Only then** design the export option in `DESIGN.md`.
+2. **Read the SX720 Data List** for its drum kit bank and program numbers, then try a style with
+   another kit and listen for the right sounds.
+3. **Try a fuller style:** all four Mains, their fills, the Break, an Intro and an Ending, made
+   from a real project. This shows how the keyboard moves between sections.
+4. **Decide whether the app sends styles over MIDI** as well as saving a file, with the file
+   transfer in "Sending a style over MIDI". The app already has MIDI out on desktop; it would need
+   MIDI in for the replies.
+5. **Then** design the export option in `DESIGN.md`.
+
+The converter route (MIDI Song to Style) is no longer needed to prove the format. It stays useful
+as a reference if a later keyboard refuses a file without CASM.
 
 ## Sources
 
@@ -219,7 +270,8 @@ possible mapping:
 - Yamaha: Tyros2 Data List, [Section Control](https://www.manualslib.com/manual/477783/Yamaha-Tyros2.html?page=69);
   Tyros3 Data List, [p.75](https://www.manualslib.com/manual/477788/Yamaha-Tyros3.html?page=75)
 - Yamaha Musicians forum: [Genos 2 Section Control capture](https://yamahamusicians.com/forum/viewtopic.php?t=21601)
-- StylePlayer: [loading styles from USB](https://styleplayer.io/community/d/58/2)
+- StylePlayer: [loading styles from USB and over a USB cable](https://styleplayer.io/community/d/58/2);
+  its page script for the file transfer messages
 - Yamaha Musicians forum: ["Empty" style from SX920/720](https://yamahamusicians.com/forum/threads/request-empty-style-from-sx920-720.22400/post-132463)
 - PSR Tutorial forum: [copying to the User drive](https://forum.psrtutorial.com/index.php?msg=493518),
   [Revo kits on the SX920/720](https://forum.psrtutorial.com/index.php?msg=525486),
