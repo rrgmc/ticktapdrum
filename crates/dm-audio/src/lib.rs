@@ -66,6 +66,28 @@
 //! from the frame it is about to output, and publishes the position that started at or before the
 //! result to an atomic.
 //!
+//! # Preview track
+//!
+//! [`Engine::preview`] loops a list of hits ([`PreviewHit`]) on a hidden extra track, so a person
+//! can hear an imported groove before it goes into the project. The track has its own storage:
+//! a velocity for each of the 128 drum keys at each of [`MAX_STEPS`] steps, allocated once when
+//! the engine starts. The keys play directly, not through the rows, so row keys and row gains do
+//! not apply. The project's patterns, rows and song are never touched.
+//!
+//! The preview is a third play mode of the same sequencer and clock. So it plays at the engine's
+//! tempo and swing, with the current kit, and swing counts from the preview's step 0. Starting a
+//! preview stops the project's play. Starting the project's play, or [`Engine::stop`], stops the
+//! preview. Its notes get note-offs and go to MIDI out like any other note.
+//!
+//! While the preview plays, the sequencer is not playing a project pattern: [`Engine::playhead`]
+//! reports `None` and [`Engine::is_playing`] reports `false`. [`Engine::previewing`] reports the
+//! preview instead.
+//!
+//! The hits travel as one command each. Before them goes a command that stops the old preview and
+//! clears its hits; after them goes the command that starts the new one. A long preview may not
+//! fit in the queue at once. The rest then waits in the backlog like any other command (see
+//! below), so the preview starts a little later but complete.
+//!
 //! # Command queue
 //!
 //! The queue holds [`QUEUE_CAPACITY`] commands, and the audio callback empties it at every block.
@@ -197,6 +219,13 @@ const NO_NOTE_OFF: u64 = u64::MAX;
 /// Marks a row that has no drum key yet.
 const NO_KEY: u8 = u8::MAX;
 
+/// The pattern number the sequencer uses internally for the preview track. It is never published
+/// as a playhead.
+const PREVIEW_SLOT: usize = MAX_PATTERNS;
+
+/// The number of General MIDI keys a preview step can hold, one velocity each.
+const KEYS: usize = 128;
+
 /// Marks "no playhead" in the playhead atomic.
 const NO_PLAYHEAD: u64 = u64::MAX;
 
@@ -317,6 +346,17 @@ impl Playhead {
     }
 }
 
+/// One hit of a preview, for [`Engine::preview`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreviewHit {
+    /// The step from the start of the preview, 16 to a bar.
+    pub step: usize,
+    /// The General MIDI drum key, 0..=127.
+    pub key: u8,
+    /// The velocity, 1..=127, played as it is.
+    pub velocity: u8,
+}
+
 /// A message from the engine to the audio callback.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Command {
@@ -384,6 +424,21 @@ enum Command {
     SetMidiOut {
         on: bool,
     },
+    /// Stops the preview if it plays, and clears all its hits.
+    ClearPreview,
+    /// One hit of the preview. Of two hits on the same step and key, the louder one counts.
+    SetPreviewHit {
+        step: u8,
+        key: u8,
+        velocity: u8,
+    },
+    /// Loops the preview over its first `steps` steps, 1..=`MAX_STEPS`, from step 0, starting
+    /// now. Stops the project's play.
+    PlayPreview {
+        steps: u16,
+    },
+    /// Stops the preview if it plays. Leaves the project's play alone.
+    StopPreview,
 }
 
 impl Command {
@@ -460,12 +515,37 @@ impl Command {
         }))
     }
 
+    /// The commands that replace the preview. The first stops and clears the old one. Then comes
+    /// one per hit, and last one that starts the new preview over `steps` steps, clamped to
+    /// 1..=`MAX_STEPS`. A hit at or after that step, with a key above 127 or with velocity 0 is
+    /// left out. A velocity above 127 plays at 127.
+    fn preview(hits: &[PreviewHit], steps: usize) -> impl Iterator<Item = Command> + '_ {
+        let steps = steps.clamp(1, MAX_STEPS);
+        let hits = hits
+            .iter()
+            .filter(move |hit| hit.step < steps && usize::from(hit.key) < KEYS && hit.velocity > 0)
+            .map(|hit| Command::SetPreviewHit {
+                step: hit.step as u8,
+                key: hit.key,
+                velocity: hit.velocity.min(127),
+            });
+        std::iter::once(Command::ClearPreview)
+            .chain(hits)
+            .chain(std::iter::once(Command::PlayPreview {
+                steps: steps as u16,
+            }))
+    }
+
     /// Whether the command starts or stops play. The engine and the renderer both count these,
     /// so the engine knows when the renderer has applied the last one.
     fn is_transport(&self) -> bool {
         matches!(
             self,
-            Command::PlayPattern { .. } | Command::PlaySong { .. } | Command::Stop
+            Command::PlayPattern { .. }
+                | Command::PlaySong { .. }
+                | Command::Stop
+                | Command::PlayPreview { .. }
+                | Command::StopPreview
         )
     }
 }
@@ -681,11 +761,13 @@ impl StepHistory {
     }
 }
 
-/// Whether the sequencer loops one pattern or plays the song.
+/// Whether the sequencer loops one pattern, plays the song or loops the preview.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Pattern,
     Song,
+    /// The preview track. Its positions use the pattern number `PREVIEW_SLOT`.
+    Preview,
 }
 
 /// The velocities of one pattern: `[row][step]`.
@@ -726,6 +808,11 @@ struct Sequencer {
     /// In pattern mode, the pattern to switch to at the next bar boundary.
     cue: Option<usize>,
     history: StepHistory,
+    /// The preview track: the velocity of each key at each of `MAX_STEPS` steps, 0 for none.
+    /// Allocated once in `new`.
+    preview: Box<[[u8; KEYS]]>,
+    /// The number of steps the preview loops over, 1..=`MAX_STEPS`.
+    preview_len: usize,
 }
 
 impl Sequencer {
@@ -744,7 +831,19 @@ impl Sequencer {
             last: None,
             cue: None,
             history: StepHistory::new(),
+            preview: vec![[0; KEYS]; MAX_STEPS].into_boxed_slice(),
+            preview_len: BAR,
         }
+    }
+
+    /// Whether a project pattern or the song plays, as opposed to the preview or nothing.
+    fn plays_project(&self) -> bool {
+        self.clock.playing && self.mode != Mode::Preview
+    }
+
+    /// Whether the preview plays.
+    fn plays_preview(&self) -> bool {
+        self.clock.playing && self.mode == Mode::Preview
     }
 
     /// Applies a sequencer command at frame `now`. Other commands are ignored.
@@ -836,6 +935,44 @@ impl Sequencer {
                     self.halt(now);
                 }
             }
+            Command::ClearPreview => {
+                if self.plays_preview() {
+                    self.halt(now);
+                }
+                for step in self.preview.iter_mut() {
+                    step.fill(0);
+                }
+            }
+            Command::SetPreviewHit {
+                step,
+                key,
+                velocity,
+            } => {
+                if let Some(slot) = self
+                    .preview
+                    .get_mut(usize::from(step))
+                    .and_then(|step| step.get_mut(usize::from(key)))
+                {
+                    *slot = (*slot).max(velocity.min(127));
+                }
+            }
+            Command::PlayPreview { steps } => {
+                self.preview_len = usize::from(steps).clamp(1, MAX_STEPS);
+                self.start(
+                    Mode::Preview,
+                    Playhead {
+                        pattern: PREVIEW_SLOT,
+                        step: 0,
+                        song_index: None,
+                    },
+                    now,
+                );
+            }
+            Command::StopPreview => {
+                if self.plays_preview() {
+                    self.halt(now);
+                }
+            }
             Command::NoteOn { .. } | Command::ProgramChange { .. } | Command::SetMidiOut { .. } => {
                 // The renderer applies these; they do not touch the sequencer.
             }
@@ -866,8 +1003,14 @@ impl Sequencer {
             return self.first;
         }
         let last = self.last?;
-        let length = self.lengths[last.pattern];
         let next = last.step + 1;
+        if self.mode == Mode::Preview {
+            return Some(Playhead {
+                step: next % self.preview_len,
+                ..last
+            });
+        }
+        let length = self.lengths[last.pattern];
         match self.mode {
             Mode::Pattern => {
                 let boundary = next % BAR == 0 || next >= length;
@@ -903,6 +1046,7 @@ impl Sequencer {
                     song_index: Some(index),
                 })
             }
+            Mode::Preview => unreachable!("the preview returned above"),
         }
     }
 
@@ -911,6 +1055,10 @@ impl Sequencer {
     /// key and an active step, with the velocity scaled by the row's gain. A row whose scaled
     /// velocity is 0 plays nothing. Stops play when a song that does not loop reaches the frame where
     /// the step after its last would have started.
+    ///
+    /// In preview mode the position's pattern is `PREVIEW_SLOT`, and `note` gets every key of the
+    /// preview step with its velocity as it is, without rows or gains. The step history records
+    /// no position for a preview step, so the playhead shows nothing.
     fn advance(
         &mut self,
         start: u64,
@@ -935,6 +1083,16 @@ impl Sequencer {
                 self.cue = None;
             }
             self.clock.tick();
+            if self.mode == Mode::Preview {
+                self.history.record(start, None);
+                on_step(position);
+                for (key, &velocity) in self.preview[position.step].iter().enumerate() {
+                    if velocity > 0 {
+                        note(key as u8, velocity);
+                    }
+                }
+                continue;
+            }
             self.history.record(start, Some(position));
             on_step(position);
             let steps = &self.patterns[position.pattern];
@@ -953,8 +1111,10 @@ impl Sequencer {
 struct Status {
     /// The position the listener hears, packed by [`Playhead::pack`].
     playhead: AtomicU64,
-    /// Whether the sequencer is playing.
+    /// Whether the sequencer is playing a project pattern or the song.
     playing: AtomicBool,
+    /// Whether the sequencer is playing the preview.
+    previewing: AtomicBool,
     /// How many play and stop commands the callback has applied, wrapping.
     transport: AtomicU32,
     /// The output latency the callback last used, in frames.
@@ -1024,6 +1184,7 @@ impl Renderer {
             status: Arc::new(Status {
                 playhead: AtomicU64::new(NO_PLAYHEAD),
                 playing: AtomicBool::new(false),
+                previewing: AtomicBool::new(false),
                 transport: AtomicU32::new(0),
                 latency_frames: AtomicU32::new(0),
             }),
@@ -1094,9 +1255,10 @@ impl Renderer {
     }
 
     /// Publishes the position sounding at the frame the listener hears now (the next frame to
-    /// output, less the output latency), then whether the sequencer plays, then the count of
-    /// applied play and stop commands. The count is stored last with release ordering, so an
-    /// engine that sees the count also sees the play state that goes with it.
+    /// output, less the output latency), then whether the sequencer plays the project and whether
+    /// it plays the preview, then the count of applied play and stop commands. The count is
+    /// stored last with release ordering, so an engine that sees the count also sees the play
+    /// state that goes with it.
     fn publish(&self) {
         let next_out = self.clock - (self.left.len() - self.read) as u64;
         let heard = next_out.saturating_sub(self.latency_frames);
@@ -1106,7 +1268,10 @@ impl Renderer {
             .store(Playhead::pack(position), Ordering::Relaxed);
         self.status
             .playing
-            .store(self.sequencer.clock.playing, Ordering::Relaxed);
+            .store(self.sequencer.plays_project(), Ordering::Relaxed);
+        self.status
+            .previewing
+            .store(self.sequencer.plays_preview(), Ordering::Relaxed);
         self.status
             .transport
             .store(self.transport, Ordering::Release);
@@ -1243,8 +1408,10 @@ pub struct Engine {
     status: Arc<Status>,
     /// How many play and stop commands have been sent, wrapping.
     transport_sent: u32,
-    /// Whether the last play or stop command sent starts play.
+    /// Whether the last play or stop command sent starts the project's play.
     expect_playing: bool,
+    /// Whether the last play or stop command sent starts the preview.
+    expect_previewing: bool,
     /// The number of song entries last sent.
     song_len: usize,
     sample_rate: u32,
@@ -1288,6 +1455,7 @@ impl Engine {
             status: output.status,
             transport_sent: 0,
             expect_playing: false,
+            expect_previewing: false,
             song_len: 0,
             sample_rate: output.sample_rate,
             channels: output.channels,
@@ -1393,24 +1561,56 @@ impl Engine {
         self.commands.send(Command::SetSongLoop { looped });
     }
 
-    /// PLACEHOLDER, to be implemented: loops `hits` over `steps` steps on a preview track that is
-    /// separate from the project's patterns and rows, at the engine's tempo, swing and kit.
-    /// Stops song or pattern playback first.
+    /// Loops `hits` over `steps` steps on the preview track, from step 0, starting now. The
+    /// preview is separate from the project: its patterns, rows and song are not changed. It
+    /// plays at the engine's tempo and swing, with the current kit. See the crate documentation.
+    ///
+    /// `steps` is clamped to 1..=[`MAX_STEPS`] (16 bars of 16 steps). A hit's `step` counts from
+    /// the start of the preview. Hits at or after `steps`, with a key above 127 or with velocity
+    /// 0 are ignored. A velocity above 127 plays at 127. The keys play directly, without row
+    /// gain. Of two hits on the same step and key, the louder one plays.
+    ///
+    /// Stops the song or pattern that plays, as [`Engine::stop`] does. Calling it again replaces
+    /// the preview and starts it again from step 0. Sounds already started ring out.
     pub fn preview(&mut self, hits: Vec<PreviewHit>, steps: usize) {
-        let _ = (hits, steps);
+        for command in Command::preview(&hits, steps) {
+            if command.is_transport() {
+                self.send_transport(command);
+            } else {
+                self.commands.send(command);
+            }
+        }
+        self.expect_playing = false;
+        self.expect_previewing = true;
     }
 
-    /// PLACEHOLDER, to be implemented: stops the preview, if one plays.
-    pub fn stop_preview(&mut self) {}
+    /// Stops the preview, if one plays. Sounds already started ring out. Leaves the project's
+    /// play alone.
+    pub fn stop_preview(&mut self) {
+        self.send_transport(Command::StopPreview);
+        self.expect_previewing = false;
+    }
 
-    /// Loops one pattern from its step 0, starting now. Leaves song mode if the song was playing.
-    /// `pattern` must be below [`MAX_PATTERNS`]; larger values are ignored.
+    /// Whether the preview plays. True from the moment [`Engine::preview`] is called, and false
+    /// from the moment [`Engine::stop_preview`], [`Engine::stop`] or a project play call is made.
+    pub fn previewing(&self) -> bool {
+        if self.status.transport.load(Ordering::Acquire) == self.transport_sent {
+            self.status.previewing.load(Ordering::Relaxed)
+        } else {
+            self.expect_previewing
+        }
+    }
+
+    /// Loops one pattern from its step 0, starting now. Leaves song mode if the song was playing,
+    /// and stops the preview. `pattern` must be below [`MAX_PATTERNS`]; larger values are
+    /// ignored.
     pub fn play_pattern(&mut self, pattern: usize) {
         if pattern < MAX_PATTERNS {
             self.send_transport(Command::PlayPattern {
                 pattern: pattern as u8,
             });
             self.expect_playing = true;
+            self.expect_previewing = false;
         }
     }
 
@@ -1426,21 +1626,23 @@ impl Engine {
         }
     }
 
-    /// Plays the song from entry `from_index`, step 0, starting now. Does nothing if the song has
-    /// no entry at `from_index`, which includes an empty song.
+    /// Plays the song from entry `from_index`, step 0, starting now, and stops the preview. Does
+    /// nothing if the song has no entry at `from_index`, which includes an empty song.
     pub fn play_song(&mut self, from_index: usize) {
         if from_index < self.song_len {
             self.send_transport(Command::PlaySong {
                 from: from_index as u8,
             });
             self.expect_playing = true;
+            self.expect_previewing = false;
         }
     }
 
-    /// Stops play. Sounds already started ring out.
+    /// Stops play, also of the preview. Sounds already started ring out.
     pub fn stop(&mut self) {
         self.send_transport(Command::Stop);
         self.expect_playing = false;
+        self.expect_previewing = false;
     }
 
     fn send_transport(&mut self, command: Command) {
@@ -1448,17 +1650,20 @@ impl Engine {
         self.transport_sent = self.transport_sent.wrapping_add(1);
     }
 
-    /// The position the listener is hearing now, or `None` when stopped. Allowing for the output
-    /// latency, so the interface can highlight the step in time with the sound.
+    /// The position the listener is hearing now, or `None` when stopped or while the preview
+    /// plays. Allowing for the output latency, so the interface can highlight the step in time
+    /// with the sound.
     ///
     /// The audio callback updates it once per device buffer. Reading it is one atomic load.
     pub fn playhead(&self) -> Option<Playhead> {
         Playhead::unpack(self.status.playhead.load(Ordering::Relaxed))
     }
 
-    /// Whether the sequencer plays. True from the moment a play call is made, and false from the
-    /// moment [`Engine::stop`] is called or a song that does not loop has reached the end of its
-    /// last step. That end is rendered up to one output latency before it is heard.
+    /// Whether the sequencer plays a project pattern or the song. True from the moment a play call
+    /// is made, and false from the moment [`Engine::stop`] or [`Engine::preview`] is called or a
+    /// song that does not loop has reached the end of its last step. That end is rendered up to
+    /// one output latency before it is heard. The preview does not count; see
+    /// [`Engine::previewing`].
     pub fn is_playing(&self) -> bool {
         if self.status.transport.load(Ordering::Acquire) == self.transport_sent {
             self.status.playing.load(Ordering::Relaxed)
@@ -2939,12 +3144,283 @@ mod tests {
         }
         assert_eq!(midi_sent(&mut events).len(), MIDI_QUEUE_CAPACITY);
     }
-}
 
-/// PLACEHOLDER, to be implemented: one hit of a preview, by its step from the preview's start.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PreviewHit {
-    pub step: usize,
-    pub key: u8,
-    pub velocity: u8,
+    fn hit(step: usize, key: u8, velocity: u8) -> PreviewHit {
+        PreviewHit {
+            step,
+            key,
+            velocity,
+        }
+    }
+
+    /// Sends a preview through the command queue at frame `now`, like the engine does.
+    fn preview(sequencer: &mut Sequencer, hits: &[PreviewHit], steps: usize, now: u64) {
+        let (mut commands, mut consumer) = command_queue();
+        for command in Command::preview(hits, steps) {
+            commands.send(command);
+        }
+        drain(&mut consumer, sequencer, now);
+    }
+
+    /// Runs `sequencer` from frame `from` up to frame `to` and returns the `(block start, key,
+    /// velocity)` of every note it starts.
+    fn timed_notes(sequencer: &mut Sequencer, from: u64, to: u64) -> Vec<(u64, u8, u8)> {
+        let mut notes = Vec::new();
+        let mut start = from;
+        while start < to {
+            sequencer.advance(start, BLOCK, |_| {}, |k, v| notes.push((start, k, v)));
+            start += BLOCK;
+        }
+        notes
+    }
+
+    #[test]
+    fn a_preview_plays_its_hits_on_time_and_loops() {
+        let mut sequencer = Sequencer::new(RATE);
+        // At 100 BPM a step lasts 48000 * 60 / 400 = 7200 frames.
+        sequencer.apply(Command::SetTempo { bpm: 100.0 }, 0);
+        let hits = [
+            hit(0, 36, 100),
+            hit(0, 42, 60),
+            hit(2, 38, 127),
+            // Beyond the 4 steps, and silent: both ignored.
+            hit(4, 49, 100),
+            hit(1, 46, 0),
+        ];
+        preview(&mut sequencer, &hits, 4, 0);
+        let notes = timed_notes(&mut sequencer, 0, 12 * 7200 - BLOCK);
+        let mut expected = Vec::new();
+        for start in [0, 4, 8] {
+            let at = |step: usize| block_of(((start + step) * 7200) as f64);
+            expected.extend([(at(0), 36, 100), (at(0), 42, 60), (at(2), 38, 127)]);
+        }
+        assert_eq!(notes, expected);
+    }
+
+    #[test]
+    fn a_preview_follows_swing_from_its_own_step_zero() {
+        let mut sequencer = Sequencer::new(RATE);
+        sequencer.apply(Command::SetSwing { amount: 0.25 }, 0);
+        let hits = [hit(0, 36, 100), hit(1, 42, 100)];
+        // Starts part way into a block, at frame 1000: step 1 is swung by 1500 frames.
+        preview(&mut sequencer, &hits, 2, 1000);
+        let notes = timed_notes(&mut sequencer, 960, 960 + 2 * 6000);
+        assert_eq!(
+            notes,
+            [
+                (960, 36, 100),
+                (block_of(1000.0 + 6000.0 + 1500.0), 42, 100)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_preview_is_hidden_from_the_playhead_and_from_project_play() {
+        let mut sequencer = playing(0);
+        // Steps 0 to 2 fire; frame 17984 is the block boundary before step 3.
+        let start = 17_984;
+        assert_eq!(run(&mut sequencer, 0, start).len(), 3);
+        assert!(sequencer.plays_project());
+        assert_eq!(sequencer.history.at(start - 1), Some(pat(0, 2)));
+
+        preview(&mut sequencer, &[hit(0, 36, 100)], 16, start);
+        let fired = run(&mut sequencer, start, start + 5 * 6000 - BLOCK);
+        assert_eq!(fired.len(), 5, "the preview steps fire");
+        assert!(!sequencer.plays_project());
+        assert!(sequencer.plays_preview());
+        // From the moment the preview starts, the playhead shows nothing.
+        assert_eq!(sequencer.history.at(start), None);
+        assert_eq!(sequencer.history.at(start + 4 * 6000), None);
+        // A cue does nothing while the preview plays.
+        sequencer.apply(Command::CuePattern { pattern: 1 }, 8 * 6000);
+        assert_eq!(sequencer.cue, None);
+    }
+
+    #[test]
+    fn stop_preview_stops_only_the_preview() {
+        let mut sequencer = Sequencer::new(RATE);
+        preview(&mut sequencer, &[hit(0, 36, 100)], 1, 0);
+        assert_eq!(timed_notes(&mut sequencer, 0, 3 * 6000 - BLOCK).len(), 3);
+        sequencer.apply(Command::StopPreview, 3 * 6000 - BLOCK);
+        assert!(!sequencer.plays_preview());
+        assert!(timed_notes(&mut sequencer, 3 * 6000 - BLOCK, 10 * 6000).is_empty());
+
+        // While a project pattern plays, stop_preview leaves it playing.
+        sequencer.apply(Command::PlayPattern { pattern: 0 }, 10 * 6000);
+        sequencer.apply(Command::StopPreview, 10 * 6000);
+        assert!(sequencer.plays_project());
+
+        // Stop stops the preview too.
+        preview(&mut sequencer, &[hit(0, 36, 100)], 1, 11 * 6000);
+        sequencer.apply(Command::Stop, 11 * 6000);
+        assert!(!sequencer.clock.playing);
+    }
+
+    #[test]
+    fn project_play_stops_the_preview_and_the_preview_stops_project_play() {
+        let mut sequencer = Sequencer::new(RATE);
+        sequencer.apply(Command::SetRowKey { row: 0, key: 38 }, 0);
+        sequencer.apply(Command::step(0, 0, 0, 90).unwrap(), 0);
+        preview(&mut sequencer, &[hit(0, 36, 100)], 1, 0);
+        assert_eq!(timed_notes(&mut sequencer, 0, 6000 - BLOCK), [(0, 36, 100)]);
+
+        sequencer.apply(Command::PlayPattern { pattern: 0 }, 6000 - BLOCK);
+        assert!(!sequencer.plays_preview());
+        let notes = timed_notes(&mut sequencer, 6000 - BLOCK, 17 * 6000);
+        assert!(notes.iter().all(|&(_, key, _)| key == 38), "{notes:?}");
+        assert_eq!(notes.len(), 2);
+
+        // Starting a preview stops the pattern at once.
+        preview(&mut sequencer, &[hit(0, 36, 100)], 1, 17 * 6000);
+        assert!(!sequencer.plays_project());
+        let notes = timed_notes(&mut sequencer, 17 * 6000, 33 * 6000);
+        assert!(notes.iter().all(|&(_, key, _)| key == 36), "{notes:?}");
+
+        // Song play stops it too.
+        set_song(&mut sequencer, &[0], 33 * 6000);
+        sequencer.apply(Command::PlaySong { from: 0 }, 33 * 6000);
+        assert!(!sequencer.plays_preview());
+        assert!(sequencer.plays_project());
+    }
+
+    #[test]
+    fn a_preview_leaves_patterns_rows_and_song_unchanged() {
+        let mut sequencer = Sequencer::new(RATE);
+        sequencer.apply(Command::SetRowKey { row: 0, key: 36 }, 0);
+        // A muted row on the same key does not mute the preview.
+        sequencer.apply(Command::SetRowGain { row: 0, gain: 0.0 }, 0);
+        sequencer.apply(Command::step(2, 0, 5, 100).unwrap(), 0);
+        sequencer.apply(Command::length(2, 32).unwrap(), 0);
+        set_song(&mut sequencer, &[2, 0], 0);
+        let keys = sequencer.keys;
+        let gains = sequencer.gains;
+        let patterns = sequencer.patterns.clone();
+        let lengths = sequencer.lengths;
+        let song = (sequencer.song, sequencer.song_len);
+
+        let hits: Vec<_> = (0..MAX_STEPS).map(|step| hit(step, 36, 77)).collect();
+        preview(&mut sequencer, &hits, 1000, 0);
+        assert_eq!(sequencer.preview_len, MAX_STEPS, "steps are clamped");
+        let notes = timed_notes(&mut sequencer, 0, 4 * 6000 - BLOCK);
+        assert_eq!(notes.len(), 4);
+        assert!(
+            notes
+                .iter()
+                .all(|&(_, key, velocity)| (key, velocity) == (36, 77))
+        );
+        preview(&mut sequencer, &hits, 0, 4 * 6000);
+        assert_eq!(sequencer.preview_len, 1, "steps are clamped");
+
+        assert_eq!(sequencer.keys, keys);
+        assert_eq!(sequencer.gains, gains);
+        assert!(sequencer.patterns == patterns);
+        assert_eq!(sequencer.lengths, lengths);
+        assert_eq!((sequencer.song, sequencer.song_len), song);
+    }
+
+    #[test]
+    fn a_new_preview_replaces_the_old_one() {
+        let mut sequencer = Sequencer::new(RATE);
+        preview(&mut sequencer, &[hit(0, 36, 100), hit(1, 38, 100)], 2, 0);
+        // 6016 is a block boundary just after step 1 of the first preview is due.
+        timed_notes(&mut sequencer, 0, 6016);
+        preview(&mut sequencer, &[hit(0, 42, 50), hit(0, 42, 70)], 2, 6016);
+        let notes = timed_notes(&mut sequencer, 6016, 6016 + 4 * 6000 - BLOCK);
+        // It restarts at step 0 now; the old hits are gone; the louder of two equal hits counts.
+        assert_eq!(
+            notes,
+            [(6016, 42, 70), (block_of(6016.0 + 2.0 * 6000.0), 42, 70)]
+        );
+    }
+
+    #[test]
+    fn a_preview_larger_than_the_queue_arrives_whole() {
+        let mut sequencer = Sequencer::new(RATE);
+        let (mut commands, mut consumer) = command_queue();
+        let hits: Vec<_> = (0..MAX_STEPS)
+            .flat_map(|step| (0..20).map(move |k| hit(step, 30 + k, 100)))
+            .collect();
+        for command in Command::preview(&hits, MAX_STEPS) {
+            commands.send(command);
+        }
+        assert!(!commands.backlog.is_empty());
+        drain(&mut consumer, &mut sequencer, 0);
+        assert!(
+            !sequencer.plays_preview(),
+            "not started until the last hit is in"
+        );
+        while !commands.flush() {
+            drain(&mut consumer, &mut sequencer, 0);
+        }
+        drain(&mut consumer, &mut sequencer, 0);
+        assert!(sequencer.plays_preview());
+        let set = sequencer
+            .preview
+            .iter()
+            .flatten()
+            .filter(|&&v| v > 0)
+            .count();
+        assert_eq!(set, MAX_STEPS * 20);
+    }
+
+    #[test]
+    fn preview_commands_count_as_transport() {
+        let commands: Vec<_> = Command::preview(&[hit(0, 36, 200), hit(0, 200, 1)], 4).collect();
+        assert_eq!(
+            commands,
+            [
+                Command::ClearPreview,
+                Command::SetPreviewHit {
+                    step: 0,
+                    key: 36,
+                    velocity: 127
+                },
+                Command::PlayPreview { steps: 4 },
+            ]
+        );
+        let transport: Vec<_> = commands.iter().map(Command::is_transport).collect();
+        assert_eq!(transport, [false, false, true]);
+        assert!(Command::StopPreview.is_transport());
+    }
+
+    #[test]
+    fn a_preview_plays_in_the_renderer_and_goes_to_midi_out() {
+        let font = soundfont_or_skip!();
+        let (mut commands, mut renderer, mut events) = midi_renderer(&font, 38);
+        // Row 0 plays key 38 in pattern 0; the preview must not.
+        commands.send(Command::step(0, 0, 0, 100).unwrap());
+        for command in Command::preview(&[hit(0, 36, 110), hit(2, 42, 90)], 4) {
+            commands.send(command);
+        }
+        let mut out = vec![0.0_f32; 2 * 5900];
+        renderer.render(&mut out, 2);
+        assert!(energy(&out) > 1e-3, "the preview kick sounds");
+        assert_eq!(published(&renderer), None);
+        assert!(!renderer.status.playing.load(Ordering::Relaxed));
+        assert!(renderer.status.previewing.load(Ordering::Relaxed));
+        assert_eq!(renderer.status.transport.load(Ordering::Relaxed), 1);
+        assert_eq!(renderer.note_off_at[36], renderer.ring_frames);
+
+        commands.send(Command::SetMidiOut { on: true });
+        let mut out = vec![0.0_f32; 2 * 8 * 6000];
+        renderer.render(&mut out, 2);
+        let sent = messages(&midi_sent(&mut events));
+        assert_eq!(
+            sent,
+            [
+                vec![0xC9, 0],
+                vec![0x99, 42, 90],
+                vec![0x99, 36, 110],
+                vec![0x99, 42, 90],
+                vec![0x99, 36, 110],
+            ]
+        );
+
+        commands.send(Command::StopPreview);
+        renderer.render(&mut out, 2);
+        assert!(!renderer.status.previewing.load(Ordering::Relaxed));
+        assert_eq!(renderer.status.transport.load(Ordering::Relaxed), 2);
+        let sent = messages(&midi_sent(&mut events));
+        assert!(sent.iter().all(|m| m[0] != 0x99), "{sent:?}");
+    }
 }
