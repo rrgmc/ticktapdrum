@@ -43,7 +43,7 @@ jobs:
       code: ${{ steps.v.outputs.code }}
       prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: The tag matches Cargo.toml
         id: v
@@ -84,7 +84,7 @@ jobs:
       HAS_MACOS_CERT: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
       HAS_NOTARY_KEY: ${{ secrets.NOTARY_API_KEY != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -179,7 +179,7 @@ jobs:
       DM_VERSION_NAME: ${{ needs.version.outputs.version }}
       DM_VERSION_CODE: ${{ needs.version.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -248,7 +248,7 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
