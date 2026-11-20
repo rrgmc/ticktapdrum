@@ -95,12 +95,17 @@ fn fit(file: &MidiFile) -> Result<Fitted, Refusal> {
         return Err(Refusal::OffGrid);
     }
 
-    // The file lasts to its End of Track, or to its last note if that is later. Half a step of
+    // The file lasts to its last note, or to its End of Track if that is later and on a bar line.
+    // An End of Track between bar lines is padding, not the loop's length: the Groove MIDI
+    // Dataset ends its files a fifth of a bar to a whole bar after the last note. Half a step of
     // slack keeps a last bar that ends a little early from counting as a new one.
+    let end_steps = file.end_tick as f64 / step_ticks;
+    let off_bar_line = (end_steps / STEPS_PER_BAR as f64).fract() * STEPS_PER_BAR as f64;
+    let on_bar_line = off_bar_line <= 0.5 || off_bar_line >= STEPS_PER_BAR as f64 - 0.5;
     let total_steps = positions
         .iter()
         .copied()
-        .fold(file.end_tick as f64 / step_ticks, f64::max);
+        .fold(if on_bar_line { end_steps } else { 0.0 }, f64::max);
     let bars = (((total_steps - 0.5) / STEPS_PER_BAR as f64).ceil()).max(1.0);
     if bars > MAX_GROOVE_BARS as f64 {
         return Err(Refusal::TooLong);
@@ -126,6 +131,14 @@ fn fit(file: &MidiFile) -> Result<Fitted, Refusal> {
             velocity,
         });
     }
+    // Empty bars at either end are silence around the groove, such as a fill whose first hit
+    // falls on the second bar line, and would loop as a gap. There is always a note, so a bar
+    // stays.
+    while out.last().is_some_and(Vec::is_empty) {
+        out.pop();
+    }
+    let leading = out.iter().take_while(|bar| bar.is_empty()).count();
+    out.drain(..leading);
     Ok(Fitted {
         bpm: bpm.round().clamp(MIN_BPM, MAX_BPM) as f32,
         bars: out,

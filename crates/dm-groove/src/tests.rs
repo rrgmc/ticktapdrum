@@ -314,6 +314,38 @@ fn the_louder_of_two_notes_on_one_step_is_kept() {
 }
 
 #[test]
+fn end_of_track_between_bar_lines_is_padding() {
+    // The Groove MIDI Dataset ends a one-bar fill about a fifth of a bar after its last note.
+    let groove = one(&smf(rock(1, HAT), BAR + BAR * 3 / 16)).unwrap();
+    assert_eq!(groove.bars.len(), 1);
+    let groove = one(&smf(rock(2, HAT), BAR * 2 + BAR * 9 / 10)).unwrap();
+    assert_eq!(groove.bars.len(), 2);
+}
+
+#[test]
+fn empty_bars_at_either_end_are_dropped() {
+    // An End of Track on a bar line after a silent bar.
+    let groove = one(&smf(rock(1, HAT), BAR * 2)).unwrap();
+    assert_eq!(groove.bars.len(), 1);
+    // A fill whose first hit is played a hair before the second bar line.
+    let events = vec![
+        note(BAR - 1, 9, SNARE, 100),
+        note(BAR + 4 * STEP, 9, SNARE, 100),
+        note(BAR + 12 * STEP, 9, 49, 100),
+    ];
+    let groove = one(&smf(events, BAR * 2)).unwrap();
+    assert_eq!(groove.bars.len(), 1);
+    assert_eq!(
+        hits(&groove.bars[0]),
+        BTreeSet::from([(SNARE, 0, 100), (SNARE, 4, 100), (49, 12, 100)])
+    );
+    // A lead-in hit late in the first bar is music and keeps its bar.
+    let events = vec![note(15 * STEP, 9, SNARE, 100), note(BAR, 9, 49, 100)];
+    let groove = one(&smf(events, BAR * 2)).unwrap();
+    assert_eq!(groove.bars.len(), 2);
+}
+
+#[test]
 fn a_note_just_before_the_end_wraps_to_the_start() {
     // A crash played a hair early for the next loop.
     let events = vec![note(0, 9, KICK, 100), note(BAR - 2, 9, 49, 100)];

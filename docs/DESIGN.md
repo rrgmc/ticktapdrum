@@ -1245,6 +1245,14 @@ is one tap away from Play or Add. Re-importing a file of the same name replaces 
 - **The mapping check catches most, not all, files made for other drum programs.** About a third
   of the GetGood Drums and Perfect Drums files still pass, probably those without a hi-hat. A
   pack's GM folder, chosen automatically, remains the main protection.
+- **Found on the desktop: empty bars in GMD grooves.** Most GMD files end (their End of Track) a
+  fifth of a bar to a whole bar after the last note, so a 1-bar fill became 2 bars with an empty
+  second bar. Some fills start with a hit just before the second bar line, which left the first
+  bar empty. The length now comes from the last note, and End of Track counts only when it is on a
+  bar line; empty bars at either end are dropped. Over the GMD zip, 359 of 1,150 files are now
+  accepted (286 before, because padding had pushed 73 past 16 bars), and none has an empty first
+  or last bar. The desktop app also had no clipboard, so a link could not be pasted; eframe's
+  `clipboard` feature is now on.
 - **Not checked:** the phone; a desktop (its dialog and drag and drop); hearing a preview;
   pasting from the clipboard into a text box on Android; sharing from Chrome and Files by hand;
   iOS, which has none of this yet.

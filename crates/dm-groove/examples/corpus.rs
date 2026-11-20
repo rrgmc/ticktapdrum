@@ -24,6 +24,8 @@ fn main() {
         let mut refused: BTreeMap<String, usize> = BTreeMap::new();
         let mut skipped = 0;
         let mut errors: BTreeMap<String, usize> = BTreeMap::new();
+        let mut bar_counts: BTreeMap<usize, usize> = BTreeMap::new();
+        let mut empty_bars = [0usize; 3];
         for file in &files {
             let Ok(bytes) = std::fs::read(file) else {
                 *errors.entry("unreadable".into()).or_default() += 1;
@@ -33,6 +35,21 @@ fn main() {
             match dm_groove::import(&name, &bytes) {
                 Ok(import) => {
                     accepted += import.grooves.len();
+                    for groove in &import.grooves {
+                        *bar_counts.entry(groove.bars.len()).or_default() += 1;
+                        let last = groove.bars.len() - 1;
+                        for (i, bar) in groove.bars.iter().enumerate() {
+                            if bar.is_empty() {
+                                empty_bars[if i == 0 {
+                                    0
+                                } else if i == last {
+                                    2
+                                } else {
+                                    1
+                                }] += 1;
+                            }
+                        }
+                    }
                     skipped += import.other_mappings_skipped;
                     for (_, why) in import.refused {
                         *refused.entry(format!("{why:?}")).or_default() += 1;
@@ -45,6 +62,9 @@ fn main() {
         println!("{}", path.display());
         println!("  {accepted} of {total} MIDI files accepted; {skipped} other mappings skipped");
         println!("  refused: {refused:?}");
+        println!("  grooves by bars: {bar_counts:?}");
+        let [first, middle, last] = empty_bars;
+        println!("  empty bars: {first} first, {middle} in the middle, {last} last");
         println!("  files not imported: {errors:?}");
     }
 }
