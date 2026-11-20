@@ -21,8 +21,9 @@ release workflow runs them when a version tag is pushed (`v0.2.0` gives `0.2.0`)
 | Linux (x86_64) | `ticktapdrum_<v>_amd64.deb` | `sudo apt install ./ticktapdrum_<v>_amd64.deb` on Debian, or Ubuntu 22.04 and later. |
 | Linux (x86_64) | `ticktapdrum-<v>-linux-x86_64.tar.gz` | The program, its icon and a desktop file. Unpack it and run `ticktapdrum`. |
 
-The Debian package takes a Debian version: a pre-release such as `0.2.0-rc.1` becomes `0.2.0~rc.1`,
-which sorts before `0.2.0`. The Linux packages are built on Ubuntu 22.04, because the program
+Inside the Debian package, a pre-release such as `0.2.0-rc.1` takes the Debian version `0.2.0~rc.1`,
+which sorts before `0.2.0`. The file name keeps `0.2.0-rc.1`, because GitHub changes `~` in the
+names of uploaded files. The Linux packages are built on Ubuntu 22.04, because the program
 links against the C library of the system it is built on and runs on that system or newer.
 
 ## The first start
