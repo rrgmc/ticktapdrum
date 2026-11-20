@@ -3,7 +3,10 @@
 TickTapDrum makes drum beats. You need no music knowledge: tap a box in the grid, and a drum plays
 at that moment. It runs on Windows, macOS, Linux, Android, iPhone and iPad.
 
-![TickTapDrum on Windows, with the Rock beat in the grid](docs/images/desktop.png)
+<p>
+  <img src="docs/images/desktop.png" alt="TickTapDrum on Windows, with the Rock beat in the grid" height="360">
+  <img src="docs/images/android.png" alt="TickTapDrum on an Android phone, with the Rock beat in the grid" height="360">
+</p>
 
 ## What it does
 
