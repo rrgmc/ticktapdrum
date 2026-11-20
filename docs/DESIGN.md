@@ -733,12 +733,17 @@ Shown as JSON. Field names are proposals.
     on the phone.* The brief and the findings are "Milestone 10: Android file picker" below.
 11. **Groove import from files.** Open a groove file or a groove pack (a `.mid` or `.zip` file),
     keep only the files that are groove loops, list them, and add one to the project as a
-    pattern. On desktop and Android, with drag and drop on a desktop. *Planned.*
+    pattern. On desktop and Android, with drag and drop on a desktop. *Done on the Android
+    emulator, checked by screenshot; not on the phone or a desktop, and no preview listened to.*
 12. **Share to the app on Android.** "Share" a download link or a groove file to TickTapDrum, and
-    open `.mid` and `.zip` files tapped in other apps. *Planned.*
-13. **Add from a link.** Paste a link to a groove file or pack, and the app downloads it. *Planned.*
+    open `.mid` and `.zip` files tapped in other apps. *Done on the Android emulator, checked
+    with intents sent through adb and by screenshot; not from Chrome or Files by hand, and not
+    on the phone.*
+13. **Add from a link.** Paste a link to a groove file or pack, and the app downloads it. *Done on
+    the Android emulator, with a real pack downloaded from Groove Monkee; pasting from the
+    clipboard not checked.*
 
-    The brief for milestones 11 to 13 is "Groove import" below.
+    The brief for milestones 11 to 13 is "Groove import" below, with what they found.
 
 ## Milestone 7: iOS
 
@@ -1211,6 +1216,38 @@ is one tap away from Play or Add. Re-importing a file of the same name replaces 
 - **A help page with links to free packs**, which should tell people to download the "GM" or
   "General MIDI" version.
 - **Choosing bars from a longer file**, and any other MIDI: songs, live recordings, other meters.
+
+### What milestones 11 to 13 found
+
+- **How it is built.** `dm-groove` reads `.mid` and `.zip` files, applies the rule, keeps packs as
+  JSON, and downloads links (`ureq`, as the bank does). `dm-project` adds an import as one pattern
+  (`Project::add_imported_pattern`), collapsing exact repeats. The engine has a hidden preview
+  track (`Engine::preview`) with its own storage, so previewing never touches the project. In
+  `dm-ui`, `import_grooves` is the one entry point for a file, whether it was picked, dropped,
+  downloaded or shared; hosts hand files and text in through `DrumApp::incoming_files`. On
+  Android, `MainActivity` passes shares to Rust through `onShared`, and `share.rs` queues them
+  until the interface exists.
+- **Checked on the emulator (Android 16), by screenshot, in English:**
+  - "Add grooves from a file" opened the system picker. Groove Monkee's Chilled Beat pack opened
+    as a list of its grooves; Play turned into Stop; Add made pattern B, and its 8 bars of one
+    repeated bar became 1 bar, with a note saying so.
+  - The 3/4 metal pack was refused whole: "Nothing was added ... 18 files were left out: not in
+    4/4 (18)."
+  - A link shared with the app stopped (an `ACTION_SEND` intent through adb) waited for the
+    interface, downloaded Groove Monkee's free Perfect Drums pack and opened its grooves. A `.mid`
+    opened with the running app (`ACTION_VIEW` with a content address) became its own pack.
+  - Typing a link into "Add grooves from a link" (through the input system) and tapping Add
+    downloaded the GetGood Drums sampler: 84 grooves added, 190 files left out with reasons.
+  - With the experimental setting on, a typed 1-bar tab became pattern C as written.
+- **Fixed after the first look:** names in a pack all began "076 Chilled Beat 1 ..." and were cut
+  short identically, so the list now drops the words every groove in a pack shares. The
+  experimental setting's label was too long for its button.
+- **The mapping check catches most, not all, files made for other drum programs.** About a third
+  of the GetGood Drums and Perfect Drums files still pass, probably those without a hi-hat. A
+  pack's GM folder, chosen automatically, remains the main protection.
+- **Not checked:** the phone; a desktop (its dialog and drag and drop); hearing a preview;
+  pasting from the clipboard into a text box on Android; sharing from Chrome and Files by hand;
+  iOS, which has none of this yet.
 
 ## Experimental: paste a drum tab
 
