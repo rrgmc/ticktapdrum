@@ -544,6 +544,8 @@ mod tests {
         dm_groove::Groove {
             name: name.to_owned(),
             folder: String::new(),
+            kit: None,
+            similar_kit: None,
             bpm: 100.0,
             bars: vec![vec![dm_groove::BarHit {
                 key: 36,

@@ -91,6 +91,8 @@ fn main() {
                 folder: label.clone(),
                 bpm: groove.bpm,
                 bars,
+                kit: None,
+                similar_kit: None,
             });
         }
         println!("{label}: {beats} beats, {fills} fills");

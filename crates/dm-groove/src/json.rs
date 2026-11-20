@@ -7,6 +7,10 @@
 //! ```
 //!
 //! Each hit is `[key, step, velocity]`, and each groove holds one list of hits per bar.
+//!
+//! A groove from a keyboard style may also have `"kit"` (the keyboard's kit names) and
+//! `"similar_kit"` (a General MIDI program). Both are left out when empty. They were added
+//! within format 1: an older reader ignores them, and a file without them reads as before.
 
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +33,10 @@ struct GrooveFile {
     folder: String,
     bpm: f32,
     bars: Vec<Vec<(u8, usize, u8)>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    similar_kit: Option<u8>,
 }
 
 /// Only the format number, read first so a newer file gets a clear message.
@@ -53,6 +61,8 @@ pub fn to_json(pack: &Pack) -> String {
                     .iter()
                     .map(|bar| bar.iter().map(|h| (h.key, h.step, h.velocity)).collect())
                     .collect(),
+                kit: g.kit.clone(),
+                similar_kit: g.similar_kit,
             })
             .collect(),
     };
@@ -79,6 +89,9 @@ pub fn from_json(text: &str) -> Result<Pack, String> {
         if g.bars.is_empty() || g.bars.len() > MAX_GROOVE_BARS {
             return Err(damaged("has no bars or too many"));
         }
+        if g.similar_kit.is_some_and(|program| program > 127) {
+            return Err(damaged("has a kit out of range"));
+        }
         let mut bars = Vec::with_capacity(g.bars.len());
         for bar in g.bars {
             let mut hits = Vec::with_capacity(bar.len());
@@ -100,6 +113,8 @@ pub fn from_json(text: &str) -> Result<Pack, String> {
             folder: g.folder,
             bpm: g.bpm,
             bars,
+            kit: g.kit,
+            similar_kit: g.similar_kit,
         });
     }
     Ok(Pack {

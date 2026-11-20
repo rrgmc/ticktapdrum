@@ -529,3 +529,6 @@ fn pack_json_refuses_bad_data() {
     let no_bars = ok.replace("[[[36,0,100]]]", "[]");
     assert!(pack_from_json(&no_bars).is_err());
 }
+
+#[path = "style_tests.rs"]
+mod style_tests;

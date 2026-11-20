@@ -214,7 +214,10 @@ pub(crate) fn dialog(kind: PickKind, name: &str) -> Option<PathBuf> {
     };
     let extension = extension(kind);
     let extensions: &[&str] = if kind == PickKind::OpenGrooves {
-        &["mid", "midi", "zip"]
+        // MIDI files, zips of them, and Yamaha keyboard styles, whose drums become grooves.
+        &[
+            "mid", "midi", "zip", "sty", "prs", "sst", "scp", "fps", "bcs",
+        ]
     } else {
         &[extension]
     };

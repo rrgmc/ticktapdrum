@@ -1541,6 +1541,99 @@ Not checked:
 - **Phone screens.** The section step's pickers are small for a finger.
 - **iOS and macOS,** and the Send to keyboard failure messages on real hardware.
 
+## Import grooves from a keyboard style
+
+Built; "What the build found" below says what was checked. The reverse of "Export as a keyboard style": the drum parts of a Yamaha
+style become grooves in the groove list.
+[`research/style-import-spike.md`](research/style-import-spike.md) has the findings it rests on:
+172 real styles, of which 65% of the sections import once each kit's keys are mapped.
+
+### What a person sees
+
+- **"Add grooves from a file" also takes a style.** The file picker offers Yamaha's style
+  extensions (`.sty`, `.prs`, `.sst`, `.scp`, `.fps`, `.bcs`) beside `.mid` and `.zip`. A zip may
+  hold styles too. Sharing to the app and "Add grooves from a link" take them the same way, since
+  they all go through the groove import.
+- **A style becomes a pack,** named after the file, with one groove per section that passes:
+  "Bossa Main A", "Bossa Fill In AA", "Bossa Ending B". The groove list shows it like any pack,
+  with the style's tempo, and a groove goes into the project as a new pattern, as now.
+- **Each groove names the keyboard's kit** on its detail line: "Bossa · 2 bars · PopDrumKit".
+  With percussion on channel 9 too, both show: "PopDrumKit + PopPercussionKit". The names come
+  from the key map's table, so a kit it does not know shows nothing.
+- **Adding such a groove suggests the nearest kit.** The table gives each Yamaha kit the nearest
+  kit in the app's short list: RockDrumKit gives Power, BrushKit gives Brush, AnalogT8Kit gives
+  808, the standard and pop kits give Standard; percussion and effect kits give none. Adding a
+  groove closes the groove list, so when the project's kit is another one, the notice at the
+  bottom of the screen says "The keyboard plays this on RockDrumKit." with a button "Use the Power
+  kit". It stays a little longer than a plain notice. One tap changes the project's kit, and Undo
+  takes it back. Nothing changes without the tap.
+- **What did not come in is said in one line,** as for a pack today, with each refused section
+  named after the style and its marker. A style in 3/4 has every section refused for that.
+- **Nothing is asked.** As with other imports, the person chooses afterwards, by adding the
+  grooves they want.
+
+### How a style is read
+
+- **Only the MIDI track.** The reader stops after it; the CASM, OTS and MDB blocks that follow
+  are skipped. The track is cut at its section markers, and the setup bar before the first one
+  is read only for its tempo, time signature and kits.
+- **The drums are channels 10 and 9, merged into one groove.** Channel 10 holds the main drums
+  and channel 9 the extra percussion (congas, shakers, cajon). Bass, chords and phrases on
+  channels 11 to 16 are ignored.
+- **Each channel's keys go through its kit's key map.** The setup bar's bank select and program
+  change say which kit each channel uses. A table maps every key of every known kit to a General
+  MIDI key, or leaves it out: a hi-hat from "Tip"/"Edge" 00 to 25 becomes the closed hi-hat, 50
+  and over the open one; extra snares become the snare; clicks, loop slices and effects are left
+  out. A sound already on a General MIDI key of its own kind keeps it. With a kit the table does
+  not know, notes on General MIDI keys keep their key and the rest are left out.
+- **Then each section goes through the groove rules,** with two changes for styles. Every General
+  MIDI key from 35 to 81 counts as a drum key, tambourine and cowbell included, since the map has
+  put each sound there. A tempo change inside a section (an Ending slowing down) is ignored, and
+  the groove takes the setup bar's tempo. The other rules stay: 4/4 only, at most 16 bars, notes
+  on the grid. MIDI files keep the old rules.
+
+### The key map
+
+- **It covers the SX920 and SX720 kits,** made once from the "Drum&SFX Kit List" sheet of
+  Yamaha's Data List, the same way as in the research. It holds each kit's name, shown in the
+  groove list, the nearest kit in the app's short list, and numbers: bank, program, key and the
+  General MIDI key or "leave out". Other Yamaha models (Genos, PSR-S, Tyros) can be added the
+  same way when someone has their Data List.
+- **A groove keeps the kit's name and the suggested kit** in the saved groove list (new optional
+  fields in the pack file), so they still show after the app restarts.
+- **`tools/yamaha-kits` makes it** from the Data List spreadsheet, which is not committed:
+  `cargo run -p dm-yamaha-kits -- <psrsx920_sx720_en_dl_a0.xlsx>` writes
+  `crates/dm-groove/src/yamaha_kits.rs`.
+
+### What the build found
+
+Checked on 2026-11-20 on Windows.
+
+- **How it is built.** `dm-groove` reads styles in `style.rs` (with the generated
+  `yamaha_kits.rs`), and `groove.rs` takes a `Source` so styles get their two rule changes. The
+  `styles` example imports every style under a folder and prints the totals:
+  `cargo run --release -p dm-groove --example styles -- <folder>`. In `dm-ui`, the groove list
+  shows the kit, and the notice can carry a button.
+- **On 172 real styles** (the research's set), 1,976 of 2,451 sections import (81%), and 158
+  styles have at least one. Refused: 379 sections off the grid, 75 in 3/4, 16 with no drums and 5
+  longer than 16 bars. Before ignoring tempo changes and counting tambourine and cowbell, 1,343
+  imported.
+- **A round trip holds:** every preset written by Keyboard style and read back gives the same
+  patterns, tempo and kit.
+- **In the app:** a style opened with "Add grooves from a file" became a pack of 14 grooves, each
+  with its kit ("RealDrumKit + PopLatinKit1"). Adding one with the Power kit chosen showed "O
+  teclado toca isto com RealDrumKit." with "Usar Standard 1"; the tap chose Standard 1 and Undo
+  went back to Power 1. With Standard already chosen, no notice showed.
+
+- **By ear, they match.** The author compared imported grooves, played in the app, with the
+  SX720 playing the same styles and sections, and found the drums in the same places. The hi-hat
+  threshold (25 closed, 50 open) and the snare choices stand.
+
+Not checked:
+
+- **Android and iOS:** opening a style there, sharing one to the app, and a link to one.
+- **Styles from other Yamaha models,** whose kits are not in the table yet.
+
 ## Open questions
 
 None at present. The three earlier ones were researched in
