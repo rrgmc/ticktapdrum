@@ -1,25 +1,32 @@
-//! Picks the grooves the app ships from Google Magenta's Groove MIDI Dataset (CC BY 4.0): a few
-//! beats per style, from the files the app accepts. Writes them as a pack in the app's JSON form.
+//! Gathers the grooves the app ships from Google Magenta's Groove MIDI Dataset (CC BY 4.0):
+//! every file the app accepts, beats and fills, grouped by style. Writes them as a pack in the
+//! app's JSON form.
 //!
 //! Usage: `cargo run --release -p dm-groove --example curate_magenta -- <groove-v1.0.0-midionly.zip>
-//! [<out.json>]`. Without an output file it only lists what it would pick.
+//! [<out.json>]`. Without an output file it only counts what it would write.
 //!
 //! The dataset's files are named like `149_latin-brazilian-baiao_95_beat_4-4`: a take number,
-//! the style, the tempo, `beat` or `fill`, and the time signature. Only beats are picked, at most
-//! [`PER_STYLE`] per style. Styles such as `funk-groove5` (ten set grooves several drummers
-//! played) count as their style, `funk`, and a file name picked once is not picked again, since
-//! several drummers' takes share it. Beats that repeat come first, as they loop cleanly, then
-//! longer ones, then by take number, so the choice is the same every run.
+//! the style, the tempo, `beat` or `fill`, and the time signature. Styles such as `funk-groove5`
+//! (ten set grooves several drummers played) count as their style, `funk`. Each groove's folder
+//! is its style, which the app's lists group by. Within a style the grooves of up to
+//! [`SHORT`] bars come first, as they are the easiest to start from; then, in each group, beats
+//! before fills, each by tempo and then take number, so the order is the same every run. Several
+//! drummers' takes may share a file name; each take is kept, as each is played differently.
 
 use std::collections::BTreeMap;
 
 use dm_groove::{Groove, Pack};
 use dm_project::BarHit;
 
-/// The most beats picked for one style.
-const PER_STYLE: usize = 3;
-/// The fewest notes a picked beat has, so a near-silent take is left out.
-const MIN_NOTES: usize = 8;
+/// Grooves of up to this many bars come first in their style.
+const SHORT: usize = 4;
+
+/// One take: whether it is a fill, its tempo and take number for sorting, and the groove.
+struct Take {
+    fill: bool,
+    take: u32,
+    groove: Groove,
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -35,68 +42,65 @@ fn main() {
         eprintln!("{zip}: {e:?}");
         std::process::exit(1);
     });
+    println!(
+        "{} files accepted, {} refused",
+        import.grooves.len(),
+        import.refused.len()
+    );
 
-    // Beats by style: (take number, unit length in bars, groove).
-    let mut styles: BTreeMap<String, Vec<(u32, usize, Groove)>> = BTreeMap::new();
-    let mut seen = std::collections::BTreeSet::new();
+    let mut styles: BTreeMap<String, Vec<Take>> = BTreeMap::new();
+    let mut unnamed = 0;
     for groove in import.grooves {
-        if !seen.insert(groove.name.clone()) {
-            continue;
-        }
         let parts: Vec<&str> = groove.name.split('_').collect();
         let [take, style, _bpm, kind, _signature] = parts[..] else {
+            unnamed += 1;
             continue;
         };
-        let notes: usize = groove.bars.iter().map(Vec::len).sum();
-        if kind != "beat" || notes < MIN_NOTES {
-            continue;
-        }
-        let unit = dm_project::repeat_unit(&groove.bars);
-        let take = take.parse().unwrap_or(u32::MAX);
         // `funk-groove5` is a funk groove.
-        let style = match style.split_once("-groove") {
-            Some((base, _)) => base,
-            None => style,
-        };
-        styles
-            .entry(style.to_owned())
-            .or_default()
-            .push((take, unit, groove));
+        let style = style.split_once("-groove").map_or(style, |(base, _)| base);
+        styles.entry(style_label(style)).or_default().push(Take {
+            fill: kind == "fill",
+            take: take.parse().unwrap_or(u32::MAX),
+            groove,
+        });
+    }
+    if unnamed > 0 {
+        println!("{unnamed} files left out: their names are not in the dataset's form");
     }
 
-    let mut picked = Vec::new();
-    for (style, mut beats) in styles {
-        // Beats that repeat first, as they loop cleanly; then longer ones, with more of the
-        // drummer's playing.
-        beats.sort_by_key(|(take, unit, groove)| {
-            (*unit >= groove.bars.len(), std::cmp::Reverse(*unit), *take)
+    let mut grooves = Vec::new();
+    for (label, mut takes) in styles {
+        takes.sort_by_key(|t| {
+            let bars = dm_project::repeat_unit(&t.groove.bars);
+            (bars > SHORT, t.fill, t.groove.bpm as u32, t.take)
         });
-        let label = style_label(&style);
-        for (n, (_, unit, groove)) in beats.into_iter().take(PER_STYLE).enumerate() {
+        let (mut beats, mut fills) = (0, 0);
+        for Take { fill, groove, .. } in takes {
             // The whole take, as the import gives it: at most 16 bars, exact repeats collapsed.
+            let unit = dm_project::repeat_unit(&groove.bars);
             let bars: Vec<Vec<BarHit>> = groove.bars[..unit].to_vec();
-            println!(
-                "{label} {}: {} ({} bars of {}, {} BPM)",
-                n + 1,
-                groove.name,
-                bars.len(),
-                groove.bars.len(),
-                groove.bpm
-            );
-            picked.push(Groove {
-                name: format!("{label} {}", n + 1),
-                folder: format!("{} BPM", groove.bpm),
+            let name = if fill {
+                fills += 1;
+                format!("{label} {fills} (fill)")
+            } else {
+                beats += 1;
+                format!("{label} {beats}")
+            };
+            grooves.push(Groove {
+                name,
+                folder: label.clone(),
                 bpm: groove.bpm,
                 bars,
             });
         }
+        println!("{label}: {beats} beats, {fills} fills");
     }
-    println!("{} grooves", picked.len());
+    println!("{} grooves", grooves.len());
 
     if let Some(out) = args.get(1) {
         let pack = Pack {
             name: "Groove MIDI Dataset".to_owned(),
-            grooves: picked,
+            grooves,
         };
         let json = dm_groove::pack_to_json(&pack);
         std::fs::write(out, &json).unwrap_or_else(|e| {
@@ -116,6 +120,9 @@ fn style_label(style: &str) -> String {
         .map(|w| match w {
             "baiao" => "baião",
             "hiphop" => "hip hop",
+            "afrocuban" => "afro-Cuban",
+            "neworleans" => "New Orleans",
+            "purdieshuffle" => "Purdie shuffle",
             w => w,
         })
         .collect();

@@ -19,8 +19,9 @@ pub(crate) const MAGENTA_KEY: &str = "builtin:magenta";
 const MAGENTA_PAGE: &str = "https://magenta.tensorflow.org/datasets/groove";
 const MAGENTA_LICENSE: &str = "https://creativecommons.org/licenses/by/4.0/";
 
-/// The grooves that come with the app: 25 beats in 12 styles from Google Magenta's Groove MIDI
-/// Dataset (CC BY 4.0), chosen by `dm-groove`'s `curate_magenta` example. See
+/// The grooves that come with the app: the 359 beats and fills of Google Magenta's Groove MIDI
+/// Dataset (CC BY 4.0) that the app accepts, in 24 styles, gathered by `dm-groove`'s
+/// `curate_magenta` example. Each groove's folder is its style. See
 /// `assets/MAGENTA-CREDITS.txt`.
 pub(crate) fn magenta_pack() -> Pack {
     dm_groove::pack_from_json(include_str!("../assets/magenta-grooves.json"))
@@ -193,10 +194,11 @@ pub(crate) fn list(
             }
         });
         state.store(ui.ctx());
-        if state.is_open() {
-            if !deletable {
-                ui.label(RichText::new(tr!("grooves-magenta-credits")).small());
-            }
+        if state.is_open() && !deletable {
+            ui.label(RichText::new(tr!("grooves-magenta-credits")).small());
+            let add = (tr!("grooves-add"), tr!("grooves-add-tip"));
+            magenta_styles(ui, view, (&add.0, &add.1), events);
+        } else if state.is_open() {
             let names = short_names(&pack.grooves);
             for (index, groove) in pack.grooves.iter().enumerate() {
                 let playing = view.playing == Some((key, index));
@@ -234,19 +236,64 @@ pub(crate) fn magenta_list(ui: &mut egui::Ui, view: &GroovesView, events: &mut V
             .on_hover_text(MAGENTA_LICENSE);
     });
     ui.separator();
-    for (index, groove) in view.magenta.grooves.iter().enumerate() {
-        let playing = view.playing == Some((MAGENTA_KEY, index));
-        groove_row(
-            ui,
-            MAGENTA_KEY,
-            index,
-            groove,
-            &groove.name,
-            playing,
-            None,
-            (&tr!("menu-start"), &tr!("grooves-magenta-load-tip")),
-            events,
-        );
+    let load = (tr!("menu-start"), tr!("grooves-magenta-load-tip"));
+    magenta_styles(ui, view, (&load.0, &load.1), events);
+}
+
+/// The grooves that come with the app, by style: each style a heading with its count that opens
+/// and closes, with its grooves under it. Their folder is their style, and the pack keeps a
+/// style's grooves together, shortest first. `add` is the Add button's word and hover text.
+fn magenta_styles(
+    ui: &mut egui::Ui,
+    view: &GroovesView,
+    add: (&str, &str),
+    events: &mut Vec<GrooveEvent>,
+) {
+    let grooves = &view.magenta.grooves;
+    let mut start = 0;
+    while start < grooves.len() {
+        let style = grooves[start].folder.as_str();
+        let end = grooves[start..]
+            .iter()
+            .position(|g| g.folder != style)
+            .map_or(grooves.len(), |n| start + n);
+        let id = ui.make_persistent_id(("dm-magenta-style", style));
+        let mut state =
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
+        let arrow = if state.is_open() {
+            icons::CARET_DOWN
+        } else {
+            icons::CARET_RIGHT
+        };
+        let heading = tr!("grooves-pack", name = style, count = end - start);
+        if ui
+            .add(
+                egui::Button::new(widgets::label(arrow, &heading))
+                    .frame(false)
+                    .min_size(Vec2::new(TAP, TAP)),
+            )
+            .clicked()
+        {
+            state.toggle(ui);
+        }
+        state.store(ui.ctx());
+        if state.is_open() {
+            for (index, groove) in grooves.iter().enumerate().take(end).skip(start) {
+                let playing = view.playing == Some((MAGENTA_KEY, index));
+                groove_row(
+                    ui,
+                    MAGENTA_KEY,
+                    index,
+                    groove,
+                    &groove.name,
+                    playing,
+                    None,
+                    add,
+                    events,
+                );
+            }
+        }
+        start = end;
     }
 }
 
@@ -343,7 +390,11 @@ fn groove_row(
                 ui.add(egui::Label::new(big(name)).truncate())
                     .on_hover_text(&groove.name);
                 let bars = tr!("grooves-bars", count = groove.bars.len());
-                let detail = if groove.folder.is_empty() {
+                // A groove that comes with the app is listed under its style, its folder, so
+                // its tempo says more.
+                let detail = if key == MAGENTA_KEY {
+                    format!("{} BPM · {bars}", groove.bpm)
+                } else if groove.folder.is_empty() {
                     bars
                 } else {
                     format!("{} · {bars}", groove.folder)
@@ -494,10 +545,15 @@ mod tests {
     #[test]
     fn the_grooves_that_come_with_the_app_load() {
         let pack = magenta_pack();
-        assert_eq!(pack.grooves.len(), 25);
+        assert_eq!(pack.grooves.len(), 359);
         for groove in &pack.grooves {
             assert!((1..=16).contains(&groove.bars.len()), "{}", groove.name);
-            assert!(groove.bars.iter().any(|bar| !bar.is_empty()), "{}", groove.name);
+            assert!(!groove.folder.is_empty(), "{}", groove.name);
+            assert!(
+                groove.bars.iter().any(|bar| !bar.is_empty()),
+                "{}",
+                groove.name
+            );
         }
     }
 

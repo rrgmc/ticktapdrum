@@ -10,7 +10,7 @@ at that moment. It runs on Windows, macOS, Linux, Android, iPhone and iPad.
 - **A grid of steps.** Each row is a drum, such as kick, snare or hi-hat. Each box is a moment in
   time. Tap a box to turn it on or off, or drag to paint several.
 - **Beats to start from.** Rock, Pop, Hip-hop, Funk, Bossa nova, House and Reggae, each with a
-  fitting tempo and usually a fill. Also 25 beats played by real drummers, in 12 styles.
+  fitting tempo and usually a fill. Also 359 beats and fills played by real drummers, in 24 styles.
 - **Grooves from files and links.** Add drum grooves from MIDI files or zip packs, from a link,
   or shared from another app on Android. Paste a few bars of a drum tab.
 - **Patterns and songs.** A pattern is a loop of one or more bars. A song plays patterns in order,

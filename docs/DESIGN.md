@@ -1288,21 +1288,25 @@ eframe's `links` feature opens a link in the system browser on the desktop and o
 
 ## Grooves that come with the app
 
-25 beats from Google Magenta's Groove MIDI Dataset (CC BY 4.0) ship with the app, so there are
-grooves by real drummers without a download. `dm-groove`'s `curate_magenta` example chooses
-them from the dataset's MIDI zip and writes `crates/dm-ui/assets/magenta-grooves.json` (60 KB):
-beats only, from the files the app accepts, up to three per style, whole takes of up to 16
-bars. A first version kept only the first four bars, for short loops; most takes do not repeat,
-so that cut the drummers' variations and fills, and the author chose whole takes. The dataset's "grooveN" takes count as their style, and a file name is taken once. That
-gives 12 styles: baião, funk, hip hop, jazz, jazz fusion, pop, soft pop, punk, rock, indie rock,
-soul and Motown soul.
+Every file of Google Magenta's Groove MIDI Dataset (CC BY 4.0) that the app accepts ships with
+it: 359 beats and fills, whole takes of up to 16 bars, so there are grooves by real drummers
+without a download. `dm-groove`'s `curate_magenta` example gathers them from the dataset's MIDI
+zip and writes `crates/dm-ui/assets/magenta-grooves.json` (250 KB). Each groove's folder is its
+style; the dataset's "grooveN" takes count as their style, which gives 24 styles. Within a
+style, grooves of up to 4 bars come first, as the easiest to start from, then beats before
+fills, by tempo. Each drummer's take is kept, even where several share a file name.
+
+The author first asked for a few beats per style (25, cut to 4 bars, then whole takes), then for
+all of them, short ones first. Rock has the most (64 beats, 28 fills); several styles have only
+fills.
 
 - **"Ready-made styles" has a button, "Grooves by real drummers",** that lists them with their
-  credits and links to the dataset and the licence. Load starts a new project from one, as a
+  credits and links to the dataset and the licence, by style: each style is a heading with its
+  count that opens and closes. Each groove shows its tempo and length. Load starts a new project from one, as a
   ready-made style does: pattern A holds the groove at its tempo, and it asks first when there
   are unsaved changes.
 - **The Grooves list always shows them first,** as a pack that cannot be deleted, with the
-  credits. Add puts one in the project as a new pattern, like any imported groove. The Grooves
+  credits and the same styles. Add puts one in the project as a new pattern, like any imported groove. The Grooves
   item is therefore always in the menu.
 - **The credits** are in the dialog, the Grooves list, the README and
   `crates/dm-ui/assets/MAGENTA-CREDITS.txt`, as CC BY 4.0 asks.
