@@ -338,17 +338,26 @@ mod android {
         }
     }
 
-    /// Keeps the screen on while the app plays, through the window's `FLAG_KEEP_SCREEN_ON`.
-    /// android-activity passes the change to the activity's UI thread, where Android needs it.
+    /// Keeps the screen on while the app plays, through the window's `FLAG_KEEP_SCREEN_ON`, set
+    /// by `MainActivity.keepScreenOn` on the activity's UI thread, where Android needs it.
+    ///
+    /// Not through android-activity's `set_window_flags`: it takes a write lock on the app's
+    /// state, and this is called from inside a frame, while `poll_events` holds that lock for
+    /// reading on the same thread. The call never returned, and Android reported the app as not
+    /// responding.
     fn keep_awake(app: &AndroidApp, on: bool) {
-        use android_activity::WindowManagerFlags;
-        let flag = WindowManagerFlags::KEEP_SCREEN_ON;
-        let none = WindowManagerFlags::empty();
         log::info!("keep the screen on: {on}");
-        if on {
-            app.set_window_flags(flag, none);
-        } else {
-            app.set_window_flags(none, flag);
+        let result = with_activity(app, |env, activity| {
+            env.call_method(
+                activity,
+                jni::jni_str!("keepScreenOn"),
+                jni::jni_sig!("(Z)V"),
+                &[jni::JValue::Bool(on)],
+            )?;
+            Ok(())
+        });
+        if let Err(e) = result {
+            log::warn!("could not keep the screen on: {e}");
         }
     }
 

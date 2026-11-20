@@ -8,6 +8,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.SparseArray;
+import android.view.WindowManager;
 
 /**
  * The app's activity: Android's NativeActivity, which runs libticktapdrum.so, plus the system
@@ -35,6 +36,23 @@ public class MainActivity extends NativeActivity {
     /** The picks in progress, by request code. Used on the UI thread only. */
     private final SparseArray<Long> pending = new SparseArray<>();
     private int nextCode = 1;
+
+    /**
+     * Keeps the screen on, or lets it turn off again, through the window's FLAG_KEEP_SCREEN_ON.
+     * Callable from any thread: the change is made on the UI thread, where Android needs it.
+     *
+     * The Rust library calls this instead of android-activity's set_window_flags, which takes
+     * a write lock that the app's own frame already holds for reading, and so never returns.
+     */
+    public void keepScreenOn(final boolean on) {
+        runOnUiThread(() -> {
+            if (on) {
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            } else {
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }
+        });
+    }
 
     /**
      * Shows the system picker: "Save as" when create is true, otherwise "Open". The answer goes
