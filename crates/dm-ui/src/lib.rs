@@ -883,7 +883,8 @@ impl DrumApp {
             ui,
             egui::Rect::from_min_max(egui::pos2(rest.left(), indicator_top), rest.max),
             pattern_bars,
-            shown.clone(),
+            // The bar being heard; while this pattern is not playing, the bars the grid shows.
+            playing_bar.map_or(shown.clone(), |bar| bar..bar + 1),
         );
         for event in &grid_events {
             if let grid::GridEvent::OpenRow { row, rect } = event {
