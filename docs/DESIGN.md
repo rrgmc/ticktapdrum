@@ -1576,8 +1576,13 @@ there; see "Android, later".
   one the app listens to, until the input opens again. A keyboard sends its right-hand part on its
   own channel, usually 1, and may send its style's drums on channel 10 at the same time; the rule
   keeps the style out. This needs checking on a real keyboard.
-- **Keys outside the drum kit are ignored.** General MIDI drums are keys 35 to 81. Some kits use
-  keys beyond that range (XG kits go from 13 to 87); the app has no sound to match them.
+- **Keys outside the drum kit are ignored, unless they have a near drum.** General MIDI drums are
+  keys 35 to 81. Yamaha's XG kits also use keys 13 to 34 and 82 to 87, and the app's bank has
+  other sounds there. The PSR-SX720's lowest key sends 24, so its 11 lowest keys fell outside
+  the range. Those with a near drum now play as it: snare roll (29) and soft snare (31) as the
+  acoustic snare, sticks (32) and open rim shot (34) as side stick, soft bass drum (33) as the
+  kick. The rest (clicks, brushes, castanets) stay ignored. The names are XG's; the SX720's own
+  kits may differ.
 - **Playing a pattern records.** While MIDI input is on and the keyboard connected, each run of the
   pattern being edited, from Play to Stop, is a take. Playing the song records nothing, and
   neither does a key pressed while stopped: it only flashes its row. A small red dot on Play, by

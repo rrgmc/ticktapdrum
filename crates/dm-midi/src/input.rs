@@ -10,6 +10,24 @@ use dm_audio::LiveHit;
 /// The General MIDI drum keys. Keys outside them are ignored: the app has no sound for them.
 pub(crate) const DRUM_KEYS: std::ops::RangeInclusive<u8> = 35..=81;
 
+/// The drum a key below the General MIDI kit plays as, if it has a near one.
+///
+/// Yamaha's XG kits put extra sounds on keys 13 to 34, which General MIDI leaves empty, and an
+/// arranger keyboard's lowest keys reach them. The app's bank has other sounds there, so the
+/// keys with a near drum are moved onto it, and the rest (clicks, brushes, castanets) are left
+/// out. Checked on a PSR-SX720, whose lowest key sends 24; the sound names are XG's.
+pub(crate) fn near_drum(key: u8) -> Option<u8> {
+    match key {
+        29 => Some(38), // snare roll: acoustic snare
+        31 => Some(38), // snare, soft: acoustic snare
+        32 => Some(37), // sticks: side stick
+        33 => Some(36), // bass drum, soft: kick
+        34 => Some(37), // open rim shot: side stick
+        _ if DRUM_KEYS.contains(&key) => Some(key),
+        _ => None,
+    }
+}
+
 /// How far before the callback a hit may be placed. A mapped time further back than this means
 /// the estimate no longer fits the input's clock, so it starts again from this message.
 pub(crate) const MAX_LAG: Duration = Duration::from_millis(500);
@@ -120,7 +138,8 @@ impl Notes {
     /// makes, if any. Every message teaches the clock, hit or not.
     ///
     /// A note-on counts when its velocity is above 0, its channel is the one taken (or none is
-    /// taken yet), and its key is a General MIDI drum. The first one to count takes its channel.
+    /// taken yet), and its key is a General MIDI drum or one with a near drum (see
+    /// [`near_drum`]), which it then plays as. The first one to count takes its channel.
     pub(crate) fn read(
         &mut self,
         message: &[u8],
@@ -133,13 +152,11 @@ impl Notes {
         if self.channel.is_some_and(|channel| channel != note.channel) {
             return None;
         }
-        if !DRUM_KEYS.contains(&note.key) {
-            return None;
-        }
+        let key = near_drum(note.key)?;
         self.channel = Some(note.channel);
         Some(LiveHit {
             at,
-            key: note.key,
+            key,
             velocity: note.velocity,
             sound,
         })
@@ -206,12 +223,26 @@ mod tests {
     fn keys_outside_the_kit_are_ignored() {
         let t = Instant::now();
         let mut notes = Notes::new(t);
-        for key in [0, 34, 82, 127] {
+        for key in [0, 24, 28, 30, 82, 127] {
             assert_eq!(notes.read(&[0x99, key, 100], 0, t, true), None, "{key}");
         }
         for key in [35, 81] {
             assert!(notes.read(&[0x99, key, 100], 0, t, true).is_some(), "{key}");
         }
+    }
+
+    #[test]
+    fn low_yamaha_keys_play_as_a_near_drum() {
+        let t = Instant::now();
+        let mut notes = Notes::new(t);
+        for (key, drum) in [(29, 38), (31, 38), (32, 37), (33, 36), (34, 37)] {
+            let hit = notes.read(&[0x92, key, 70], 0, t, true).unwrap();
+            assert_eq!(hit.key, drum, "{key}");
+        }
+        // A mapped key takes the channel like any drum.
+        let mut notes = Notes::new(t);
+        assert!(notes.read(&[0x92, 33, 70], 0, t, true).is_some());
+        assert_eq!(notes.read(&[0x99, 36, 70], 0, t, true), None);
     }
 
     #[test]
