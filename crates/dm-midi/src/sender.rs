@@ -169,6 +169,10 @@ impl Handle {
         *self.tap.hits.lock().unwrap_or_else(PoisonError::into_inner) = Some(hits);
     }
 
+    pub(crate) fn set_listening(&mut self, on: bool) {
+        self.tap.set_listening(on);
+    }
+
     pub(crate) fn select_input(&mut self, choice: InputChoice) {
         if choice == self.chosen_input {
             return;
@@ -295,6 +299,18 @@ struct Tap {
     /// Moves on each change of source or choice. A callback that sees it move forgets its
     /// channel.
     epoch: AtomicU64,
+    /// Whether hits go into the queue at all. Off by default. While off, a callback pushes
+    /// nothing and takes no channel.
+    listening: AtomicBool,
+}
+
+impl Tap {
+    /// Lets hits through or stops them. Turning on takes a channel afresh.
+    fn set_listening(&self, on: bool) {
+        if self.listening.swap(on, Ordering::AcqRel) != on && on {
+            self.epoch.fetch_add(1, Ordering::AcqRel);
+        }
+    }
 }
 
 /// The part of an input's callback that turns notes into hits.
@@ -321,8 +337,11 @@ impl Listener {
     /// Handles a message on midir's thread. Never waits for more than a push into the queue.
     fn hear(&mut self, timestamp: u64, message: &[u8]) {
         let now = Instant::now();
-        if self.tap.source.load(Ordering::Acquire) != self.id {
-            // Still learn the clock, so that it is ready if this input becomes the source.
+        if self.tap.source.load(Ordering::Acquire) != self.id
+            || !self.tap.listening.load(Ordering::Acquire)
+        {
+            // Still learn the clock, so that it is ready if this input becomes the source or
+            // listening turns on.
             self.notes.read(&[], timestamp, now, false);
             return;
         }
@@ -360,6 +379,26 @@ enum Route {
     Shared,
     /// From an input of their own, with this name.
     Own(String),
+}
+
+impl Route {
+    /// Whether the app should sound the hits. Not when they come from the output's own device,
+    /// which already plays them, so nothing sounds twice.
+    fn sound(&self) -> bool {
+        !matches!(self, Route::Shared)
+    }
+}
+
+/// Where the drum hits come from, for the chosen output and input.
+fn route(output: Option<&str>, choice: &InputChoice) -> Route {
+    let output = output.filter(|&name| VIRTUAL != Some(name));
+    match choice {
+        InputChoice::None => Route::Off,
+        InputChoice::SameAsOutput if output.is_some() => Route::Shared,
+        InputChoice::SameAsOutput => Route::Off,
+        InputChoice::Named(name) if output == Some(name.as_str()) => Route::Shared,
+        InputChoice::Named(name) => Route::Own(name.clone()),
+    }
 }
 
 /// The thread's state. It owns the queue and the connections.
@@ -523,14 +562,7 @@ impl Worker {
 
     /// Where the drum hits should come from now.
     fn route(&self) -> Route {
-        let output = self.wanted.as_deref().filter(|&name| VIRTUAL != Some(name));
-        match &self.input_choice {
-            InputChoice::None => Route::Off,
-            InputChoice::SameAsOutput if output.is_some() => Route::Shared,
-            InputChoice::SameAsOutput => Route::Off,
-            InputChoice::Named(name) if output == Some(name.as_str()) => Route::Shared,
-            InputChoice::Named(name) => Route::Own(name.clone()),
-        }
+        route(self.wanted.as_deref(), &self.input_choice)
     }
 
     /// Opens and closes the inputs for drum hits to match the choices, points the callbacks at
@@ -562,23 +594,18 @@ impl Worker {
             }
         }
 
-        let (source, sound, status) = match &route {
-            Route::Off => (0, true, MidiStatus::Off),
+        let (source, status) = match &route {
+            Route::Off => (0, MidiStatus::Off),
             Route::Shared => (
                 self.input_id,
-                false,
                 input_state(self.input.is_some(), &self.input_fault),
             ),
             Route::Own(_) => {
                 let id = self.note_input.as_ref().map_or(0, |input| input.id);
-                (
-                    id,
-                    true,
-                    input_state(self.note_input.is_some(), &self.note_fault),
-                )
+                (id, input_state(self.note_input.is_some(), &self.note_fault))
             }
         };
-        self.tap.sound.store(sound, Ordering::Release);
+        self.tap.sound.store(route.sound(), Ordering::Release);
         if self.tap.source.swap(source, Ordering::AcqRel) != source {
             self.tap.epoch.fetch_add(1, Ordering::AcqRel);
         }
@@ -1072,4 +1099,89 @@ fn open_virtual() -> Result<MidiOutputConnection, MidiStatus> {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn open_virtual() -> Result<MidiOutputConnection, MidiStatus> {
     Err(MidiStatus::Missing)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hits_sound_unless_they_come_from_the_outputs_own_device() {
+        let named = |name: &str| InputChoice::Named(name.to_owned());
+        let keyboard = Some("Keyboard");
+
+        // The output's own input: the keyboard plays its own sound.
+        let shared = route(keyboard, &InputChoice::SameAsOutput);
+        assert_eq!(shared, Route::Shared);
+        assert!(!shared.sound());
+        let same_name = route(keyboard, &named("Keyboard"));
+        assert_eq!(same_name, Route::Shared);
+        assert!(!same_name.sound());
+
+        // Another input, such as drum pads: the app sounds the hits.
+        let pads = route(keyboard, &named("Pads"));
+        assert_eq!(pads, Route::Own("Pads".to_owned()));
+        assert!(pads.sound());
+        let pads_alone = route(None, &named("Pads"));
+        assert_eq!(pads_alone, Route::Own("Pads".to_owned()));
+        assert!(pads_alone.sound());
+
+        // Nothing to listen to.
+        assert_eq!(route(None, &InputChoice::SameAsOutput), Route::Off);
+        assert_eq!(route(keyboard, &InputChoice::None), Route::Off);
+    }
+
+    /// A tap with a queue, and a listener that is its source.
+    fn tapped() -> (Arc<Tap>, Listener, rtrb::Consumer<dm_audio::LiveHit>) {
+        let (hits, heard) = rtrb::RingBuffer::new(16);
+        let tap = Arc::new(Tap::default());
+        *tap.hits.lock().unwrap() = Some(hits);
+        tap.source.store(1, Ordering::Release);
+        tap.sound.store(true, Ordering::Release);
+        (Arc::clone(&tap), Listener::new(1, tap), heard)
+    }
+
+    #[test]
+    fn hits_go_through_only_while_listening() {
+        let (tap, mut listener, mut heard) = tapped();
+        // Off by default: nothing is pushed.
+        listener.hear(0, &[0x90, 36, 100]);
+        assert!(heard.pop().is_err());
+
+        tap.set_listening(true);
+        listener.hear(1000, &[0x90, 38, 100]);
+        assert_eq!(heard.pop().map(|hit| hit.key), Ok(38));
+
+        tap.set_listening(false);
+        listener.hear(2000, &[0x90, 42, 100]);
+        assert!(heard.pop().is_err());
+    }
+
+    #[test]
+    fn hits_while_off_take_no_channel() {
+        let (tap, mut listener, mut heard) = tapped();
+        // Played on channel 1 while off.
+        listener.hear(0, &[0x90, 36, 100]);
+        tap.set_listening(true);
+        // Channel 10 still takes the channel once listening.
+        listener.hear(1000, &[0x99, 38, 100]);
+        assert_eq!(heard.pop().map(|hit| hit.key), Ok(38));
+        listener.hear(2000, &[0x90, 36, 100]);
+        assert!(heard.pop().is_err());
+
+        // Turning off and on again takes a channel afresh.
+        tap.set_listening(false);
+        tap.set_listening(true);
+        listener.hear(3000, &[0x90, 36, 100]);
+        assert_eq!(heard.pop().map(|hit| hit.key), Ok(36));
+    }
+
+    #[test]
+    fn a_listener_that_is_not_the_source_pushes_nothing() {
+        let (tap, mut listener, mut heard) = tapped();
+        tap.set_listening(true);
+        tap.source.store(2, Ordering::Release);
+        listener.hear(0, &[0x90, 36, 100]);
+        assert!(heard.pop().is_err());
+    }
 }

@@ -12,8 +12,9 @@
 //!
 //! For MIDI in, [`MidiOut::listen`] takes the sending end of the engine's live hit queue, and the
 //! interface picks the input with [`MidiOut::select_input`]. By default the input is the one named
-//! like the output. Each note-on of a General MIDI drum key on the input's first channel goes into
-//! the queue as a [`dm_audio::LiveHit`], timed by the input's own timestamp. An input with the
+//! like the output. While [`MidiOut::set_listening`] is on, each note-on of a General MIDI drum
+//! key on the input's first channel goes into the queue as a [`dm_audio::LiveHit`], timed by the
+//! input's own timestamp. The hit sounds in the app unless it comes from the output's own device. An input with the
 //! output's name is opened once and shared with Send to keyboard and the switch-off check, since
 //! Windows lets only one connection hold a port. [`MidiOut::input_status`] says how it goes.
 //!
@@ -181,13 +182,24 @@ impl MidiOut {
     }
 
     /// Gives the thread the queue to put drum hits into, the sending end of the engine's live
-    /// hit queue. Until this is called, notes on the input are ignored. A second call replaces
-    /// the first queue.
+    /// hit queue. Until this is called, and while [`MidiOut::set_listening`] is off, notes on the
+    /// input are ignored. A second call replaces the first queue.
     pub fn listen(&mut self, hits: LiveHits) {
         #[cfg(not(target_os = "android"))]
         self.handle.listen(hits);
         #[cfg(target_os = "android")]
         let _ = hits;
+    }
+
+    /// Lets the input's hits into the queue, or stops them. Off by default. While off, the input
+    /// stays open, so [`MidiOut::input_status`] still tells whether it is there, but no hit is
+    /// pushed and no channel is taken. Turning on takes a channel afresh. Cheap and never
+    /// blocks.
+    pub fn set_listening(&mut self, on: bool) {
+        #[cfg(not(target_os = "android"))]
+        self.handle.set_listening(on);
+        #[cfg(target_os = "android")]
+        let _ = on;
     }
 
     /// The inputs there are now, by name, sorted. Enumerates afresh on each call, so call it when

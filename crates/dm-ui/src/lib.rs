@@ -199,7 +199,12 @@ impl DrumApp {
         let system_language = i18n::system_language();
         let row_labels = store.row_labels();
         let bar_line = store.bar_strip();
-        let midi = midi::Midi::new(store.midi_output(), store.midi_volume(), store.midi_input());
+        let midi = midi::Midi::new(
+            store.midi_output(),
+            store.midi_volume(),
+            store.midi_input(),
+            store.midi_input_device(),
+        );
         // Only the names: reading the packs waits until the list opens.
         let app = Self {
             bank: BankState::new(data_dir),
@@ -442,7 +447,7 @@ impl DrumApp {
             // replaces the output's, since a keyboard takes both away at once.
             if self.recording.is_some() && !self.midi.input_connected() {
                 self.recording = None;
-                let name = self.midi.choice().unwrap_or_default().to_owned();
+                let name = self.midi.input_name().unwrap_or_default().to_owned();
                 notes = vec![midi::Note::InputGone(name)];
             }
             for note in notes {
@@ -746,8 +751,16 @@ impl DrumApp {
             can_redo,
             step_levels: self.project.step_levels(),
             midi_device: self.midi.choice().filter(|_| self.midi.connected()),
-            recording_from: self.midi.choice().filter(|_| self.midi.input_connected()),
-            midi_in: self.midi.connected().then_some(self.midi.input()),
+            recording_from: self
+                .midi
+                .input_name()
+                .filter(|_| self.midi.input_connected()),
+            midi_in: self.midi.input_open().then(|| {
+                (
+                    self.midi.input(),
+                    self.midi.input_name().unwrap_or_default(),
+                )
+            }),
         };
         let strip = strip::ui(ui, &state);
         ui.add_space(4.0);
@@ -861,6 +874,8 @@ impl DrumApp {
                 connected: self.midi.connected(),
                 outputs: self.midi.outputs(),
                 volume: self.midi.volume(),
+                input: self.midi.input_device(),
+                inputs: self.midi.inputs(),
             }),
             grooves: grooves::GroovesView {
                 magenta: &self.magenta,
@@ -1035,6 +1050,20 @@ impl DrumApp {
                         log::warn!("could not keep the MIDI output setting: {e}");
                     }
                     self.midi.choose(choice);
+                }
+                menu::MenuEvent::ListMidiInputs => {
+                    self.midi.list_inputs();
+                    // This frame drew the dialog with the old list.
+                    ui.ctx().request_repaint();
+                }
+                menu::MenuEvent::MidiInput(device) => {
+                    if let Err(e) = self.store.set_midi_input_device(device.as_deref()) {
+                        log::warn!("could not keep the MIDI input device setting: {e}");
+                    }
+                    self.midi.choose_input(device);
+                    // A take on the old input ends here, without the line about a device that
+                    // went away.
+                    self.recording = None;
                 }
                 menu::MenuEvent::MidiVolume { percent, keep } => {
                     self.midi.set_volume(engine, percent);

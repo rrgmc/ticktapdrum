@@ -85,8 +85,9 @@ pub(crate) struct StripState<'a> {
     /// The MIDI input playing a pattern records from, if one is on and connected. Play then
     /// carries a small red dot.
     pub(crate) recording_from: Option<&'a str>,
-    /// Whether the MIDI input is on. `None` hides the MIDI in button: no output is connected.
-    pub(crate) midi_in: Option<bool>,
+    /// Whether the MIDI input is on, and its name. `None` hides the MIDI in button: the input is
+    /// not connected.
+    pub(crate) midi_in: Option<(bool, &'a str)>,
 }
 
 /// The buttons that did not fit. The menu offers them instead.
@@ -373,10 +374,9 @@ pub(crate) fn ui(ui: &mut egui::Ui, state: &StripState) -> StripOutput {
             });
         }
 
-        // MIDI in, while a MIDI output is connected: on, playing a pattern records what is
-        // played on the device.
-        if let (Some(on), Some(text)) = (state.midi_in, &t.midi_in) {
-            let device = state.midi_device.unwrap_or_default();
+        // MIDI in, while the MIDI input is connected: on, playing a pattern records what is
+        // played on the input.
+        if let (Some((on, device)), Some(text)) = (state.midi_in, &t.midi_in) {
             let tip = if on {
                 tr!("strip-midi-in-on-tip", device = device)
             } else {

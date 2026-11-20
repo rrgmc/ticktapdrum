@@ -60,6 +60,16 @@ menu-midi-gone = { $device } is gone. Playing on this device again.
 menu-midi-in-use = { $device } is in use by another program.
 # A one-line message when the MIDI input goes away while recording. $device is its name.
 menu-midi-input-gone = { $device } is gone. Recording stopped.
+# Where the drums played on a MIDI device come from. $device is the chosen input's name, as the
+# system reports it and shortened to fit, or menu-midi-input-same.
+menu-midi-input-choice = MIDI input: { $device }
+# The title of the dialog that chooses the MIDI input.
+menu-midi-input = MIDI input
+# The first choice in the MIDI input dialog: the input of the MIDI output's own device.
+menu-midi-input-same = Same as output
+menu-midi-input-about = Where the drums you play come from. Same as output fits a keyboard; choose another for drum pads.
+# A chosen input that is not there now. $device is its name, as the system reported it.
+menu-midi-input-not-connected = { $device } (not connected)
 # The title of the dialog that sets the tempo and the swing.
 menu-tempo = Tempo
 
@@ -143,9 +153,9 @@ menu-settings = Settings
 # A heading in the menu that opens to show the items for adding grooves and drum tabs.
 menu-import = Import
 # How each row is labelled in the grid: by its name, a picture of the drum, or both.
-menu-rows-names = Rows: names
-menu-rows-pictures-and-names = Rows: pictures and names
-menu-rows-pictures = Rows: pictures
+menu-rows-names = Instruments: names
+menu-rows-pictures-and-names = Instruments: pictures and names
+menu-rows-pictures = Instruments: pictures
 
 ## The Paste a drum tab dialog. Its title is menu-paste-tab.
 

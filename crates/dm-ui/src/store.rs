@@ -34,6 +34,9 @@ const MIDI_OUTPUT: &str = "midi.output";
 const MIDI_VOLUME: &str = "midi.volume";
 /// Holds "on" while the MIDI input is on. Missing while it is off, the default.
 const MIDI_INPUT: &str = "midi.input";
+/// Holds the name of the chosen MIDI input. Missing while it is the output's own device, the
+/// default.
+const MIDI_INPUT_DEVICE: &str = "midi.input.device";
 /// Holds how row names show, when not as names.
 const ROW_LABELS: &str = "row.labels";
 /// Holds "on" or "off" for the bar strip under the buttons. Missing until the person chooses,
@@ -305,6 +308,27 @@ impl Store {
         }
         fs::create_dir_all(&self.dir).map_err(folder_error)?;
         fs::write(path, "on").map_err(write_error)
+    }
+
+    /// The name of the chosen MIDI input, or `None` for the output's own device. A device
+    /// setting, not part of any project. The name is kept exactly as the system reported it.
+    pub(crate) fn midi_input_device(&self) -> Option<String> {
+        let name = fs::read_to_string(self.dir.join(MIDI_INPUT_DEVICE)).ok()?;
+        (!name.is_empty()).then_some(name)
+    }
+
+    pub(crate) fn set_midi_input_device(&self, name: Option<&str>) -> Result<(), String> {
+        let path = self.dir.join(MIDI_INPUT_DEVICE);
+        match name {
+            Some(name) if !name.is_empty() => {
+                fs::create_dir_all(&self.dir).map_err(folder_error)?;
+                fs::write(path, name).map_err(write_error)
+            }
+            _ => match fs::remove_file(path) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(delete_error(e)),
+                _ => Ok(()),
+            },
+        }
     }
 
     /// How row names show in the grid. A device setting, not part of any project.
@@ -715,6 +739,25 @@ mod tests {
         fs::write(store.dir.join(MIDI_INPUT), "yes").unwrap();
         assert!(!store.midi_input());
         fs::write(store.dir.join(MIDI_INPUT), " on\n").unwrap();
+        assert!(store.midi_input());
+    }
+
+    #[test]
+    fn the_midi_input_device_is_kept_by_name() {
+        let store = temp_store("midi-input-device");
+        assert_eq!(store.midi_input_device(), None);
+        let name = " Drum Pads 2 ";
+        store.set_midi_input_device(Some(name)).unwrap();
+        assert_eq!(store.midi_input_device().as_deref(), Some(name));
+        // The on/off toggle is a file of its own.
+        assert!(!store.midi_input());
+        store.set_midi_input(true).unwrap();
+        assert_eq!(store.midi_input_device().as_deref(), Some(name));
+        // None is "Same as output", the default, so its file goes.
+        store.set_midi_input_device(None).unwrap();
+        store.set_midi_input_device(None).unwrap();
+        assert!(!store.dir.join(MIDI_INPUT_DEVICE).exists());
+        assert_eq!(store.midi_input_device(), None);
         assert!(store.midi_input());
     }
 

@@ -41,6 +41,10 @@ pub(crate) enum MenuEvent {
         percent: u8,
         keep: bool,
     },
+    /// The MIDI input dialog has just opened: read the list of inputs again.
+    ListMidiInputs,
+    /// Take the drum hits from this MIDI input, or from the output's own device if `None`.
+    MidiInput(Option<String>),
     /// Import grooves, or use the groove list.
     Grooves(GrooveEvent),
 }
@@ -55,6 +59,10 @@ pub(crate) struct MidiView<'a> {
     pub(crate) outputs: &'a [String],
     /// The MIDI output volume in percent.
     pub(crate) volume: u8,
+    /// The chosen input's name, or `None` for the output's own device.
+    pub(crate) input: Option<&'a str>,
+    /// The inputs listed when the input dialog opened.
+    pub(crate) inputs: &'a [String],
 }
 
 /// What the menu and its dialogs need to know to draw themselves.
@@ -92,6 +100,7 @@ enum Shown {
     Tempo,
     Language,
     MidiOutput,
+    MidiInput,
     /// The tab being pasted, and why the last try was refused, if it was.
     PasteTab {
         text: String,
@@ -563,6 +572,24 @@ fn settings_items(
             events.push(MenuEvent::ListMidiOutputs);
             ui.close();
         }
+        // The input the drums played come from: the output's own device unless another is
+        // chosen, so a keyboard needs no second choice.
+        let device = midi.input.map_or_else(
+            || tr!("menu-midi-input-same"),
+            |name| crate::midi::shorten(name, crate::midi::SHORT_NAME),
+        );
+        let text = tr!("menu-midi-input-choice", device = device);
+        let mut response = ui.add(item(icons::PIANO_KEYS, &text));
+        if let Some(name) = midi.input
+            && name.chars().count() > crate::midi::SHORT_NAME
+        {
+            response = response.on_hover_text(name);
+        }
+        if response.clicked() {
+            open(Shown::MidiInput);
+            events.push(MenuEvent::ListMidiInputs);
+            ui.close();
+        }
     }
 }
 
@@ -654,6 +681,15 @@ impl Menu {
                         .midi
                         .as_ref()
                         .is_none_or(|midi| midi_output(ui, midi, &mut events));
+                })
+                .closed
+            }
+            Shown::MidiInput => {
+                widgets::dialog(ctx, "midi-input", &tr!("menu-midi-input"), |ui| {
+                    done = view
+                        .midi
+                        .as_ref()
+                        .is_none_or(|midi| midi_input(ui, midi, &mut events));
                 })
                 .closed
             }
@@ -1309,6 +1345,43 @@ fn midi_output(ui: &mut egui::Ui, midi: &MidiView, events: &mut Vec<MenuEvent>) 
             }
         });
         ui.label(tr!("menu-midi-volume-about"));
+    }
+    done
+}
+
+/// The MIDI input dialog: "Same as output" first, then each input the system reports. A chosen
+/// input that is not there now is listed too, so the choice still shows. A tap chooses and
+/// closes. There is no "None": the MIDI in button turns the input off. Returns true when an
+/// entry was tapped.
+fn midi_input(ui: &mut egui::Ui, midi: &MidiView, events: &mut Vec<MenuEvent>) -> bool {
+    let mut done = false;
+    ui.label(tr!("menu-midi-input-about"));
+    let missing = midi
+        .input
+        .filter(|name| !midi.inputs.iter().any(|i| i == name));
+    let choices = std::iter::once((None, tr!("menu-midi-input-same")))
+        .chain(
+            midi.inputs
+                .iter()
+                .map(|name| (Some(name.as_str()), name.clone())),
+        )
+        .chain(missing.map(|name| {
+            (
+                Some(name),
+                tr!("menu-midi-input-not-connected", device = name),
+            )
+        }));
+    for (choice, text) in choices {
+        let selected = midi.input == choice;
+        if ui
+            .add(crate::toggle(selected, big(&text)).min_size(Vec2::new(ITEM_WIDTH, TAP)))
+            .clicked()
+        {
+            if !selected {
+                events.push(MenuEvent::MidiInput(choice.map(str::to_owned)));
+            }
+            done = true;
+        }
     }
     done
 }
