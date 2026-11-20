@@ -14,6 +14,9 @@
 # The Rust version is the one in rust-toolchain.toml. setup-rust-toolchain reads it, and also
 # caches cargo's build output.
 name: CI
+# A pull request's run is titled "#<number> <title>". A push keeps GitHub's default title, the
+# commit message, because an empty run-name falls back to it.
+run-name: ${{ github.event_name == 'pull_request' && format('#{0} {1}', github.event.pull_request.number, github.event.pull_request.title) || '' }}
 
 on:
   push:

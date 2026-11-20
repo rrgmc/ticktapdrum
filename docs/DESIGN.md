@@ -174,15 +174,15 @@ Deleting a pattern is a separate, explicit command.
 
 #### How the bank is downloaded
 
-The app downloads the same copy karaokemachine uses: an unchanged copy of the author's archive,
-hosted on a release of the public karaokemachine repository. The author replaces the file at its
+The app downloads an unchanged copy of the author's archive, hosted on a release of this
+repository. It is byte for byte the copy karaokemachine uses. The author replaces the file at its
 original SourceForge address with each new version, which would break a pinned digest. The copy
 keeps one version at one address.
 
 | | |
 |---|---|
-| Release | `bank-colombogmgs2-17.11` on `rrgmc/karaokemachine` |
-| URL | `https://github.com/rrgmc/karaokemachine/releases/download/bank-colombogmgs2-17.11/ColomboGMGS2_VANILLA.zip` |
+| Release | `bank-colombogmgs2-17.11` on `rrgmc/ticktapdrum` |
+| URL | `https://github.com/rrgmc/ticktapdrum/releases/download/bank-colombogmgs2-17.11/ColomboGMGS2_VANILLA.zip` |
 | Archive | `ColomboGMGS2_VANILLA.zip`, 237,967,501 bytes |
 | Archive SHA-256 | `5ed5ba3516bcc139d4c9e3854338c892510e8d6f34a40fb2a9b423692eff411a` |
 | Member | `ColomboGMGS2_Vanilla.sf2`, 274,474,922 bytes (261.8 MiB) |
@@ -194,8 +194,8 @@ keeps one version at one address.
   are accepting.
 - With no bank yet, the app shows the download offer and the option to load an `.sf2` instead. It
   makes no sound until one of them is done.
-- The app depends on that release staying in place. A later version may host its
-  own copy, which needs a public repository.
+- The app depends on that release staying in place. Its tag does not start with `v`, so it does
+  not start the release workflow, and it is not marked as the latest release.
 - Risk: 262 MiB is large for a phone. A drums-only extract would be far smaller; CC-BY-SA allows
   it, provided the extract carries the same licence.
 
