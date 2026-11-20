@@ -957,10 +957,15 @@ switches.
   kept. Microsoft ships a Bluetooth LE MIDI transport and a "Windows MIDI Bluetooth Setup" app as
   a preview, separately from the service: the Transports package of "In-box Preview 14" (Transports
   1.0.52-preview.14, Tools 0.99.103-preview.14, November 2026; Windows 11 25H2 or later). A device
-  connected there should appear to every MIDI app like a wired one, so TickTapDrum would need no
-  change. That has not been tried. Otherwise the user needs a cable, or a USB dongle that presents
-  itself as a USB MIDI device. A PC without Windows MIDI Services, where WinRT still has its own
-  Bluetooth path, was not tried either.
+  connected there appears to every MIDI app like a wired one, so TickTapDrum needs no change.
+- **Listened to on Windows over Bluetooth (2026-11-20).** With Preview 14's Tools and Transports
+  installed and the adapter connected in Windows MIDI Bluetooth Setup, the default WinMM build's
+  `ports` example listed the adapter by name. The `engine` example played a beat to it for 20
+  seconds: 120 note-ons, 120 note-offs and 2 program changes. Messages went out a median of
+  0.37 ms after their due time (95th percentile 0.71 ms, worst 0.93 ms), and the user heard the
+  keyboard play. The radio latency after sending was not measured. Without the preview the user
+  needs a cable, or a USB dongle that presents itself as a USB MIDI device. A PC without Windows
+  MIDI Services, where WinRT still has its own Bluetooth path, was not tried.
 - **Not checked:** another program as the output; unplugging and
   replugging a USB device while connected; a port held by another program. On macOS: the "MIDI output" dialog by hand, choosing None or another output, the IAC bus, and the list
   picking up a port added while the app runs. On iOS, only a cable to the keyboard was tried. Linux has not even
