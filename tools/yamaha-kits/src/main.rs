@@ -49,7 +49,10 @@ fn main() -> Result<()> {
         .iter()
         .map(|k| k.keys.iter().filter(|(_, g)| g.is_some()).count())
         .sum();
-    println!("wrote {OUT}: {} kits, {kept} of {keys} keys kept", kits.len());
+    println!(
+        "wrote {OUT}: {} kits, {kept} of {keys} keys kept",
+        kits.len()
+    );
     Ok(())
 }
 
@@ -119,7 +122,10 @@ fn sheet_path(workbook: &str, rels: &str) -> Result<String> {
     let rel = &rels[rel_at..rel_at + rels[rel_at..].find('>').ok_or("bad relationship")?];
     let target_at = rel.find("Target=\"").ok_or("no target")? + 8;
     let target = &rel[target_at..target_at + rel[target_at..].find('"').ok_or("bad target")?];
-    Ok(format!("xl/{}", target.trim_start_matches('/').trim_start_matches("xl/")))
+    Ok(format!(
+        "xl/{}",
+        target.trim_start_matches('/').trim_start_matches("xl/")
+    ))
 }
 
 /// The sheet as rows of cells by column, strings resolved.
@@ -147,7 +153,9 @@ fn rows(xml: &str, strings: &[String]) -> Vec<BTreeMap<usize, String>> {
                 - 1;
             let value = texts(body, "v").first().map(|v| v.to_string());
             let text = if tag.contains("t=\"s\"") {
-                value.and_then(|v| v.parse::<usize>().ok()).and_then(|i| strings.get(i).cloned())
+                value
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .and_then(|i| strings.get(i).cloned())
             } else if let Some(v) = value {
                 Some(unescape(&v))
             } else {
@@ -175,7 +183,9 @@ fn kits(rows: &[BTreeMap<usize, String>]) -> Result<Vec<Kit>> {
     let mut kits: Vec<(usize, Kit)> = Vec::new();
     for (&column, id) in ids {
         let parts: Vec<&str> = id.split('-').collect();
-        let [msb, _lsb, program] = parts[..] else { continue };
+        let [msb, _lsb, program] = parts[..] else {
+            continue;
+        };
         let (Ok(msb), Ok(program)) = (msb.parse::<u8>(), program.parse::<u8>()) else {
             continue;
         };
@@ -253,7 +263,11 @@ fn by_name(key: u8, sound: &str) -> Option<u8> {
             .split(|c: char| !c.is_ascii_digit())
             .filter(|d| d.len() == 2)
             .find_map(|d| d.parse::<u8>().ok());
-        return Some(if open.is_some_and(|o| o >= 50) { 46 } else { 42 });
+        return Some(if open.is_some_and(|o| o >= 50) {
+            46
+        } else {
+            42
+        });
     }
     if has(&["kick", "bass drum", "bassdrum", " bd "]) {
         return Some(36);
@@ -315,8 +329,18 @@ fn by_name(key: u8, sound: &str) -> Option<u8> {
     // Clicks, loops, glitches, noises and effects have no row. Any other sound on a General
     // MIDI key keeps it.
     let effect = has(&[
-        "click", "loop", "glitch", "noise", "reverse", "impact", "fx", "scratch", "metronome",
-        "count", " vo ", "voice",
+        "click",
+        "loop",
+        "glitch",
+        "noise",
+        "reverse",
+        "impact",
+        "fx",
+        "scratch",
+        "metronome",
+        "count",
+        " vo ",
+        "voice",
     ]);
     ((35..=81).contains(&key) && !effect).then_some(key)
 }
