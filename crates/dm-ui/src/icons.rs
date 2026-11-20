@@ -51,6 +51,8 @@ pub(crate) const METRONOME: &str = "\u{EC8E}";
 pub(crate) const MINUS: &str = "\u{E32A}";
 pub(crate) const MUSIC_NOTES: &str = "\u{E340}";
 pub(crate) const MUSIC_NOTES_PLUS: &str = "\u{EB7C}";
+/// Piano keys: the drums go to a MIDI output.
+pub(crate) const PIANO_KEYS: &str = "\u{E9C8}";
 pub(crate) const PENCIL_SIMPLE: &str = "\u{E3B4}";
 pub(crate) const PLAY: &str = "\u{E3D0}";
 pub(crate) const PLAYLIST: &str = "\u{E6AA}";

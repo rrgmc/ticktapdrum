@@ -838,6 +838,9 @@ switches.
 - **The internal sound follows the choice.** With an output chosen, the app's own synthesizer is
   silent, so the drums are not heard twice. With "None" it plays again. There is no separate
   switch.
+- **Play shows where the drums go.** While the chosen output is connected, a small blue badge with
+  piano keys sits in the corner of the Play button, and its hover text names the output. It takes
+  no room in the strip.
 - **The choice is remembered by name.** On the next start, or when the device is plugged in
   again, the app reconnects to it with no action from the user.
 - **Play sends the steps to that output** as note-on and note-off messages on channel 10, with
@@ -1375,28 +1378,134 @@ for the grid.
   it. A song plays from its start, so it is offered only for a pattern.
 - **The window's title names the project** once it has one: "Name - TickTapDrum".
 
-## Export as a keyboard style (proposed)
+## Export as a keyboard style
 
-Not started; a proposal from research, partly tried on a keyboard. Arranger keyboards play a "style": a drum and band backing
-with several sections (main variations, fills, intros, endings) that follows the player's chords.
-A beat made in the app could become the drum part of such a style.
+Built; "What the build found" below says what was checked. Arranger keyboards play a "style": a drum and band backing with several
+sections (main variations, fills, intros, endings) that follows the player's chords. A beat made
+in the app can become the drum part of such a style.
 [`research/arranger-style-export.md`](research/arranger-style-export.md) has the findings.
+
+### What is known
 
 - **Yamaha first** (PSR-SX720 and similar). A Yamaha style is a format-0 MIDI file with markers
   for its sections. A drum-only style needs none of the extra data blocks, so the existing MIDI
   export does most of the work.
-- **Korg Pa later, if asked for.** Korg keyboards import a MIDI file separated by markers into a
-  style, so the same writer could serve both with different marker names.
-- **Roland and Casio are left out:** no open format or import route was found.
-- **The ☰ menu's Export would offer "Export style"** with a choice of keyboard brand. Its dialog
-  shows which pattern becomes each section, lets the person change it, and says what is missing.
 - **The SX720 accepts a drum-only style** (checked 2026-11-20). Two test files, one marked SFF1 and
   one SFF2, with no CASM block, loaded from the User list and played.
 - **A style can be sent straight to the keyboard over MIDI,** into its User drive, using Yamaha's
-  file transfer messages. This worked over Bluetooth MIDI. The research note lists the messages.
-  Whether the app offers this beside saving a file is not decided.
-- **Before the export is designed,** find the SX720's drum kit numbers and try a fuller style with
-  all its sections.
+  file transfer messages. This worked over Bluetooth MIDI. The research note lists the messages,
+  and the example program `style_send` in `dm-midi` sends them.
+- **Korg Pa later, if asked for.** Korg keyboards import a MIDI file separated by markers into a
+  style, so the same writer could serve both with different marker names.
+- **Roland and Casio are left out:** no open format or import route was found.
+
+### Two choices in the Export dialog
+
+The ☰ menu's Export dialog keeps MIDI file and WAV recording, then shows a small heading, "For a
+keyboard", with two more buttons. Each has a line under it, as the others do.
+
+| Button | Line under it |
+|---|---|
+| **Keyboard style** | A style for a Yamaha arranger keyboard, such as the PSR-SX720. Copy it to a USB stick and choose it under User. |
+| **Send to keyboard** | Puts the style straight into the keyboard's User styles, through the MIDI output. |
+
+- **The buttons name no brand;** the lines under them do. If Korg is added, the buttons stay and
+  the dialog gains a choice of brand.
+- **The app already says "style" for its ready-made beats** ("Load default style"), so these
+  buttons always say "Keyboard style", never "Style" alone.
+
+### Choosing the sections
+
+Both buttons open the same step first: a list of the style's sections, each with a pattern picker
+that also offers "None". This is an export, so asking is fine, unlike imports.
+
+- **The sections:** Intro, Main A to D each with its fill, Break and Ending. They use Yamaha's
+  Intro A, Fill In AA to DD and Ending A; the other intros and endings are left out.
+- **The app fills the list in from the song.** Patterns in song order become Main A, B, C and D. A
+  one-bar pattern that follows a main in the song becomes that main's fill. Without a song, the
+  patterns' own order is used.
+- **Fills and the Break are one bar,** so their pickers offer only one-bar patterns.
+- **A main with no fill uses its own last bar as its fill.** Some keyboards play the Ending where
+  a fill is missing, which would surprise the player.
+- **Main A is required.** Without it the button that finishes is greyed out, and a line says why.
+- **What goes into the style:** the project's name as the style's name, the tempo as its tempo,
+  and the kit as Yamaha's drum kit bank and program. Mute, solo, row volume and swing apply to the
+  notes, as in the MIDI export. Drums go on channel 10, the main rhythm part, at 1920 ticks per
+  beat, marked SFF1 (the SX720 played both SFF1 and SFF2).
+
+### Keyboard style: a file
+
+- It writes `<project name>.sty` wherever the other exports go: the system's save dialog on a
+  desktop, the picker on Android, the exports folder on iOS.
+- It works on every platform.
+
+### Send to keyboard: straight over MIDI
+
+- **It uses the MIDI output chosen in Settings.** There is no new setting. With no output chosen,
+  the button is greyed out, with the line "Choose the keyboard under Settings, MIDI output
+  first."
+- **The app also listens to that device,** because the keyboard answers each message. `dm-midi`
+  opens the input with the same name as the output; the Bluetooth adapter tried had one name for
+  both.
+- **The transfer runs on the MIDI thread,** which owns the output connection; Windows lets only
+  one connection hold a port. Playback stops first. A progress bar shows while it runs; the test
+  style took a second or two over Bluetooth.
+- **A style with the same name on the keyboard is replaced,** so sending again after an edit
+  updates it instead of filling the User list with copies. The app lists the `STYLE` folder,
+  deletes the old file, checks that it is gone, then writes the new one.
+- **When it ends**, one line says what happened:
+  - "Saved on the keyboard as <name>. Choose it under Style, User."
+  - "The keyboard did not answer. Sending works with Yamaha PSR-SX and Genos keyboards." This also
+    covers a keyboard that answers as another model.
+- **Desktop and iOS only.** The button does not show on Android, which has no MIDI out yet.
+
+### Room for other keyboards
+
+Only Yamaha is offered now, but the export is built so that another brand, such as Korg, can be
+added without changing what is already there.
+
+- **`dm-project` has a `KeyboardKind`.** Each kind says which sections its styles have, which of
+  them must be one bar, its file extension, and how to write the file. The sections, the app's
+  suggestion and the checks are shared by every kind. The Yamaha writer is in its own file.
+- **`dm-midi` takes a target for Send to keyboard.** Each brand's transfer messages live in a
+  module of their own; noticing a keyboard that is switched off is shared.
+- **The interface names no brand on its buttons.** The line under each button names the brand.
+  With more than one kind, the section step gains a choice of brand at the top.
+
+### What the build found
+
+Checked on 2026-11-20 on Windows, with a PSR-SX720 behind a Bluetooth MIDI adapter.
+
+- **How it is built.** `dm-project` has `KeyboardKind`, `Section` and `StyleSections` in
+  `style.rs`, and the Yamaha writer in `style_yamaha.rs`. `dm-midi` has the transfer in
+  `transfer/` (the Yamaha session in `transfer/yamaha.rs`) and the switch-off check in
+  `liveness.rs`. `dm-ui` has the section step in `keyboard.rs`. The `style_send` example uses the
+  library; its `probe` command lists the keyboard's files, and `watch` prints the MIDI status, for
+  testing a switch-off.
+- **The writer** gives, for the same beat, exactly the bytes of the file the SX720 played; a test
+  holds it to that.
+- **Keyboard style** saved a valid `.sty` file through the save dialog. The dialogs and the
+  pattern pickers were looked at on screen.
+- **Send to keyboard** put "Minha batida.sty" into the keyboard's User drive in about two
+  seconds, with the progress bar and the result line. Sending a file twice left one copy, so the
+  delete message works.
+- **A keyboard switched off is noticed.** Windows keeps a switched-off Bluetooth MIDI device
+  listed, and sends to it seem to work, for about 30 seconds. Then it vanishes for a moment and
+  returns, and the old connections stay dead. The port list alone therefore missed it. The app
+  now listens to the input of the same name: a device that sends Active Sensing (the SX720 sends
+  about 5 a second) and stops for a second counts as gone. The input is reopened each second until
+  Active Sensing returns; then the output reopens. Switching the keyboard off and on with the app
+  running made it drop the output and reconnect on its own. How quickly it noticed was not timed.
+- **A badge on Play** shows while the drums go to a MIDI output.
+
+Not checked:
+
+- **USB.** Only Bluetooth MIDI was tried.
+- **The SX720's drum kit numbers.** The XG numbers (bank MSB 127, the kit as the program) are
+  used. Nobody has listened to each kit of the app's short list on the keyboard.
+- **A style with no Intro or Ending:** what the keyboard does when those buttons are pressed.
+- **Phone screens.** The section step's pickers are small for a finger.
+- **iOS and macOS,** and the Send to keyboard failure messages on real hardware.
 
 ## Open questions
 

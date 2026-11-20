@@ -17,18 +17,22 @@
 //! tap on a step goes through ([`Project::set_step_levels`], [`next_level`]): on and off; on,
 //! soft and off; or on, loud, soft and off.
 //!
-//! [`to_midi`] writes the song as a Standard MIDI File for other music software, and
-//! [`presets`] with [`preset_project`] give beginners ready-made beats to start from.
+//! [`to_midi`] writes the song as a Standard MIDI File for other music software, and a
+//! [`KeyboardKind`] writes the patterns as the drum part of an arranger keyboard's style, with
+//! the sections chosen in [`StyleSections`]. [`presets`] with [`preset_project`] give beginners ready-made
+//! beats to start from.
 
 mod file;
 mod import;
 mod midi;
 mod presets;
+mod style;
 
 pub use file::{FILE_EXTENSION, FILE_FORMAT, InvalidReason, LoadError, from_json, to_json};
 pub use import::{BarHit, Imported, repeat_unit};
 pub use midi::{MIDI_EXTENSION, TICKS_PER_QUARTER, TICKS_PER_STEP, to_midi};
 pub use presets::{Preset, preset_project, presets};
+pub use style::{KeyboardKind, Section, StyleProblem, StyleSections};
 
 /// Steps in one bar: four beats of four steps.
 pub const STEPS_PER_BAR: usize = 16;

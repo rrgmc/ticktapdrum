@@ -6,6 +6,9 @@ strip-play = Play
 # Play while in song mode: plays the whole song rather than one pattern.
 strip-play-song = Play song
 strip-stop = Stop
+# Hover text on Play while the drums go to a MIDI output instead of this device's speakers.
+# $device is the output's name, as the system reports it.
+strip-midi-tip = The drums play on { $device }.
 strip-patterns = Patterns
 strip-tempo-tip = Tempo and swing
 strip-undo = Undo

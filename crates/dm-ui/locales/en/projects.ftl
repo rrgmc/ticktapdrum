@@ -27,6 +27,9 @@ projects-midi-saved = Saved the MIDI file to { $place }.
 projects-midi-failed = The MIDI file was not saved: { $reason }
 projects-wav-saved = Saved the recording to { $place }.
 projects-wav-failed = The recording was not saved: { $reason }
+projects-style-saved = Saved the keyboard style to { $place }.
+# $reason is a keyboard-problem message or the system's reason the file could not be written.
+projects-style-failed = The keyboard style was not saved: { $reason }
 # An exported file's name, then where a phone keeps exports, such as "the Files app, under On My
 # iPhone, …".
 projects-saved-where = { $file } in { $place }
@@ -40,3 +43,13 @@ projects-export-stopped = the recording stopped unexpectedly.
 projects-file-kind-project = TickTapDrum project
 projects-file-kind-midi = MIDI file
 projects-file-kind-wav = WAV recording
+projects-file-kind-style = Keyboard style
+
+# A style sent to the keyboard over MIDI. $name is the file name on the keyboard.
+projects-style-sent = Saved on the keyboard as { $name }. Choose it under Style, User.
+projects-style-send-no-answer = The keyboard did not answer. Sending works with Yamaha PSR-SX and Genos keyboards.
+projects-style-send-not-connected = The style was not sent: the keyboard is not connected any more.
+projects-style-send-no-input = The style was not sent: the app cannot hear the keyboard's answers on this MIDI output.
+projects-style-send-refused = The keyboard refused the style. Try again, or save it as a file and copy it with a USB stick.
+# $reason says what is wrong with the chosen sections.
+projects-style-send-failed = The style was not sent: { $reason }
