@@ -9,6 +9,22 @@ move into this file when a version is released.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-20
+
+### Added
+
+- Rename in the pattern pop-up, to choose a pattern's letter.
+
+### Changed
+
+- The kits are shown as a list, one per line, with a few words on each.
+- A thin line at the bottom of the pattern shows where the grid is.
+- In song mode, "Play song" is shortened to "Play" so the strip's words fit.
+
+### Fixed
+
+- Each MIDI out hit now ends with its own note-off, 100 ms after it starts.
+
 ## [1.1.0] - 2026-11-20
 
 ### Added
@@ -52,7 +68,8 @@ move into this file when a version is released.
   export, MIDI out on desktops and iOS, pictures for the drums, and English and Brazilian
   Portuguese.
 
-[Unreleased]: https://github.com/rrgmc/ticktapdrum/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/rrgmc/ticktapdrum/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.0.0-rc.1...v1.0.0
 [1.0.0-rc.1]: https://github.com/rrgmc/ticktapdrum/releases/tag/v1.0.0-rc.1
