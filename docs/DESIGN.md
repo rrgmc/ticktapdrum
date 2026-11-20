@@ -1591,11 +1591,12 @@ Checked on 2026-11-20 on Windows.
   teclado toca isto com RealDrumKit." with "Usar Standard 1"; the tap chose Standard 1 and Undo
   went back to Power 1. With Standard already chosen, no notice showed.
 
+- **By ear, they match.** The author compared imported grooves, played in the app, with the
+  SX720 playing the same styles and sections, and found the drums in the same places. The hi-hat
+  threshold (25 closed, 50 open) and the snare choices stand.
+
 Not checked:
 
-- **How the grooves sound.** Nobody has listened to an imported section next to the keyboard
-  playing the same style, so the hi-hat threshold (25 closed, 50 open) and the snare choices are
-  unconfirmed.
 - **Android and iOS:** opening a style there, sharing one to the app, and a link to one.
 - **Styles from other Yamaha models,** whose kits are not in the table yet.
 
