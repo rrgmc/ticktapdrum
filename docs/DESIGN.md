@@ -129,7 +129,9 @@ Deleting a pattern is a separate, explicit command.
   - **Pictures and names**: a picture with the name, the name under it on a tall row and beside
     it on a short one. With the name under the picture, the column is as wide as the longest
     name on one line needs, between 64 and 112 points, so short names leave more room for the
-    steps. With the name beside the picture it is 112 points.
+    steps. With the name beside the picture it is 112 points. With names alone the column also
+    fits the longest name, from 96 points up to a quarter of the grid's width, so a desktop
+    window shows whole names and a phone keeps room for its steps.
   - **Pictures**: a larger picture alone. The column of names narrows from 96 to 60 points, so
     the steps get the room.
   - With either picture choice, the drum list shows each drum's picture beside its name.

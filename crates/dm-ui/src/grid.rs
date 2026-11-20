@@ -12,8 +12,12 @@ use dm_project::{
 };
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
-/// The width of the column of row names, with names showing.
+/// The least width of the column of row names, with names showing.
 const LABEL_WIDTH: f32 = 96.0;
+/// The size of a name with names showing.
+const NAME_SIZE: f32 = 16.0;
+/// The most of the grid's width the column of names takes, so a phone keeps room for the steps.
+const MAX_LABEL_SHARE: f32 = 0.25;
 /// The same with pictures alone, which need less room and leave more for the steps.
 const PICTURE_LABEL_WIDTH: f32 = 60.0;
 /// The same with a picture and its name beside it, on a short row: wide enough for long names
@@ -31,35 +35,42 @@ const BADGE_ROOM: f32 = 14.0;
 /// The size of a name beside or under its picture.
 const PICTURE_NAME_SIZE: f32 = 12.0;
 
-/// The width of the column of row names for this way of labelling `project`'s rows, on rows
-/// `row_height` points tall (see [`row_height`]). With the name under the picture, the column
-/// is as wide as the longest name on one line needs, with room for a badge, so short names
-/// leave more room for the steps.
+/// The width of the column of row names for this way of labelling `project`'s rows, in a grid
+/// `width` points wide with rows `row_height` points tall (see [`row_height`]).
+///
+/// The column is as wide as the longest name on one line needs, with room for a badge, within
+/// limits: with names alone, from 96 points up to a quarter of the grid, so a wide window shows
+/// whole names and a phone keeps its steps; with the name under the picture, from 64 to 112
+/// points. With the name beside the picture it is 112 points, and pictures alone take 60.
 pub(crate) fn label_width(
     ctx: &egui::Context,
     project: &Project,
     labels: RowLabels,
+    width: f32,
     row_height: f32,
 ) -> f32 {
+    let widest = |size: f32| {
+        let font = FontId::proportional(size);
+        project
+            .rows()
+            .iter()
+            .map(|info| {
+                let name = crate::drums::row_name(&info.name, info.key);
+                ctx.fonts_mut(|f| f.layout_no_wrap(name, font.clone(), Color32::WHITE))
+                    .size()
+                    .x
+            })
+            .fold(0.0, f32::max)
+    };
     match labels {
         RowLabels::Pictures => PICTURE_LABEL_WIDTH,
         RowLabels::PicturesAndNames if row_height >= NAME_UNDER_ROW => {
-            let font = FontId::proportional(PICTURE_NAME_SIZE);
-            let widest = project
-                .rows()
-                .iter()
-                .map(|info| {
-                    let name = crate::drums::row_name(&info.name, info.key);
-                    ctx.fonts_mut(|f| f.layout_no_wrap(name, font.clone(), Color32::WHITE))
-                        .size()
-                        .x
-                })
-                .fold(0.0, f32::max);
-            (widest + 6.0 + BADGE_ROOM + 4.0)
+            (widest(PICTURE_NAME_SIZE) + 6.0 + BADGE_ROOM + 4.0)
                 .clamp(PICTURE_NAME_MIN_WIDTH, PICTURE_NAME_LABEL_WIDTH)
         }
         RowLabels::PicturesAndNames => PICTURE_NAME_LABEL_WIDTH,
-        RowLabels::Names => LABEL_WIDTH,
+        RowLabels::Names => (widest(NAME_SIZE) + 18.0 + BADGE_ROOM + 4.0)
+            .clamp(LABEL_WIDTH, (width * MAX_LABEL_SHARE).max(LABEL_WIDTH)),
     }
 }
 
@@ -201,6 +212,7 @@ impl Grid {
             ui.ctx(),
             project,
             self.row_labels,
+            area.width(),
             row_height(area.height(), rows),
         );
         let header = Rect::from_min_max(
@@ -494,7 +506,11 @@ fn draw_label(
                 Vec2::new(4.0, rect.height() - 2.0 * inset),
             );
             painter.rect_filled(stripe, CornerRadius::same(2), colour);
-            let galley = fitted(16.0, rect.width() - 18.0 - badge_room, rect.height() - 4.0);
+            let galley = fitted(
+                NAME_SIZE,
+                rect.width() - 18.0 - badge_room,
+                rect.height() - 4.0,
+            );
             let top = rect.center().y - galley.size().y / 2.0;
             painter.galley(Pos2::new(rect.left() + 14.0, top), galley, text);
         }
