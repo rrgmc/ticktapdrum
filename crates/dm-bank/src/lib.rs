@@ -42,11 +42,11 @@ pub struct BankInfo {
     pub license: &'static str,
 }
 
-/// ColomboGMGS2 Vanilla 17.11, the bank karaokemachine recommends, from its pinned copy.
+/// ColomboGMGS2 Vanilla 17.11, the bank karaokemachine recommends, from the copy on this repository's release.
 pub const COLOMBO: BankInfo = BankInfo {
     id: "colombogmgs2-17.11",
     name: "ColomboGMGS2 Vanilla 17.11",
-    url: "https://github.com/rrgmc/karaokemachine/releases/download/bank-colombogmgs2-17.11/ColomboGMGS2_VANILLA.zip",
+    url: "https://github.com/rrgmc/ticktapdrum/releases/download/bank-colombogmgs2-17.11/ColomboGMGS2_VANILLA.zip",
     archive_bytes: 237_967_501,
     archive_sha256: "5ed5ba3516bcc139d4c9e3854338c892510e8d6f34a40fb2a9b423692eff411a",
     member: "ColomboGMGS2_Vanilla.sf2",
