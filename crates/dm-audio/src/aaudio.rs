@@ -204,6 +204,8 @@ fn try_open(
     let (commands, mut renderer) = Renderer::new(soundfont, sample_rate)?;
     let status = Arc::clone(&renderer.status);
     let midi_events = renderer.take_midi_events();
+    let live_hits = renderer.take_live_hits();
+    let heard_hits = renderer.take_heard_hits();
     handoff
         .push(Handoff {
             renderer,
@@ -237,6 +239,8 @@ fn try_open(
         channels,
         buffer_frames,
         midi_events,
+        live_hits,
+        heard_hits,
     })
 }
 

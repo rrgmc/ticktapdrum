@@ -96,12 +96,32 @@
 //! or by [`Engine::flush`], so a pattern change is delayed but never lost. Because the order is
 //! kept, a [`Engine::play_song`] sent after [`Engine::set_song`] always plays the new song.
 //!
+//! # MIDI in
+//!
+//! Hits from a MIDI input travel through two more lock-free queues of [`LIVE_QUEUE_CAPACITY`]
+//! entries each. The MIDI input's thread pushes [`LiveHit`]s into the first, whose sending end
+//! [`Engine::take_live_hits`] hands out. The audio callback empties it at every block, after the
+//! commands. It plays each hit as [`Engine::hit`] would, with its note-off and its MIDI out
+//! message, but at the velocity scaled by the gain of the first row with the hit's key, so a
+//! muted row stays silent. A hit whose `sound` is false is not played.
+//!
+//! Every hit, played or not, goes back to the interface through the second queue as a
+//! [`HeardHit`], which [`Engine::take_heard_hits`] collects. It carries the position the player
+//! was hearing when they hit. The callback works it out from the hit's time: the first frame of
+//! its buffer is heard one output latency after the callback starts, the same relation MIDI out
+//! uses, which gives the frame heard at the hit's time. The step history then gives the step
+//! whose straight grid time is the newest at or before that frame. The position counts in
+//! straight time, as if there were no swing, so the interface can snap to the swung grid itself.
+//! A hit from before the history, or from when the project was not playing, has no position.
+//!
 //! # Row gain
 //!
 //! Each row has a gain from 0.0 to 1.0, set with [`Engine::set_row_gain`] and 1.0 by default. A
 //! sequenced note of the row plays at velocity `round(velocity * gain)`, and a result of 0 is not
 //! played at all. That is how mute works: the interface sends gain 0 for a muted row, and works
 //! out solo itself. Gain does not apply to [`Engine::hit`]; the interface scales previews itself.
+//! It does apply to hits from the MIDI input (see "MIDI in" below), through the first row with
+//! the hit's key.
 //!
 //! The gain scales the velocity linearly, with no extra curve, because the synthesizer already
 //! applies one. Its default SoundFont modulator turns velocity into attenuation along the SF2
@@ -246,8 +266,9 @@ const NO_PLAYHEAD: u64 = u64::MAX;
 /// Marks "not playing the song" in the song index field of the playhead atomic.
 const NO_SONG_INDEX: u64 = 0xFFFF;
 
-/// How many recent step starts the renderer keeps to look back over the output latency. At the
-/// fastest tempo and 48 kHz this reaches back about 0.8 s, far more than any output latency.
+/// How many recent step starts the renderer keeps to look back over the output latency, and for
+/// placing hits from the MIDI input. At the fastest tempo and 48 kHz this reaches back about
+/// 0.8 s, far more than any output latency.
 const HISTORY: usize = 32;
 
 /// The longest output latency the renderer believes from the stream timestamps.
@@ -748,12 +769,25 @@ fn frames_per_step(sample_rate: f64, bpm: f32) -> f64 {
     sample_rate * 60.0 / (f64::from(bpm.clamp(MIN_BPM, MAX_BPM)) * STEPS_PER_BEAT)
 }
 
+/// One recent step start, or the frame where play stopped.
+#[derive(Debug, Clone, Copy)]
+struct StepStart {
+    /// The first frame of the block the step fired in, or the frame where play stopped.
+    frame: u64,
+    /// The step's straight grid time in frames, without swing. Where play stopped, `frame`.
+    grid: f64,
+    /// The length of a step in frames when the step fired.
+    frames_per_step: f64,
+    /// The position that started, or `None` where play stopped or a preview step started.
+    position: Option<Playhead>,
+}
+
 /// The frames at which recent steps started, newest last, for looking back over the output
 /// latency.
 #[derive(Debug, Clone)]
 struct StepHistory {
-    /// `(frame, position)` pairs in a ring; the position is `None` where play stopped.
-    entries: [(u64, Option<Playhead>); HISTORY],
+    /// The step starts in a ring.
+    entries: [StepStart; HISTORY],
     /// The index of the newest entry.
     newest: usize,
 }
@@ -761,23 +795,41 @@ struct StepHistory {
 impl StepHistory {
     fn new() -> Self {
         StepHistory {
-            entries: [(0, None); HISTORY],
+            entries: [StepStart {
+                frame: 0,
+                grid: 0.0,
+                frames_per_step: 1.0,
+                position: None,
+            }; HISTORY],
             newest: 0,
         }
     }
 
-    fn record(&mut self, frame: u64, position: Option<Playhead>) {
+    fn record(&mut self, start: StepStart) {
         self.newest = (self.newest + 1) % HISTORY;
-        self.entries[self.newest] = (frame, position);
+        self.entries[self.newest] = start;
+    }
+
+    /// The entries, newest first.
+    fn newest_first(&self) -> impl Iterator<Item = &StepStart> {
+        (0..HISTORY).map(|back| &self.entries[(self.newest + HISTORY - back) % HISTORY])
     }
 
     /// The position sounding at `frame`: the newest one that started at or before it. `None` if
     /// play was stopped then, or if `frame` is older than the whole history.
     fn at(&self, frame: u64) -> Option<Playhead> {
-        (0..HISTORY)
-            .map(|back| self.entries[(self.newest + HISTORY - back) % HISTORY])
-            .find(|&(start, _)| start <= frame)
-            .and_then(|(_, position)| position)
+        self.newest_first()
+            .find(|start| start.frame <= frame)
+            .and_then(|start| start.position)
+    }
+
+    /// The position at `frame` in straight time: the newest step whose grid time is at or before
+    /// `frame`, and how many steps have passed since that grid time. `None` if play was stopped
+    /// then, or if `frame` is older than the whole history.
+    fn straight_at(&self, frame: f64) -> Option<(Playhead, f64)> {
+        let start = self.newest_first().find(|start| start.grid <= frame)?;
+        let position = start.position?;
+        Some((position, (frame - start.grid) / start.frames_per_step))
     }
 }
 
@@ -864,6 +916,47 @@ impl Sequencer {
     /// Whether the preview plays.
     fn plays_preview(&self) -> bool {
         self.clock.playing && self.mode == Mode::Preview
+    }
+
+    /// The velocity a live hit on `key` plays at: scaled by the gain of the first row with that
+    /// key, as a sequenced note of that row would be, or as it is if no row has the key. Zero
+    /// means the hit is not played.
+    fn live_velocity(&self, key: u8, velocity: u8) -> u8 {
+        match self.keys.iter().position(|&row_key| row_key == key) {
+            Some(row) => scaled_velocity(velocity, self.gains[row]),
+            None => velocity,
+        }
+    }
+
+    /// Where the project was at `frame`, in straight time, or `None` if it was not playing then
+    /// (stopped, or the preview played) or `frame` is older than the step history.
+    ///
+    /// The step is the newest one whose straight grid time is at or before `frame`, plus the
+    /// steps since that grid time. The next step counts too, before it fires: with swing, an odd
+    /// step fires after its grid time, and a hit may come from a little after the newest step
+    /// known. A result at or past the pattern's length wraps to its start.
+    fn heard_position(&self, frame: f64) -> Option<HeardPosition> {
+        let pending = if self.plays_project() {
+            self.next_position()
+                .map(|position| (position, self.clock.next_grid_frame()))
+                .filter(|&(_, grid)| grid <= frame)
+        } else {
+            None
+        };
+        let (position, steps) = match pending {
+            Some((position, grid)) => (position, (frame - grid) / self.clock.frames_per_step),
+            None => self.history.straight_at(frame)?,
+        };
+        let length = *self.lengths.get(position.pattern)? as f64;
+        let mut step = position.step as f64 + steps;
+        if step >= length {
+            step %= length;
+        }
+        Some(HeardPosition {
+            pattern: position.pattern,
+            song_index: position.song_index,
+            step,
+        })
     }
 
     /// Applies a sequencer command at frame `now`. Other commands are ignored.
@@ -1022,7 +1115,12 @@ impl Sequencer {
         self.first = None;
         self.last = None;
         self.cue = None;
-        self.history.record(frame, None);
+        self.history.record(StepStart {
+            frame,
+            grid: frame as f64,
+            frames_per_step: self.clock.frames_per_step,
+            position: None,
+        });
     }
 
     /// The position of the next step, or `None` if a song that does not loop has ended.
@@ -1110,9 +1208,15 @@ impl Sequencer {
             if self.cue == Some(position.pattern) {
                 self.cue = None;
             }
+            let mut step_start = StepStart {
+                frame: start,
+                grid: self.clock.next_grid_frame(),
+                frames_per_step: self.clock.frames_per_step,
+                position: None,
+            };
             self.clock.tick();
             if self.mode == Mode::Preview {
-                self.history.record(start, None);
+                self.history.record(step_start);
                 on_step(position);
                 for (key, &velocity) in self.preview[position.step].iter().enumerate() {
                     if velocity > 0 {
@@ -1121,7 +1225,8 @@ impl Sequencer {
                 }
                 continue;
             }
-            self.history.record(start, Some(position));
+            step_start.position = Some(position);
+            self.history.record(step_start);
             on_step(position);
             let steps = &self.patterns[position.pattern];
             for ((key, gain), row) in self.keys.iter().zip(&self.gains).zip(steps.iter()) {
@@ -1195,6 +1300,18 @@ pub(crate) struct Renderer {
     /// How many frames of the current `render` call's buffer were written before the current
     /// block.
     block_offset: usize,
+    /// The frame the current `render` call outputs first. The listener hears it one output
+    /// latency after `callback_now`.
+    call_start: u64,
+    /// The receiving end of the live hit queue.
+    live: rtrb::Consumer<LiveHit>,
+    /// The sending end of the live hit queue, until [`Renderer::take_live_hits`] hands it out.
+    live_hits: Option<LiveHits>,
+    /// The sending end of the heard hit queue.
+    heard: rtrb::Producer<HeardHit>,
+    /// The receiving end of the heard hit queue, until [`Renderer::take_heard_hits`] hands it
+    /// out.
+    heard_hits: Option<rtrb::Consumer<HeardHit>>,
 }
 
 impl Renderer {
@@ -1211,6 +1328,8 @@ impl Renderer {
         let block = synth.get_block_size();
         let (commands, consumer) = command_queue();
         let (midi, midi_events) = rtrb::RingBuffer::new(MIDI_QUEUE_CAPACITY);
+        let (live_hits, live) = rtrb::RingBuffer::new(LIVE_QUEUE_CAPACITY);
+        let (heard, heard_hits) = rtrb::RingBuffer::new(LIVE_QUEUE_CAPACITY);
         let renderer = Renderer {
             synth,
             consumer,
@@ -1240,6 +1359,11 @@ impl Renderer {
             midi_volume: DEFAULT_MIDI_VOLUME,
             callback_now: None,
             block_offset: 0,
+            call_start: 0,
+            live,
+            live_hits: Some(live_hits),
+            heard,
+            heard_hits: Some(heard_hits),
         };
         Ok((commands, renderer))
     }
@@ -1248,6 +1372,18 @@ impl Renderer {
     /// return `None`. The output takes it before the renderer moves to the audio thread.
     fn take_midi_events(&mut self) -> Option<MidiEvents> {
         self.midi_events.take()
+    }
+
+    /// Hands out the sending end of the live hit queue. The first call returns it; later calls
+    /// return `None`. The output takes it before the renderer moves to the audio thread.
+    fn take_live_hits(&mut self) -> Option<LiveHits> {
+        self.live_hits.take()
+    }
+
+    /// Hands out the receiving end of the heard hit queue. The first call returns it; later
+    /// calls return `None`. The output takes it before the renderer moves to the audio thread.
+    fn take_heard_hits(&mut self) -> Option<rtrb::Consumer<HeardHit>> {
+        self.heard_hits.take()
     }
 
     /// Sets the output latency used for the playhead.
@@ -1268,6 +1404,7 @@ impl Renderer {
         }
         let block = self.left.len();
         self.callback_now = None;
+        self.call_start = self.clock - (block - self.read) as u64;
         for (written, frame) in out.chunks_mut(channels).enumerate() {
             if self.read == block {
                 self.block_offset = written;
@@ -1314,12 +1451,14 @@ impl Renderer {
             .store(self.transport, Ordering::Release);
     }
 
-    /// Applies the queued commands, the due steps and the due note-offs, then renders one block.
+    /// Applies the queued commands, the live hits, the due steps and the due note-offs, then
+    /// renders one block.
     fn render_block(&mut self) {
         let now = self.clock;
         while let Ok(command) = self.consumer.pop() {
             self.apply(command);
         }
+        self.play_live_hits();
         let block = self.left.len() as u64;
         let at = self.midi_out.then(|| self.block_time());
         let Renderer {
@@ -1374,6 +1513,44 @@ impl Renderer {
         }
         self.read = 0;
         self.clock += block;
+    }
+
+    /// Plays the queued live hits now, as [`Engine::hit`] would but scaled by their row's gain,
+    /// and reports each one, played or not, to the heard hit queue. A report that does not fit
+    /// is dropped.
+    fn play_live_hits(&mut self) {
+        while let Ok(hit) = self.live.pop() {
+            let key = hit.key.min(127);
+            if hit.sound {
+                let velocity = self
+                    .sequencer
+                    .live_velocity(key, hit.velocity.clamp(1, 127));
+                if velocity > 0 {
+                    self.note_on(key, velocity);
+                }
+            }
+            let frame = self.heard_frame(hit.at);
+            let heard = HeardHit {
+                key: hit.key,
+                velocity: hit.velocity,
+                position: self.sequencer.heard_position(frame),
+            };
+            // A full queue means nothing reads the reports; the hit has played anyway.
+            let _ = self.heard.push(heard);
+        }
+    }
+
+    /// The frame the listener heard at `at`. The frame `call_start` is heard one output latency
+    /// after `callback_now`, the start of the current `render` call, and frames are heard at the
+    /// sample rate, so the frame heard at `at` is `call_start - latency` plus the frames between
+    /// `callback_now` and `at`. It may lie before frame 0.
+    fn heard_frame(&mut self, at: Instant) -> f64 {
+        let now = *self.callback_now.get_or_insert_with(Instant::now);
+        let seconds = match now.checked_duration_since(at) {
+            Some(before) => -before.as_secs_f64(),
+            None => (at - now).as_secs_f64(),
+        };
+        self.call_start as f64 - self.latency_frames as f64 + seconds * self.sample_rate
     }
 
     /// The moment the first frame of the current block will be heard: the start of the current
@@ -1515,6 +1692,10 @@ pub struct Engine {
     kits: Vec<Kit>,
     /// The receiving end of the MIDI queue, until [`Engine::take_midi_events`] hands it out.
     midi_events: Option<MidiEvents>,
+    /// The sending end of the live hit queue, until [`Engine::take_live_hits`] hands it out.
+    live_hits: Option<LiveHits>,
+    /// The receiving end of the heard hit queue.
+    heard_hits: Option<rtrb::Consumer<HeardHit>>,
     // Declared last so it is dropped last; dropping it stops the callback.
     _stream: OutputStream,
 }
@@ -1535,6 +1716,8 @@ struct OpenOutput {
     channels: u16,
     buffer_frames: Option<u32>,
     midi_events: Option<MidiEvents>,
+    live_hits: Option<LiveHits>,
+    heard_hits: Option<rtrb::Consumer<HeardHit>>,
 }
 
 impl Engine {
@@ -1556,6 +1739,8 @@ impl Engine {
             buffer_frames: output.buffer_frames,
             kits: drum_kits(&soundfont),
             midi_events: output.midi_events,
+            live_hits: output.live_hits,
+            heard_hits: output.heard_hits,
             _stream: output.stream,
         })
     }
@@ -1578,6 +1763,33 @@ impl Engine {
     /// return `None`.
     pub fn take_midi_events(&mut self) -> Option<MidiEvents> {
         self.midi_events.take()
+    }
+
+    /// Hands out the sending end of the live hit queue, for the MIDI input's thread. The first
+    /// call returns it; later calls return `None`.
+    ///
+    /// The audio thread plays each hit at the start of its next block, as [`Engine::hit`] does,
+    /// but at the velocity scaled by the gain of the first row with the hit's key, so a muted
+    /// row stays silent. With no row for the key, the hit plays at its own velocity. A hit with
+    /// `sound` false is not played. Every hit, played or not, is reported to
+    /// [`Engine::take_heard_hits`]. A hit pushed into a full queue is lost.
+    pub fn take_live_hits(&mut self) -> Option<LiveHits> {
+        self.live_hits.take()
+    }
+
+    /// Takes the live hits the audio thread has handled since the last call, oldest first, each
+    /// with the position the player was hearing when they hit. The interface calls it once per
+    /// frame. The queue holds [`LIVE_QUEUE_CAPACITY`] reports; more are dropped until it is read.
+    ///
+    /// The position comes from the hit's time. The audio thread knows when the first frame of
+    /// its buffer will be heard: one output latency after its callback starts. From that it
+    /// works out which frame the player heard at the hit's time, and where the sequencer was at
+    /// that frame. The step is in straight time, without swing.
+    pub fn take_heard_hits(&mut self) -> Vec<HeardHit> {
+        let Some(heard) = self.heard_hits.as_mut() else {
+            return Vec::new();
+        };
+        std::iter::from_fn(|| heard.pop().ok()).collect()
     }
 
     /// Turns MIDI out on or off. While on, the audio thread queues a MIDI message for every note
@@ -1865,6 +2077,8 @@ fn open_output(soundfont: &Arc<SoundFont>) -> Result<OpenOutput, AudioError> {
     let (commands, mut renderer) = Renderer::new(soundfont, config.sample_rate)?;
     let status = Arc::clone(&renderer.status);
     let midi_events = renderer.take_midi_events();
+    let live_hits = renderer.take_live_hits();
+    let heard_hits = renderer.take_heard_hits();
 
     let stream = match format {
         SampleFormat::F32 => build::<f32>(&device, config, renderer),
@@ -1895,6 +2109,8 @@ fn open_output(soundfont: &Arc<SoundFont>) -> Result<OpenOutput, AudioError> {
         channels: config.channels,
         buffer_frames,
         midi_events,
+        live_hits,
+        heard_hits,
     })
 }
 
@@ -3798,5 +4014,262 @@ mod tests {
         assert_eq!(renderer.status.transport.load(Ordering::Relaxed), 2);
         let sent = messages(&midi_sent(&mut events));
         assert!(sent.iter().all(|m| m[0] != 0x99), "{sent:?}");
+    }
+
+    /// Asserts that `position` is in pattern mode at about `step` of `pattern`.
+    fn assert_near(position: Option<HeardPosition>, pattern: usize, step: f64) {
+        let Some(position) = position else {
+            panic!("no position, expected step {step}");
+        };
+        assert_eq!(position.pattern, pattern);
+        assert_eq!(position.song_index, None);
+        assert!(
+            (position.step - step).abs() < 0.02,
+            "step {} instead of {step}",
+            position.step
+        );
+    }
+
+    #[test]
+    fn the_heard_position_is_in_straight_time() {
+        for swing in [0.0, 0.25, 0.5] {
+            let mut sequencer = playing(0);
+            sequencer.apply(Command::swing(swing).unwrap(), 0);
+            // Step 4 has fired; step 5, on the grid at 30 000, has not.
+            let now = 468 * BLOCK;
+            assert_eq!(run(&mut sequencer, 0, now).last().unwrap().1, pat(0, 4));
+            for step in [0.0, 0.5, 1.0, 2.9, 3.0, 4.25] {
+                assert_near(sequencer.heard_position(step * 6000.0), 0, step);
+            }
+            // The next step's grid time has passed but it has not fired: the position goes on
+            // from it, also for a hit a little in the future.
+            for step in [5.0, 5.1, 5.9, 6.5] {
+                assert_near(sequencer.heard_position(step * 6000.0), 0, step);
+            }
+            assert_eq!(sequencer.heard_position(-1.0), None, "before play started");
+        }
+    }
+
+    #[test]
+    fn the_heard_position_wraps_at_the_pattern_end_and_knows_the_song() {
+        let mut sequencer = playing(0);
+        sequencer.apply(
+            Command::SetLength {
+                pattern: 0,
+                steps: 4,
+            },
+            0,
+        );
+        // Step 3 has fired; step 0 comes next at 24 000.
+        let now = 3 * 6000 + 10 * BLOCK;
+        run(&mut sequencer, 0, now);
+        assert_near(sequencer.heard_position(23_400.0), 0, 3.9);
+        assert_near(sequencer.heard_position(24_600.0), 0, 0.1);
+
+        let mut sequencer = Sequencer::new(RATE);
+        set_song(&mut sequencer, &[2, 3], 0);
+        sequencer.apply(Command::PlaySong { from: 0 }, 0);
+        run(&mut sequencer, 0, 17 * 6000);
+        let position = sequencer.heard_position(16.5 * 6000.0).unwrap();
+        assert_eq!(position.pattern, 3);
+        assert_eq!(position.song_index, Some(1));
+        assert!((position.step - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn there_is_no_heard_position_while_stopped_or_previewing() {
+        let mut sequencer = playing(0);
+        run(&mut sequencer, 0, 20_032);
+        sequencer.apply(Command::Stop, 20_032);
+        assert_near(sequencer.heard_position(19_000.0), 0, 19_000.0 / 6000.0);
+        assert_eq!(sequencer.heard_position(20_032.0), None);
+        assert_eq!(sequencer.heard_position(50_000.0), None);
+
+        preview(&mut sequencer, &[hit(0, 36, 100)], 4, 30_016);
+        run(&mut sequencer, 30_016, 40_000);
+        assert_eq!(sequencer.heard_position(35_000.0), None);
+        assert_eq!(sequencer.heard_position(41_000.0), None);
+    }
+
+    #[test]
+    fn the_heard_position_is_none_before_the_history() {
+        let mut sequencer = playing(0);
+        sequencer.apply(
+            Command::SetLength {
+                pattern: 0,
+                steps: 64,
+            },
+            0,
+        );
+        run(&mut sequencer, 0, 40 * 6000);
+        assert_eq!(sequencer.heard_position(100.0), None);
+        assert_near(sequencer.heard_position(39.5 * 6000.0), 0, 39.5);
+    }
+
+    #[test]
+    fn a_live_hit_takes_its_rows_gain() {
+        let mut sequencer = Sequencer::new(RATE);
+        sequencer.apply(Command::SetRowKey { row: 0, key: 36 }, 0);
+        sequencer.apply(Command::row_gain(0, 0.5).unwrap(), 0);
+        sequencer.apply(Command::SetRowKey { row: 1, key: 38 }, 0);
+        sequencer.apply(Command::row_gain(1, 0.0).unwrap(), 0);
+        // A second row on the same key does not count; the first does.
+        sequencer.apply(Command::SetRowKey { row: 2, key: 36 }, 0);
+        assert_eq!(sequencer.live_velocity(36, 100), 50);
+        assert_eq!(sequencer.live_velocity(38, 100), 0);
+        assert_eq!(sequencer.live_velocity(42, 100), 100);
+    }
+
+    /// A renderer with the MIDI, live hit and heard hit queues taken out.
+    fn live_renderer(
+        font: &Arc<SoundFont>,
+    ) -> (
+        Commands,
+        Renderer,
+        MidiEvents,
+        LiveHits,
+        rtrb::Consumer<HeardHit>,
+    ) {
+        let (commands, mut renderer) = Renderer::new(font, RATE).unwrap();
+        let events = renderer.take_midi_events().unwrap();
+        let live = renderer.take_live_hits().unwrap();
+        assert!(renderer.take_live_hits().is_none());
+        let heard = renderer.take_heard_hits().unwrap();
+        assert!(renderer.take_heard_hits().is_none());
+        (commands, renderer, events, live, heard)
+    }
+
+    /// Queues a live hit made while the player heard `frame`, for the next `render` call, which
+    /// must follow at once.
+    fn push_live(renderer: &Renderer, live: &mut LiveHits, frame: f64, key: u8, sound: bool) {
+        let block = renderer.left.len();
+        let call_start = renderer.clock - (block - renderer.read) as u64;
+        let heard_now = call_start as f64 - renderer.latency_frames as f64;
+        let seconds = (frame - heard_now) / f64::from(RATE);
+        let now = Instant::now();
+        let at = if seconds < 0.0 {
+            now - Duration::from_secs_f64(-seconds)
+        } else {
+            now + Duration::from_secs_f64(seconds)
+        };
+        live.push(LiveHit {
+            at,
+            key,
+            velocity: 100,
+            sound,
+        })
+        .unwrap();
+    }
+
+    /// Every heard hit reported so far, oldest first.
+    fn heard_hits(heard: &mut rtrb::Consumer<HeardHit>) -> Vec<HeardHit> {
+        std::iter::from_fn(|| heard.pop().ok()).collect()
+    }
+
+    #[test]
+    fn a_live_hit_plays_and_is_reported() {
+        let font = soundfont_or_skip!();
+        let (_commands, mut renderer, _events, mut live, mut heard) = live_renderer(&font);
+        push_live(&renderer, &mut live, 0.0, 38, true);
+        let mut out = vec![0.0_f32; 2 * 4_800];
+        renderer.render(&mut out, 2);
+        assert!(energy(&out) > 1e-3);
+        assert_ne!(renderer.note_off_at[38], NO_NOTE_OFF);
+        assert_eq!(
+            heard_hits(&mut heard),
+            [HeardHit {
+                key: 38,
+                velocity: 100,
+                position: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_live_hit_goes_to_midi_out_at_its_rows_gain() {
+        let font = soundfont_or_skip!();
+        let (mut commands, mut renderer, mut events, mut live, mut heard) = live_renderer(&font);
+        commands.send(Command::SetRowKey { row: 0, key: 36 });
+        commands.send(Command::row_gain(0, 0.5).unwrap());
+        commands.send(Command::SetMidiOut { on: true });
+        push_live(&renderer, &mut live, 0.0, 36, true);
+        push_live(&renderer, &mut live, 0.0, 42, true);
+        let mut out = vec![1.0_f32; 2 * 640];
+        renderer.render(&mut out, 2);
+        assert!(out.iter().all(|&s| s == 0.0));
+        assert_eq!(
+            without_note_offs(&midi_sent(&mut events)),
+            [
+                vec![0xC9, 0],
+                vec![0xB9, 7, 127],
+                vec![0x99, 36, 50],
+                vec![0x99, 42, 100]
+            ]
+        );
+        // The report keeps the velocity the player hit with.
+        let velocities: Vec<_> = heard_hits(&mut heard).iter().map(|h| h.velocity).collect();
+        assert_eq!(velocities, [100, 100]);
+    }
+
+    #[test]
+    fn a_muted_or_unsounded_live_hit_is_silent_but_reported() {
+        let font = soundfont_or_skip!();
+        for midi_out in [false, true] {
+            let (mut commands, mut renderer, mut events, mut live, mut heard) =
+                live_renderer(&font);
+            commands.send(Command::SetRowKey { row: 0, key: 36 });
+            commands.send(Command::row_gain(0, 0.0).unwrap());
+            commands.send(Command::SetMidiOut { on: midi_out });
+            push_live(&renderer, &mut live, 0.0, 36, true);
+            push_live(&renderer, &mut live, 0.0, 38, false);
+            let mut out = vec![1.0_f32; 2 * 4_800];
+            renderer.render(&mut out, 2);
+            assert!(out.iter().all(|&s| s == 0.0), "MIDI out {midi_out}");
+            assert_eq!(renderer.note_off_at[36], NO_NOTE_OFF);
+            assert_eq!(renderer.note_off_at[38], NO_NOTE_OFF);
+            let sent = messages(&midi_sent(&mut events));
+            assert!(sent.iter().all(|m| m[0] != MIDI_NOTE_ON), "{sent:?}");
+            let keys: Vec<_> = heard_hits(&mut heard).iter().map(|h| h.key).collect();
+            assert_eq!(keys, [36, 38]);
+        }
+    }
+
+    #[test]
+    fn a_live_hit_reports_the_step_the_player_heard() {
+        let font = soundfont_or_skip!();
+        for swing in [0.0, 0.25] {
+            let (mut commands, mut renderer, _events, mut live, mut heard) = live_renderer(&font);
+            renderer.set_latency(960);
+            commands.send(Command::swing(swing).unwrap());
+            commands.send(Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            });
+            // Into step 6 of what is rendered; the listener hears 960 frames less.
+            let mut out = vec![0.0_f32; 2 * (6 * 6000 + 3000)];
+            renderer.render(&mut out, 2);
+            // Not at 0.0: the test's clock runs a little ahead of the renderer's, so that hit
+            // could land just before play started.
+            let steps = [0.1, 1.0, 2.5, 3.0, 4.9, 5.0];
+            for step in steps {
+                push_live(&renderer, &mut live, step * 6000.0, 36, true);
+            }
+            let mut out = vec![0.0_f32; 2 * 640];
+            renderer.render(&mut out, 2);
+            let reported = heard_hits(&mut heard);
+            assert_eq!(reported.len(), steps.len());
+            for (hit, step) in reported.iter().zip(steps) {
+                assert_near(hit.position, 0, step);
+            }
+
+            // After a stop, a hit heard after it has no position.
+            commands.send(Command::Stop);
+            let mut out = vec![0.0_f32; 2 * 6000];
+            renderer.render(&mut out, 2);
+            let stopped = renderer.clock as f64 - 10.0;
+            push_live(&renderer, &mut live, stopped - 960.0, 36, true);
+            renderer.render(&mut out, 2);
+            assert_eq!(heard_hits(&mut heard)[0].position, None);
+        }
     }
 }
