@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 
 [target.'cfg(target_os = "android")'.dependencies]
 dm-ui = { workspace = true }
-eframe = { workspace = true, features = ["default_fonts", "wgpu", "android-native-activity"] }
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "android-native-activity", "links"] }
 log = { workspace = true }
 # The type `NativeOptions::android_app` takes. eframe does not re-export winit, so name the crate
 # winit itself depends on; the versions must match.

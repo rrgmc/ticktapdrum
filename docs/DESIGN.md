@@ -127,7 +127,9 @@ Deleting a pattern is a separate, explicit command.
   three choices, a device setting:
   - **Names** (the default): the name with the family's stripe.
   - **Pictures and names**: a picture with the name, the name under it on a tall row and beside
-    it on a short one.
+    it on a short one. The column is 112 points wide, so a long name fits on one line, except
+    on rows at least 64 points tall, where the name under the picture may wrap onto two lines
+    and the column narrows to 80.
   - **Pictures**: a larger picture alone. The column of names narrows from 96 to 60 points, so
     the steps get the room.
   - With either picture choice, the drum list shows each drum's picture beside its name.
@@ -1269,6 +1271,19 @@ The menu grew past a screen, so two groups fold open in place: **Import** (add f
 from a link, paste a drum tab, the groove list) and **Settings**. Both
 start closed and stay as left while the app runs. A section folds open inside the one scrolling
 list instead of opening a submenu beside it, which works the same with a finger and a mouse.
+
+## Where to find grooves and tabs
+
+The app points to free sources from the dialogs that take them, so nobody has to search first.
+eframe's `links` feature opens a link in the system browser on the desktop and on Android.
+
+- **"Add grooves from a link" lists free grooves.** "Add Google's Groove MIDI Dataset now
+  (3 MB)" downloads Magenta's MIDI-only zip straight into the app, as if its link had been
+  pasted. Links to Magenta's page and to Groove Monkee's two free pages open in the browser,
+  with a line saying to copy a download link there and paste it.
+- **"Paste a drum tab" lists where to find tabs:** Ultimate Guitar's drum tabs and Tabcrawler,
+  opened in the browser.
+- Every address answered on 2026-11-20. Pages move, so a link may break in a later version.
 
 ## Bars under the buttons
 

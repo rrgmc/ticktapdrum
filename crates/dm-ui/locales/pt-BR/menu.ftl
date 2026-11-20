@@ -128,3 +128,6 @@ menu-paste-tab-hint = Cole alguns compassos de uma tablatura de bateria, com o n
 # Adiciona a tablatura colada ao projeto como um padrão novo.
 menu-paste-tab-add = Adicionar como padrão
 menu-paste-tab-skip-odd-bars = Deixar de fora os compassos que não cabem
+menu-paste-tab-sources = Onde encontrar tablaturas de bateria
+menu-paste-tab-source-ultimate-guitar = Ultimate Guitar: tablaturas de bateria
+menu-paste-tab-source-tabcrawler = Tabcrawler

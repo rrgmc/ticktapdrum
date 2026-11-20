@@ -131,3 +131,7 @@ menu-paste-tab-add = Add as pattern
 # A checkbox, off by default. When on, bars that cannot be read, such as triplet fills, are left
 # out instead of refusing the whole tab.
 menu-paste-tab-skip-odd-bars = Leave out bars that do not fit
+# A heading over links to web sites with drum tabs, in the Paste a drum tab dialog.
+menu-paste-tab-sources = Where to find drum tabs
+menu-paste-tab-source-ultimate-guitar = Ultimate Guitar: drum tabs
+menu-paste-tab-source-tabcrawler = Tabcrawler

@@ -118,3 +118,12 @@ grooves-rows-added = { $count ->
 grooves-drums-left-out = { $count } drums were left out: the project has no room for more rows.
 grooves-no-room = No room for another pattern: a project holds 26.
 grooves-add-failed = The groove was not added.
+# A heading over links to free grooves, in the Add grooves from a link dialog.
+grooves-sources = Free grooves
+# A link that downloads Google Magenta's Groove MIDI Dataset into the app at once.
+grooves-source-magenta-add = Add Google's Groove MIDI Dataset now (3 MB)
+# Above links that open web pages in the browser.
+grooves-sources-hint = These pages open in the browser. Copy a download link there and paste it above.
+grooves-source-magenta-page = Groove MIDI Dataset (Google Magenta)
+grooves-source-groove-monkee = Groove Monkee: free MIDI loops
+grooves-source-beat-farm = Groove Monkee: Beat Farm

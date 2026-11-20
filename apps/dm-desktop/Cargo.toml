@@ -18,7 +18,7 @@ midi = ["dm-ui/midi"]
 
 [dependencies]
 dm-ui = { workspace = true }
-eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "clipboard", "wayland", "x11"] }
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "clipboard", "links", "wayland", "x11"] }
 log = { workspace = true }
 
 # The icon of the Windows executable (build.rs).

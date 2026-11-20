@@ -125,6 +125,48 @@ pub(crate) struct Menu {
 /// The width of a menu item.
 const ITEM_WIDTH: f32 = 240.0;
 
+/// Google Magenta's Groove MIDI Dataset, MIDI files only (3.3 MB, CC BY 4.0). A tap in the link
+/// dialog downloads it straight into the app.
+const MAGENTA_ZIP: &str =
+    "https://storage.googleapis.com/magentadata/datasets/groove/groove-v1.0.0-midionly.zip";
+/// Pages with free groove packs, opened in the browser from the link dialog: the label's
+/// message id, then the address. Checked to answer on 2026-11-20.
+const GROOVE_PAGES: [(&str, &str); 3] = [
+    (
+        "grooves-source-magenta-page",
+        "https://magenta.tensorflow.org/datasets/groove",
+    ),
+    (
+        "grooves-source-groove-monkee",
+        "https://groovemonkee.com/pages/free-midi-loops",
+    ),
+    (
+        "grooves-source-beat-farm",
+        "https://groovemonkee.com/pages/beat-farm-free-midi-beats",
+    ),
+];
+/// Sites with drum tabs, opened in the browser from the Paste a drum tab dialog. Checked to
+/// answer on 2026-11-20.
+const TAB_PAGES: [(&str, &str); 2] = [
+    (
+        "menu-paste-tab-source-ultimate-guitar",
+        "https://www.ultimate-guitar.com/explore?type[]=Drum%20Tabs",
+    ),
+    (
+        "menu-paste-tab-source-tabcrawler",
+        "https://www.tabcrawler.com/",
+    ),
+];
+
+/// Links that open `pages` in the browser, one per line, under a short heading.
+fn page_links(ui: &mut egui::Ui, heading: &str, pages: &[(&str, &str)]) {
+    ui.label(big(heading).strong());
+    for (label, address) in pages {
+        ui.hyperlink_to(big(&crate::i18n::tr(label)), *address)
+            .on_hover_text(*address);
+    }
+}
+
 fn item<'a>(icon: &str, word: &str) -> egui::Button<'a> {
     widgets::button(icon, word).min_size(Vec2::new(ITEM_WIDTH, TAP))
 }
@@ -823,6 +865,8 @@ fn paste_tab(
 ) -> bool {
     let mut done = false;
     ui.label(tr!("menu-paste-tab-hint"));
+    page_links(ui, &tr!("menu-paste-tab-sources"), &TAB_PAGES);
+    ui.separator();
     // The box is not focused when the dialog opens. A tap on it brings up a phone's keyboard,
     // with its paste button, and nothing then asks for focus again, which on Android would
     // close and reopen the keyboard.
@@ -950,6 +994,26 @@ fn add_link(
                     done = true;
                 }
             });
+            ui.separator();
+            ui.label(big(&tr!("grooves-sources")).strong());
+            // Magenta's dataset is one file, so a tap downloads it here, as if its link had
+            // been pasted.
+            if ui
+                .link(big(&tr!("grooves-source-magenta-add")))
+                .on_hover_text(MAGENTA_ZIP)
+                .clicked()
+            {
+                *text = MAGENTA_ZIP.to_owned();
+                *error = None;
+                events.push(MenuEvent::Grooves(GrooveEvent::Download(
+                    MAGENTA_ZIP.to_owned(),
+                )));
+            }
+            ui.label(tr!("grooves-sources-hint"));
+            for (label, address) in GROOVE_PAGES {
+                ui.hyperlink_to(big(&crate::i18n::tr(label)), address)
+                    .on_hover_text(address);
+            }
         }
     }
     done
