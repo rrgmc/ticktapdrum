@@ -731,8 +731,8 @@ Shown as JSON. Field names are proposals.
 
     The brief for milestones 11 to 13 is "Groove import" below, with what they found.
 14. **MIDI in** on desktop and iOS. The user records a beat by playing along to the loop on the
-    keyboard chosen as MIDI output. *Not started.* The brief is "Milestone 14: MIDI
-    in" below.
+    keyboard chosen as MIDI output. *Built; checked on Windows over a MIDI loopback port, not yet
+    with a real keyboard.* The brief and the findings are "Milestone 14: MIDI in" below.
 
 ## Milestone 7: iOS
 
@@ -1626,6 +1626,46 @@ there; see "Android, later".
 - **Recording into the song**, across patterns.
 - **Recording that replaces** what is in the pattern.
 - **MIDI clock in,** following another device's tempo.
+
+### What milestone 14 found
+
+Checked on 2026-11-20 on Windows, by screenshot of the desktop app, with the Windows MIDI
+Services loopback pair as the MIDI output. A throwaway program (not in the repository) played a
+beat at the app's tempo into the pair's other port, on channel 1.
+
+- **How it is built.** `dm-audio` takes live hits from a queue (`Engine::take_live_hits`), plays
+  them at the row's volume when asked to, and reports where in the beat each was heard
+  (`Engine::take_heard_hits`, `live.rs`). `dm-midi` reads the notes from the output's input, with
+  the channel lock, the key range and the timestamp mapping in `input.rs`. `dm-ui` records in
+  `record.rs`; `dm_groove::snap` is now public for it. A take is the undo group `Recording`.
+- **The engine can also sound live hits,** and `dm-midi` can open any input by name
+  (`InputChoice`). The app uses neither: its input is always the output's device, which sounds
+  its own keys.
+- **Record showed beside Play** once the loopback input connected, and turned red while recording.
+- **The take landed as played.** Loud kicks on every beat, normal snares on beats 2 and 4, soft
+  closed hi-hats on every second step, all evenly spaced, with no hit doubled or moved by jitter.
+  A cowbell, which had no row, got a Cowbell row at the bottom. A crash sent on channel 10 after
+  the channel 1 notes was ignored, and so was a key outside the drum range sent first. The step
+  levels button moved up to show loud and soft.
+- **One Undo took the whole take back,** the new row and the step levels included, and left
+  nothing more to undo.
+- **The loopback's timestamps run about 30 ms behind its callback,** steadily; the mapping
+  absorbs that.
+- **The output and its input share a cut name.** WinMM cuts names to 31 characters, so both
+  loopback ports are "Loopback Padrão de Aplicativo (". Choosing by name takes the first. The
+  same was true of outputs before.
+
+Not checked:
+
+- **A real keyboard.** The PSR-SX720 behind its Bluetooth adapter: whether its right-hand part
+  arrives with a drum kit selected, whether the channel rule keeps its style's drums out, how late
+  hits land over Bluetooth, and the soft and loud thresholds by ear.
+- **The "gone" line,** shown when the keyboard disappears during a take.
+- **Hits at the very start of the first loop.** A hit a fraction of a frame before play starts
+  has no position and is dropped.
+- **Song mode.** Record is greyed out while Play is set to Song; its hover text cannot be seen on
+  a touch screen.
+- **macOS, iOS and Linux.**
 
 ## Open questions
 
