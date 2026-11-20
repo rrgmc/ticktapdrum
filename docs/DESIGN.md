@@ -1523,6 +1523,10 @@ style become grooves in the groove list.
 - **A style becomes a pack,** named after the file, with one groove per section that passes:
   "Bossa Main A", "Bossa Fill In AA", "Bossa Ending B". The groove list shows it like any pack,
   with the style's tempo, and a groove goes into the project as a new pattern, as now.
+- **Each groove names the keyboard's kit,** after its tempo and bars: "100 BPM · 2 bars ·
+  PopDrumKit". With percussion on channel 9 too, both show: "PopDrumKit + PopPercussionKit". The
+  names come from the key map's table, so a kit it does not know shows nothing. It is information
+  only: the app plays its own kit, and the person can pick a similar one under Sounds.
 - **What did not come in is said in one line,** as for a pack today: "11 of 15 parts added; 3
   were played off the grid, 1 uses sounds the app does not have." A style in 3/4 is refused as a
   whole: "This style is in 3/4."
@@ -1550,8 +1554,10 @@ style become grooves in the groove list.
 ### The key map
 
 - **It covers the SX920 and SX720 kits,** made once from the "Drum&SFX Kit List" sheet of
-  Yamaha's Data List, the same way as in the research. It holds numbers only: bank, program, key
-  and the General MIDI key or "leave out". Other Yamaha models (Genos, PSR-S, Tyros) can be added
+  Yamaha's Data List, the same way as in the research. It holds each kit's name, shown in the
+  groove list, and numbers: bank, program, key and the General MIDI key or "leave out".
+- **A groove keeps the kit's name** in the saved groove list (a new optional field in the pack
+  file), so it still shows after the app restarts. Other Yamaha models (Genos, PSR-S, Tyros) can be added
   the same way when someone has their Data List.
 - **A small script in `tools/` makes it** from the Data List spreadsheet, which is not committed.
   The script writes a Rust table into `dm-groove`.
