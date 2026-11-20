@@ -48,7 +48,8 @@ fn main() {
         import.refused.len()
     );
 
-    let mut styles: BTreeMap<String, Vec<Take>> = BTreeMap::new();
+    // By the style's name in lower case, so `Funk Purdie shuffle` sorts after `Funk fast`.
+    let mut styles: BTreeMap<String, (String, Vec<Take>)> = BTreeMap::new();
     let mut unnamed = 0;
     for groove in import.grooves {
         let parts: Vec<&str> = groove.name.split('_').collect();
@@ -58,18 +59,23 @@ fn main() {
         };
         // `funk-groove5` is a funk groove.
         let style = style.split_once("-groove").map_or(style, |(base, _)| base);
-        styles.entry(style_label(style)).or_default().push(Take {
-            fill: kind == "fill",
-            take: take.parse().unwrap_or(u32::MAX),
-            groove,
-        });
+        let label = style_label(style);
+        styles
+            .entry(label.to_lowercase())
+            .or_insert_with(|| (label, Vec::new()))
+            .1
+            .push(Take {
+                fill: kind == "fill",
+                take: take.parse().unwrap_or(u32::MAX),
+                groove,
+            });
     }
     if unnamed > 0 {
         println!("{unnamed} files left out: their names are not in the dataset's form");
     }
 
     let mut grooves = Vec::new();
-    for (label, mut takes) in styles {
+    for (label, mut takes) in styles.into_values() {
         takes.sort_by_key(|t| {
             let bars = dm_project::repeat_unit(&t.groove.bars);
             (bars > SHORT, t.fill, t.groove.bpm as u32, t.take)
