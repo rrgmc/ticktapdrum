@@ -731,6 +731,14 @@ Shown as JSON. Field names are proposals.
 10. **Android file picker.** Open and save projects, and export MIDI and WAV files, anywhere the
     system's file picker reaches. *Done on the Android emulator, checked by screenshot; not yet
     on the phone.* The brief and the findings are "Milestone 10: Android file picker" below.
+11. **Groove import from files.** Open a groove file or a groove pack (a `.mid` or `.zip` file),
+    keep only the files that are groove loops, list them, and add one to the project as a
+    pattern. On desktop and Android, with drag and drop on a desktop. *Planned.*
+12. **Share to the app on Android.** "Share" a download link or a groove file to TickTapDrum, and
+    open `.mid` and `.zip` files tapped in other apps. *Planned.*
+13. **Add from a link.** Paste a link to a groove file or pack, and the app downloads it. *Planned.*
+
+    The brief for milestones 11 to 13 is "Groove import" below.
 
 ## Milestone 7: iOS
 
@@ -1068,6 +1076,141 @@ picker once, and the person picks a place or backs out.
   such as "Beat (1)" instead); cloud providers; the activity being destroyed while the picker is
   open; and the desktop's dialogs after the refactor (the desktop app starts, but its open, save
   and export were not tried).
+
+## Groove import
+
+People find drum grooves on the web as MIDI groove packs: short drum loops, sold or given away by
+vendors such as Groove Monkee, usually as a `.zip` of hundreds of `.mid` files. These milestones let
+a person bring such grooves into the app in the way that suits where they found them: by opening a
+downloaded file, by sharing it or its link to the app on Android, or by pasting a link.
+
+**The app imports groove loops only, not any MIDI file.** A whole song, a live recording, a file in
+3/4 or one made for another drum program is refused, with a reason. This keeps the result
+predictable for people with little music knowledge, and it is what the spikes showed works. The
+evidence is in [`research/groove-import-spike.md`](research/groove-import-spike.md); plain-text drum
+tabs are not part of this (see [`research/tab-import-spike.md`](research/tab-import-spike.md)).
+
+### What counts as a groove
+
+A MIDI file is accepted only if all of these hold. Tested on the spike's files, the rule accepts
+every Groove Monkee GM file in 4/4 that sits on the grid (189 of 241), and rejects most files made
+for other drum programs.
+
+| Check | Why |
+|---|---|
+| Notes on one channel only, normally channel 10 | Song files also hold bass, piano and so on |
+| 4/4, and no change of time signature | The grid is 4/4 only |
+| One tempo | Loops do not change tempo |
+| At most 16 bars | Packs hold 1 to 8 bars; songs run to hundreds |
+| At most 10% of notes more than a quarter step off the 16-step grid | Refuses live playing, triplets and 32nd-note rolls |
+| At least 90% of notes on drum-kit keys (General MIDI 35 to 59) | Catches packs made for another drum program |
+
+The import itself follows the spike: notes snap to the grid after fitting the swing and a constant
+offset of at most a quarter step; velocities are kept as they are; the tempo comes from the file,
+rounded to a whole BPM; two notes of one drum on one step become the louder one.
+
+**A pack** (a `.zip`, or several files at once) goes through the rule file by file. When a zip holds
+several versions of the same grooves for different drum programs, the import takes the folder whose
+name says GM or General MIDI and ignores the others. The result is a count with reasons, such as
+"189 of 241 grooves added; 52 were not in 4/4".
+
+**Refusals say why**, in words a beginner understands: "This file is in 3/4", "This looks like a
+whole song, not a groove", "This seems made for another drum program; try the pack's General MIDI
+version", "This is a web page, not a groove file".
+
+### Where grooves go
+
+Accepted grooves go into a **groove list** kept in the app's folder, named after their files and
+grouped by the pack (or the file) they came from. From the list a person can play a groove, delete
+it, and **add it to the project as a new pattern**, using the project's own tempo and kit. Adding
+asks nothing more; undo removes it. A groove whose drums are not among the project's rows adds the
+rows it needs.
+
+A single file opened or shared shows its groove right away, with "Add as pattern" and "Keep in
+list"; a pack shows the list.
+
+### Milestone 11: groove import from files
+
+#### Definition of done
+
+- **A new crate, `dm-groove`,** turns bytes into accepted grooves and a report: `.mid` and `.zip`
+  input, the rule above, the GM folder choice, and the snapping. It has no interface and no
+  platform code, so it is tested on its own, with the spike's checks as tests (the export and
+  re-import of every preset gives identical steps).
+- **The ☰ menu has "Add grooves from a file"** on desktop (the system dialog, `.mid` and `.zip`)
+  and on Android (the system picker from milestone 10, asking for MIDI and zip types).
+- **A desktop accepts files dropped on the window.**
+- **The groove list and "Add as pattern"** as described above.
+- **Checked** on Windows and on the Android emulator, by screenshot, with Groove Monkee's free GM
+  pack and a refused file (a song, a 3/4 groove, a Perfect Drums file).
+
+#### Recommended route
+
+- `midly` reads MIDI; the workspace's `zip` crate, already used for the bank, reads packs.
+- Limits against damaged or hostile files: at most 2,000 files and 100 MB unpacked in a zip, at
+  most 1 MB per MIDI file. Files are recognised by their content (`MThd`, a zip header), not their
+  names.
+- The groove list stores each accepted groove in the app's own format, not the original file, so
+  later imports do not depend on the parser.
+
+### Milestone 12: share to the app on Android
+
+#### Definition of done
+
+- **TickTapDrum appears in Android's Share sheet** for text (a link) and for MIDI and zip files,
+  and in "Open with" for `.mid` and `.zip` files (`ACTION_SEND` and `ACTION_VIEW` intent filters).
+- **A shared link** goes through milestone 13's download, so milestone 12 needs it; a shared or
+  opened file goes straight to the import.
+- **It works whether the app is running or not.** The activity is `singleTask`, so a share into a
+  running app arrives through `onNewIntent`, not as a second copy.
+- **Checked** on the emulator and on the phone: share a link from Chrome, share a downloaded file
+  from Files, and tap a `.mid` file in Files.
+
+#### Recommended route
+
+- `MainActivity` reads its starting intent and `onNewIntent`, and passes a link or a `content://`
+  address to Rust through a second native method, beside `onFilePicked`. Files open through the
+  same `ContentResolver` code as the picker.
+
+### Milestone 13: add from a link
+
+#### Definition of done
+
+- **"Add grooves from a link"** in the ☰ menu: a text box, an Add button, and the download's
+  progress. It accepts `http` and `https` links to a `.mid` or `.zip` file. A GitHub `…/blob/…`
+  link is changed to its raw file.
+- **A web page is refused** with the message above; the app does not search the page for links.
+- **Limits:** a 30-second timeout and the size limits of milestone 11, checked while downloading.
+- **Checked** on Windows and on the phone, with a Groove Monkee zip link, a single `.mid` link, a
+  web page and a link that fails.
+
+#### Recommended route
+
+- Download with `ureq`, as the bank download does.
+
+### Risks
+
+- **Pasting may not work on Android.** egui's clipboard support on Android is limited, and its
+  text input there is unreliable (see "Interface"). Check on the phone first. If pasting fails,
+  milestone 12's Share is the way to add a link on Android, and the link box stays a desktop
+  feature.
+- **Free packs often sit behind a checkout or a web page**, so a link to the download itself is
+  not always available. Saving the file and opening it (milestone 11) always works.
+- **The rule may refuse grooves people want,** such as shuffles and triplet feels, which the grid
+  cannot hold. The refusal message should say so.
+- **Licences.** Packs forbid redistribution. The app only stores the person's own copy, and never
+  uploads or shares it.
+
+### Left out
+
+- **iOS.** Sharing into an iOS app needs a share extension, a separate target, and iOS has no file
+  picker yet. It follows once milestone 11 works.
+- **Bundled grooves.** Groove Monkee and the other vendors forbid it. Google's Groove MIDI Dataset
+  (CC BY 4.0) is the only source that may ship with the app; a curated starter set from it is a
+  separate decision.
+- **A help page with links to free packs**, which should tell people to download the "GM" or
+  "General MIDI" version.
+- **Choosing bars from a longer file**, and any other MIDI: songs, live recordings, other meters.
 
 ## Open questions
 
