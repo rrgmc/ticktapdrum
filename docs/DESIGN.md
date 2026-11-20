@@ -730,6 +730,9 @@ Shown as JSON. Field names are proposals.
     clipboard not checked.*
 
     The brief for milestones 11 to 13 is "Groove import" below, with what they found.
+14. **MIDI in** on desktop and iOS. A keyboard or drum pads play the app's drums, and the user can
+    record a beat by playing along to the loop. *Not started.* The brief is "Milestone 14: MIDI
+    in" below.
 
 ## Milestone 7: iOS
 
@@ -1540,6 +1543,96 @@ Not checked:
 - **A style with no Intro or Ending:** what the keyboard does when those buttons are pressed.
 - **Phone screens.** The section step's pickers are small for a finger.
 - **iOS and macOS,** and the Send to keyboard failure messages on real hardware.
+
+## Milestone 14: MIDI in
+
+The app listens to a MIDI input: a keyboard, drum pads or an electronic drum kit. Each hit plays
+the app's drum for that key. While a pattern loops, the user can also record: each hit lands on
+the nearest step. Placing notes on a grid is hard for some beginners; playing a beat is easier.
+
+**No mapping is needed.** A keyboard with a drum kit selected sends the General MIDI key for each
+drum: 36 is the kick, 38 the snare, 42 the closed hi-hat. The app's rows use the same keys. Drum
+pads and electronic kits sold for General MIDI do the same.
+
+**Desktop (Windows, macOS, Linux) and iOS only,** like MIDI out. Android waits for MIDI out
+there; see "Android, later".
+
+**Setting it up adds no questions.** The input follows the MIDI output by default, as Send to
+keyboard and the switch-off check already do.
+
+### Definition of done
+
+- **Settings has a "MIDI input" item.** It lists "Same as output" (the default), the inputs the
+  system reports, and "None". "Same as output" opens the input whose name matches the chosen
+  output, so a keyboard needs only the one choice made for MIDI out. Drum pads that send only, with
+  no output, are picked here. The choice belongs to the device, as the output's does, and is
+  remembered by name.
+- **A hit plays that drum,** as tapping the row's name does: in the project's kit, at the hit's
+  velocity scaled by the row's volume. A muted row stays silent.
+- **A hit goes where the steps go.** With no output chosen, it plays through the internal sound.
+  With an output chosen, it is sent to that output, as tapping a row's name is. The one exception
+  is an input and output on the same device: a keyboard already plays its own keys, so the app
+  neither sends the hit back nor plays it, and nothing sounds twice.
+- **One channel is taken.** The first channel that sends a note-on after the input opens is the
+  one the app listens to, until the input is chosen again. A keyboard sends its right-hand part on
+  its own channel, usually 1, and may send its style's drums on channel 10 at the same time; the
+  rule keeps the style out. This needs checking on a real keyboard.
+- **Keys outside the drum kit are ignored.** General MIDI drums are keys 35 to 81. Some kits use
+  keys beyond that range (XG kits go from 13 to 87); the app has no sound to match them.
+- **A Record button shows in the strip while an input is connected.** Tapping it starts the
+  pattern on a loop if it is stopped, and records until Record or Stop is tapped. It records into
+  the pattern being edited, not into the song. The button glows red while recording.
+- **Each hit lands on the nearest step**, measured from when the user heard the beat, not from
+  when the message arrived. A hit just before the loop's start lands on its first step. Swing
+  counts: a hit is snapped to the swung grid, with groove import's snapping
+  (`dm-groove`, `snap`).
+- **Recording only adds notes.** A hit on a step already on keeps the louder of the two levels.
+  Removing notes stays a tap on the grid. One take, from Record on to Record off, undoes as one
+  step.
+- **Velocity sets the level.** A light hit makes a soft step, a middling one a normal step, and a
+  hard one a loud step. The step levels button moves up to show the levels the take used, as a
+  beat to start from does. The thresholds are set by ear on a real keyboard.
+- **A key with no row adds one,** with that drum, at the bottom. The app never asks which row a key
+  belongs to.
+- **A device that disappears** stops recording, keeps what was recorded, and shows one line. The
+  remembered choice stays, so the app reconnects when the device returns.
+- **Checked on a real target:** the PSR-SX720 over Bluetooth on Windows, with a drum kit on its
+  right-hand part. Record what was heard, how far off hits landed, and what was not checked.
+
+### Recommended route
+
+- **`dm-midi` opens the input.** It already does for Send to keyboard and the switch-off check
+  (`sender.rs`). Those uses and this one share one connection, since Windows lets only one
+  connection hold a port. The callback filters channel and key, then pushes each hit with its
+  timestamp into a queue. The input callback never touches the synthesizer or the project.
+- **The engine plays hits from a queue,** as it plays steps. The audio thread drains it at the
+  start of each block, so a hit sounds within one block. The block size sets the delay the user
+  feels; measure it on each platform.
+- **The UI records.** It reads the hits the engine played, each with the playback position at
+  which the user heard it, and turns them into step edits through the normal undo path. The engine
+  knows that position from the audio stream's timestamps, which MIDI out already uses.
+- **The input's timestamp is the hit's time.** midir gives each message a time in microseconds.
+  Turning it into the engine's clock must not use the time the callback ran, which Bluetooth and
+  WinMM can delay.
+
+### Risks
+
+- **Bluetooth timing.** Bluetooth LE MIDI adds 10 to 30 ms of delay that varies from hit to hit.
+  At 120 BPM a step lasts 125 ms, so snapping hides this, but the sound played through the app may
+  feel late. Playing a keyboard's own sound and recording into the app avoids it.
+- **Double sound.** With no output chosen, a keyboard plays its own drum and the app plays its
+  drum. Only the keyboard's "Local Off" setting stops the first. The app does not send Local Off,
+  because it would silence the whole keyboard for someone who then quits the app.
+- **The channel rule** may pick the wrong channel if the style plays before the first key. Test
+  it on the SX720 before relying on it.
+
+### Left out
+
+- **Step entry while stopped.** The grid has no cursor, so a hit has no obvious step to land on.
+- **A count-in** before recording. The loop already gives the beat; add one if people ask.
+- **Recording into the song**, across patterns.
+- **Recording that replaces** what is in the pattern.
+- **MIDI clock in,** following another device's tempo.
 
 ## Open questions
 
