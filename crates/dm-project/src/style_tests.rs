@@ -1,3 +1,4 @@
+use super::yamaha::{TICKS_PER_BAR, TICKS_PER_STEP};
 use super::*;
 use crate::{DEFAULT_VELOCITY, MAX_SWING, preset_project};
 
@@ -178,9 +179,15 @@ fn main_a_is_required() {
         mains: [None, Some(0), None, None],
         ..StyleSections::default()
     };
-    assert_eq!(sections.problem(&p), Some(StyleProblem::NoMainA));
-    assert_eq!(to_style(&p, &sections, "x"), Err(StyleProblem::NoMainA));
-    assert_eq!(main_a_only().problem(&p), None);
+    assert_eq!(
+        KeyboardKind::Yamaha.problem(&p, &sections),
+        Some(StyleProblem::NoMainA)
+    );
+    assert_eq!(
+        KeyboardKind::Yamaha.write(&p, &sections, "x"),
+        Err(StyleProblem::NoMainA)
+    );
+    assert_eq!(KeyboardKind::Yamaha.problem(&p, &main_a_only()), None);
 }
 
 #[test]
@@ -192,12 +199,18 @@ fn fills_and_the_break_must_be_one_bar() {
         fills: [Some(1), None, None, None],
         ..main_a_only()
     };
-    assert_eq!(fill.problem(&p), Some(StyleProblem::NotOneBar));
+    assert_eq!(
+        KeyboardKind::Yamaha.problem(&p, &fill),
+        Some(StyleProblem::NotOneBar)
+    );
     let fill_break = StyleSections {
         fill_break: Some(1),
         ..main_a_only()
     };
-    assert_eq!(fill_break.problem(&p), Some(StyleProblem::NotOneBar));
+    assert_eq!(
+        KeyboardKind::Yamaha.problem(&p, &fill_break),
+        Some(StyleProblem::NotOneBar)
+    );
     // A two-bar main, intro or ending is fine.
     let long = StyleSections {
         intro: Some(1),
@@ -205,7 +218,7 @@ fn fills_and_the_break_must_be_one_bar() {
         ending: Some(1),
         ..StyleSections::default()
     };
-    assert_eq!(long.problem(&p), None);
+    assert_eq!(KeyboardKind::Yamaha.problem(&p, &long), None);
 }
 
 #[test]
@@ -217,8 +230,8 @@ fn a_fill_whose_main_is_left_out_is_not_checked() {
         fills: [None, Some(1), Some(9), None],
         ..main_a_only()
     };
-    assert_eq!(sections.problem(&p), None);
-    let bytes = to_style(&p, &sections, "x").unwrap();
+    assert_eq!(KeyboardKind::Yamaha.problem(&p, &sections), None);
+    let bytes = KeyboardKind::Yamaha.write(&p, &sections, "x").unwrap();
     let names: Vec<String> = markers(&bytes).into_iter().map(|(_, m)| m).collect();
     assert_eq!(names, ["Main A", "Fill In AA"]);
 }
@@ -230,7 +243,10 @@ fn a_missing_pattern_is_a_problem() {
         ending: Some(7),
         ..main_a_only()
     };
-    assert_eq!(sections.problem(&p), Some(StyleProblem::NoSuchPattern));
+    assert_eq!(
+        KeyboardKind::Yamaha.problem(&p, &sections),
+        Some(StyleProblem::NoSuchPattern)
+    );
 }
 
 #[test]
@@ -248,7 +264,7 @@ fn the_sections_come_in_order_each_on_a_bar_line() {
         fill_break: Some(1),
         ending: Some(0),
     };
-    let bytes = to_style(&p, &sections, "x").unwrap();
+    let bytes = KeyboardKind::Yamaha.write(&p, &sections, "x").unwrap();
     let expected: Vec<(u32, String)> = [
         (1, "Intro A"),
         (4, "Main A"),
@@ -272,7 +288,9 @@ fn the_setup_bar_selects_the_kit_on_the_drum_channels() {
     let mut p = Project::new();
     p.set_kit(25);
     p.tempo = 120.0;
-    let bytes = to_style(&p, &main_a_only(), "Beat").unwrap();
+    let bytes = KeyboardKind::Yamaha
+        .write(&p, &main_a_only(), "Beat")
+        .unwrap();
     let setup: Vec<Event> = parse(&bytes)
         .into_iter()
         .take_while(|(tick, _)| *tick == 0)
@@ -308,7 +326,7 @@ fn mute_solo_and_volume_apply_to_the_notes() {
     on(&mut p, 0, 2, 8); // closed hat
     p.set_volume(1, 50).unwrap();
     p.toggle_mute(2).unwrap();
-    let bytes = to_style(&p, &main_a_only(), "x").unwrap();
+    let bytes = KeyboardKind::Yamaha.write(&p, &main_a_only(), "x").unwrap();
     // Main A, then its last bar again as the fill.
     let expected = vec![
         (BAR, 36, 100),
@@ -319,7 +337,7 @@ fn mute_solo_and_volume_apply_to_the_notes() {
     assert_eq!(notes(&bytes), expected);
 
     p.toggle_solo(1).unwrap();
-    let bytes = to_style(&p, &main_a_only(), "x").unwrap();
+    let bytes = KeyboardKind::Yamaha.write(&p, &main_a_only(), "x").unwrap();
     assert_eq!(
         notes(&bytes),
         [(BAR + 4 * STEP, 38, 50), (2 * BAR + 4 * STEP, 38, 50)]
@@ -335,7 +353,7 @@ fn a_main_without_a_fill_uses_its_last_bar_and_hidden_bars_are_left_out() {
     on(&mut p, 0, 1, STEPS_PER_BAR + 2); // bar 2
     on(&mut p, 0, 2, 2 * STEPS_PER_BAR + 4); // bar 3, hidden below
     p.remove_bar(0).unwrap();
-    let bytes = to_style(&p, &main_a_only(), "x").unwrap();
+    let bytes = KeyboardKind::Yamaha.write(&p, &main_a_only(), "x").unwrap();
     assert_eq!(
         markers(&bytes),
         [
@@ -357,7 +375,7 @@ fn with_most_swing_the_last_note_ends_on_the_section_end_before_the_next_marker(
     let mut p = Project::new();
     p.set_swing(MAX_SWING);
     on(&mut p, 0, 0, STEPS_PER_BAR - 1);
-    let bytes = to_style(&p, &main_a_only(), "x").unwrap();
+    let bytes = KeyboardKind::Yamaha.write(&p, &main_a_only(), "x").unwrap();
     let events = parse(&bytes);
     let late = BAR + 15 * STEP + STEP / 2;
     assert!(events.contains(&(late, Event::Midi(vec![0x99, 36, 100]))));
@@ -384,7 +402,7 @@ fn a_note_off_never_passes_its_section_end() {
     for step in 0..STEPS_PER_BAR {
         on(&mut p, 0, 3, step);
     }
-    let bytes = to_style(&p, &main_a_only(), "x").unwrap();
+    let bytes = KeyboardKind::Yamaha.write(&p, &main_a_only(), "x").unwrap();
     let ends: Vec<u32> = markers(&bytes)
         .into_iter()
         .skip(1)
@@ -417,7 +435,7 @@ fn a_note_off_never_passes_its_section_end() {
 #[test]
 fn the_name_is_plain_ascii() {
     let p = Project::new();
-    let name = |n: &str| name_in(&to_style(&p, &main_a_only(), n).unwrap());
+    let name = |n: &str| name_in(&KeyboardKind::Yamaha.write(&p, &main_a_only(), n).unwrap());
     assert_eq!(name("Ação Éxito ñ"), "Acao Exito n");
     assert_eq!(name("Groove 2"), "Groove 2");
     assert_eq!(name("日本 ß\t!"), "__ __!");
@@ -506,10 +524,37 @@ fn the_example_project_gives_the_same_bytes_as_the_tried_example() {
     let sections = StyleSections::suggested(&p);
     assert_eq!(sections.mains[0], Some(0));
     assert_eq!(sections.fills[0], Some(1));
-    let bytes = to_style(&p, &sections, "TTD Test").unwrap();
+    let bytes = KeyboardKind::Yamaha
+        .write(&p, &sections, "TTD Test")
+        .unwrap();
     let expected: Vec<u8> = (0..EXAMPLE.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&EXAMPLE[i..i + 2], 16).unwrap())
         .collect();
     assert_eq!(bytes, expected);
+}
+
+#[test]
+fn get_and_set_reach_every_section() {
+    let mut sections = StyleSections::default();
+    for (i, section) in Section::ALL.into_iter().enumerate() {
+        sections.set(section, Some(i));
+    }
+    for (i, section) in Section::ALL.into_iter().enumerate() {
+        assert_eq!(sections.get(section), Some(i));
+    }
+    // An index past Main D is ignored rather than a panic.
+    sections.set(Section::Main(4), Some(99));
+    assert_eq!(sections.get(Section::Main(4)), None);
+}
+
+#[test]
+fn yamaha_has_every_section_and_one_bar_fills() {
+    let yamaha = KeyboardKind::Yamaha;
+    assert_eq!(yamaha.extension(), "sty");
+    assert!(Section::ALL.into_iter().all(|s| yamaha.has(s)));
+    assert!(yamaha.one_bar(Section::Fill(2)));
+    assert!(yamaha.one_bar(Section::Break));
+    assert!(!yamaha.one_bar(Section::Main(0)));
+    assert!(!yamaha.one_bar(Section::Intro));
 }

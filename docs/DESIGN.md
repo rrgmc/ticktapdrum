@@ -1459,6 +1459,19 @@ that also offers "None". This is an export, so asking is fine, unlike imports.
     covers a keyboard that answers as another model.
 - **Desktop and iOS only.** The button does not show on Android, which has no MIDI out yet.
 
+### Room for other keyboards
+
+Only Yamaha is offered now, but the export is built so that another brand, such as Korg, can be
+added without changing what is already there.
+
+- **`dm-project` has a `KeyboardKind`.** Each kind says which sections its styles have, which of
+  them must be one bar, its file extension, and how to write the file. The sections, the app's
+  suggestion and the checks are shared by every kind. The Yamaha writer is in its own file.
+- **`dm-midi` takes a target for Send to keyboard.** Each brand's transfer messages live in a
+  module of their own; noticing a keyboard that is switched off is shared.
+- **The interface names no brand on its buttons.** The line under each button names the brand.
+  With more than one kind, the section step gains a choice of brand at the top.
+
 ### Build order
 
 1. **The style writer** in `dm-project`, with tests. It shares the MIDI export's note timing.
