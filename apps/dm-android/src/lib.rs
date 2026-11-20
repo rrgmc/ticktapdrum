@@ -6,6 +6,8 @@
 
 #[cfg(target_os = "android")]
 mod picker;
+#[cfg(target_os = "android")]
+mod share;
 
 #[cfg(target_os = "android")]
 mod android {
@@ -474,6 +476,8 @@ mod android {
                     app = app.with_system_locale(tag);
                 }
                 crate::picker::install(orientation_app.clone(), app.pick_answers());
+                // Last, once the interface exists: a share that started the app is handed on now.
+                crate::share::install(orientation_app.clone(), app.incoming_files());
                 Ok(Box::new(Host {
                     app,
                     android: orientation_app,

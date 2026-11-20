@@ -161,7 +161,15 @@ fn open(app: &AndroidApp, kind: PickKind, uri: &str) -> jni::errors::Result<Pick
     // "rwt" rather than "wt": some document providers ignore the truncate in "wt" and leave the
     // end of an older, longer file behind.
     let mode = if kind.creates() { "rwt" } else { "r" };
-    let file = with_activity(app, |env, activity| {
+    let file = open_document(app, uri, mode)?;
+    let name = document_name(app, uri);
+    Ok(PickedFile { file, name })
+}
+
+/// Opens the document at `uri` through the `ContentResolver` in `mode`, such as `"r"`, and takes
+/// over its file descriptor. The picker and a file shared to the app both use it.
+pub(crate) fn open_document(app: &AndroidApp, uri: &str, mode: &str) -> jni::errors::Result<File> {
+    with_activity(app, |env, activity| {
         let resolver = content_resolver(env, activity)?;
         let uri = parse_uri(env, uri)?;
         let mode = env.new_string(mode)?;
@@ -181,16 +189,19 @@ fn open(app: &AndroidApp, kind: PickKind, uri: &str) -> jni::errors::Result<Pick
             .i()?;
         // SAFETY: detachFd hands the descriptor over; nothing on the Java side closes it now.
         Ok(unsafe { File::from_raw_fd(fd) })
-    })?;
-    let name = match display_name(app, uri) {
+    })
+}
+
+/// The document's name: its display name, or else the end of its address.
+pub(crate) fn document_name(app: &AndroidApp, uri: &str) -> String {
+    match display_name(app, uri) {
         Ok(Some(name)) if !name.is_empty() => name,
         Ok(_) => last_segment(uri),
         Err(e) => {
             log::warn!("could not read the display name of {uri}: {e}");
             last_segment(uri)
         }
-    };
-    Ok(PickedFile { file, name })
+    }
 }
 
 /// The document's name as the picker shows it: its `OpenableColumns.DISPLAY_NAME`.
@@ -278,8 +289,17 @@ fn parse_uri<'local>(
 
 /// A name for the document when the provider gives none: the end of its address, decoded. A
 /// Downloads address such as `.../document/primary%3ADownload%2FBeat.drums` gives `Beat.drums`.
-fn last_segment(uri: &str) -> String {
-    let bytes = uri.as_bytes();
+pub(crate) fn last_segment(uri: &str) -> String {
+    percent_decoded(uri)
+        .rsplit(['/', ':'])
+        .next()
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// `text` with each `%` and two hex digits replaced by the byte they stand for.
+pub(crate) fn percent_decoded(text: &str) -> String {
+    let bytes = text.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
@@ -298,10 +318,5 @@ fn last_segment(uri: &str) -> String {
             }
         }
     }
-    let decoded = String::from_utf8_lossy(&decoded);
-    decoded
-        .rsplit(['/', ':'])
-        .next()
-        .unwrap_or_default()
-        .to_string()
+    String::from_utf8_lossy(&decoded).into_owned()
 }
