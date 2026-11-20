@@ -6,16 +6,19 @@
 //! follow the groove spike (`tools/groove-spike`).
 //!
 //! This crate has no interface and no platform code. The groove list keeps accepted grooves as
-//! JSON ([`pack_to_json`]), so it never needs the original files again.
+//! JSON ([`pack_to_json`]), so it never needs the original files again. [`download`] fetches a
+//! file from a link for [`import`].
 
 mod groove;
 mod json;
+mod link;
 mod midi;
 mod zipped;
 
 pub use dm_project::BarHit;
 pub use groove::{MAX_GROOVE_BARS, MAX_MIDI_BYTES};
 pub use json::PACK_FORMAT;
+pub use link::{LinkError, download, link_address};
 
 /// The largest file [`import`] reads, in bytes.
 pub const MAX_INPUT_BYTES: usize = 30 * 1024 * 1024;
