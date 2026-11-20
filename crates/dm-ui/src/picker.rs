@@ -23,6 +23,8 @@ pub enum PickKind {
     ExportMidi,
     /// Export a WAV recording (as `SaveProject`).
     ExportWav,
+    /// Export a keyboard style file (as `SaveProject`).
+    ExportStyle,
     /// Open a MIDI file or a zip of them to import as grooves (as `OpenProject`).
     OpenGrooves,
 }

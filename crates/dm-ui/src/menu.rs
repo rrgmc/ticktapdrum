@@ -1,6 +1,6 @@
-//! The menu under ☰, and the dialogs its items open: Save as, Open, Load default style, Export,
-//! Language, MIDI output, Paste a drum tab, Add grooves from a link, Grooves, and the tempo when
-//! the strip has no room for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
+//! The menu under ☰, and the dialogs its items open: Save as, Open, Load default style, Export
+//! with its keyboard style step, Language, MIDI output, Paste a drum tab, Add grooves from a
+//! link, Grooves, and the tempo when the strip has no room for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
 //!
 //! It does everything the old Projects screen did. Starting a new project, opening one, opening
 //! a file or starting from a beat asks first when there are unsaved changes, and deleting always
@@ -11,6 +11,7 @@ use egui::{RichText, Vec2};
 use crate::grooves::{self, GrooveEvent, GroovesView};
 use crate::i18n::{self, Language};
 use crate::icons;
+use crate::keyboard::{self, Goal, StyleStep};
 use crate::link;
 use crate::pictures::RowLabels;
 use crate::projects::{ProjectEvent, ProjectsView};
@@ -50,6 +51,8 @@ pub(crate) struct MidiView<'a> {
 
 /// What the menu and its dialogs need to know to draw themselves.
 pub(crate) struct MenuView<'a> {
+    /// The project, for the keyboard style step's pattern pickers.
+    pub(crate) project: &'a dm_project::Project,
     pub(crate) projects: ProjectsView<'a>,
     /// The strip buttons that did not fit, which the menu offers instead.
     pub(crate) hidden: Hidden,
@@ -76,6 +79,8 @@ enum Shown {
     Open,
     Presets,
     Export,
+    /// The keyboard style step: which pattern plays each section.
+    KeyboardStyle(StyleStep),
     Tempo,
     Language,
     MidiOutput,
@@ -553,6 +558,8 @@ impl Menu {
         let p = &view.projects;
         // Set by a choice that needs nothing more.
         let mut done = false;
+        // Set by a choice that opens another dialog in place of this one.
+        let mut next = None;
         let closed = match &mut dialog {
             Shown::SaveAs(text) => {
                 let title = if p.name.is_some() {
@@ -578,10 +585,36 @@ impl Menu {
                 .closed
             }
             Shown::Export => {
-                widgets::dialog(ctx, "export", &tr!("menu-export"), |ui| {
-                    export(ui, p, &mut events)
+                let mut goal = None;
+                let closed = widgets::dialog(ctx, "export", &tr!("menu-export"), |ui| {
+                    goal = export(ui, p, view.midi.as_ref(), &mut events);
                 })
-                .closed
+                .closed;
+                if let Some(goal) = goal {
+                    next = Some(Shown::KeyboardStyle(StyleStep::new(goal, view.project)));
+                }
+                closed
+            }
+            Shown::KeyboardStyle(step) => {
+                let title = match step.goal {
+                    Goal::File => tr!("menu-keyboard-style"),
+                    Goal::Send => tr!("menu-keyboard-send"),
+                };
+                let mut finished = false;
+                let closed = widgets::dialog(ctx, "keyboard-style", &title, |ui| {
+                    finished = keyboard::contents(ui, view.project, step);
+                })
+                .closed;
+                if finished {
+                    let (kind, sections) = (step.kind, step.sections.clone());
+                    events.push(MenuEvent::Project(match step.goal {
+                        Goal::File => ProjectEvent::ExportStyle { kind, sections },
+                        Goal::Send => ProjectEvent::SendStyle { kind, sections },
+                    }));
+                    // Back to the Export dialog, which shows how it went.
+                    next = Some(Shown::Export);
+                }
+                closed
             }
             Shown::Tempo => {
                 widgets::dialog(ctx, "tempo", &tr!("menu-tempo"), |ui| {
@@ -738,7 +771,9 @@ impl Menu {
                 None => {}
             }
         }
-        if closed || done {
+        if let Some(next) = next {
+            self.open(next);
+        } else if closed || done {
             self.ask = None;
         } else if self.dialog.is_none() {
             // Put back, unless the dialog opened another, as Ready-made styles opens the
@@ -1059,9 +1094,17 @@ fn add_link(
     done
 }
 
-/// The Export dialog: MIDI and WAV, the progress of a WAV export with Stop, and where exports
-/// go.
-fn export(ui: &mut egui::Ui, p: &ProjectsView, events: &mut Vec<MenuEvent>) {
+/// The Export dialog: MIDI and WAV, then the keyboard style for a keyboard, the progress of a
+/// WAV export with Stop, and where exports go. `midi` is the MIDI output setting, `None` where
+/// the platform cannot send MIDI. Returns what the keyboard style step is for, when one of its
+/// buttons was tapped.
+fn export(
+    ui: &mut egui::Ui,
+    p: &ProjectsView,
+    midi: Option<&MidiView>,
+    events: &mut Vec<MenuEvent>,
+) -> Option<Goal> {
+    let mut goal = None;
     match p.exporting {
         Some(fraction) => {
             ui.label(big(&tr!("menu-recording")));
@@ -1103,6 +1146,38 @@ fn export(ui: &mut egui::Ui, p: &ProjectsView, events: &mut Vec<MenuEvent>) {
             } else {
                 tr!("menu-wav-about-no-bank")
             });
+            ui.add_space(8.0);
+            ui.label(big(&tr!("menu-for-keyboard")).strong());
+            if ui
+                .add(widgets::button(
+                    icons::PIANO_KEYS,
+                    &tr!("menu-keyboard-style"),
+                ))
+                .clicked()
+            {
+                goal = Some(Goal::File);
+            }
+            // The only place that names a brand.
+            for &kind in dm_project::KeyboardKind::ALL {
+                ui.label(keyboard::about(kind));
+            }
+            if let Some(midi) = midi {
+                ui.add_space(4.0);
+                if ui
+                    .add_enabled(
+                        midi.connected,
+                        widgets::button(icons::FILE_ARROW_UP, &tr!("menu-keyboard-send")),
+                    )
+                    .clicked()
+                {
+                    goal = Some(Goal::Send);
+                }
+                ui.label(if midi.connected {
+                    tr!("menu-keyboard-send-about")
+                } else {
+                    tr!("menu-keyboard-send-about-no-output")
+                });
+            }
         }
     }
     if let Some(message) = p.export_message {
@@ -1113,6 +1188,7 @@ fn export(ui: &mut egui::Ui, p: &ProjectsView, events: &mut Vec<MenuEvent>) {
         ui.add_space(8.0);
         ui.label(tr!("menu-export-place", place = place));
     }
+    goal
 }
 
 /// The Language dialog: the system's language, then each language by its own name, which is

@@ -107,6 +107,9 @@ fn extension(kind: PickKind) -> &'static str {
         PickKind::OpenProject | PickKind::SaveProject => FILE_EXTENSION,
         PickKind::ExportMidi => "mid",
         PickKind::ExportWav => "wav",
+        // Every keyboard kind so far writes `.sty`; a kind with another extension will need a
+        // pick kind of its own.
+        PickKind::ExportStyle => dm_project::KeyboardKind::ALL[0].extension(),
         // Grooves come as `.mid`, `.midi` or `.zip`; see `dialog`.
         PickKind::OpenGrooves => "mid",
     }
@@ -125,6 +128,8 @@ pub(crate) fn request(id: u64, kind: PickKind, name: &str) -> PickRequest {
         PickKind::SaveProject => "application/octet-stream",
         PickKind::ExportMidi => "audio/midi",
         PickKind::ExportWav => "audio/wav",
+        // No MIME type fits a style file; as for projects, this keeps the name as given.
+        PickKind::ExportStyle => "application/octet-stream",
     };
     let name = if kind.creates() {
         format!("{name}.{}", extension(kind))
@@ -162,7 +167,7 @@ pub(crate) fn route(
         return Route::Picker;
     }
     match (kind, export_dir) {
-        (PickKind::ExportMidi | PickKind::ExportWav, Some(dir)) => {
+        (PickKind::ExportMidi | PickKind::ExportWav | PickKind::ExportStyle, Some(dir)) => {
             Route::Folder(dir.join(format!("{name}.{}", extension(kind))))
         }
         _ => Route::Dialog,
@@ -204,6 +209,7 @@ pub(crate) fn dialog(kind: PickKind, name: &str) -> Option<PathBuf> {
         PickKind::OpenProject | PickKind::SaveProject => tr!("projects-file-kind-project"),
         PickKind::ExportMidi => tr!("projects-file-kind-midi"),
         PickKind::ExportWav => tr!("projects-file-kind-wav"),
+        PickKind::ExportStyle => tr!("projects-file-kind-style"),
         PickKind::OpenGrooves => tr!("grooves-file-kind"),
     };
     let extension = extension(kind);
@@ -290,6 +296,11 @@ mod tests {
             (wav.id, wav.mime, wav.name.as_str()),
             (4, "audio/wav", "Beat.wav")
         );
+        let style = request(6, PickKind::ExportStyle, "Beat");
+        assert_eq!(
+            (style.mime, style.name.as_str()),
+            ("application/octet-stream", "Beat.sty")
+        );
     }
 
     #[test]
@@ -304,6 +315,10 @@ mod tests {
         assert_eq!(
             route(PickKind::ExportWav, false, Some(dir), "Beat"),
             Route::Folder(dir.join("Beat.wav"))
+        );
+        assert_eq!(
+            route(PickKind::ExportStyle, false, Some(dir), "Beat"),
+            Route::Folder(dir.join("Beat.sty"))
         );
         assert_eq!(route(midi, false, None, "Beat"), Route::Dialog);
         // Projects never go to the export folder.

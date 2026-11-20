@@ -28,6 +28,7 @@ mod history;
 #[allow(dead_code)] // Not every icon is used.
 mod icons;
 mod incoming;
+mod keyboard;
 mod link;
 mod menu;
 mod midi;
@@ -125,6 +126,8 @@ pub struct DrumApp {
     titled: Option<(i18n::Language, Option<String>)>,
     /// A WAV export in progress.
     wav_job: Option<export::WavJob>,
+    /// The keyboard style the section step chose, kept while its file is being picked.
+    style_export: Option<(dm_project::KeyboardKind, dm_project::StyleSections)>,
     /// A download from a link in progress. It runs only while the link dialog is open.
     link_job: Option<link::LinkJob>,
     /// The egui context, kept so worker threads can ask for a redraw.
@@ -213,6 +216,7 @@ impl DrumApp {
             system_language,
             titled: None,
             wav_job: None,
+            style_export: None,
             link_job: None,
             ctx: egui::Context::default(),
             frame_group: Group::Single,
@@ -775,6 +779,7 @@ impl DrumApp {
             })
         };
         let view = menu::MenuView {
+            project: &self.project,
             projects: projects::ProjectsView {
                 name: self.name.as_deref(),
                 unsaved: self.saved.as_ref() != Some(&self.project),
@@ -1232,6 +1237,15 @@ impl DrumApp {
                         self.pick(engine, PickKind::ExportWav);
                     }
                 }
+                ProjectEvent::ExportStyle { kind, sections } => {
+                    self.style_export = Some((kind, sections));
+                    self.pick(engine, PickKind::ExportStyle);
+                }
+                // TODO: send the style over the MIDI output (build order step 4 in
+                // docs/DESIGN.md). Until then it is only logged.
+                ProjectEvent::SendStyle { kind, sections } => {
+                    log::info!("Send to keyboard is not built yet: {kind:?}, {sections:?}");
+                }
                 ProjectEvent::CancelExport => {
                     if let Some(job) = &self.wav_job {
                         job.cancel();
@@ -1295,10 +1309,7 @@ impl DrumApp {
     /// later frame, or else the export folder or a desktop dialog, which answer at once. The new
     /// file is named after the project, or "My beat" in the current language.
     fn pick(&mut self, engine: &mut Engine, kind: PickKind) {
-        let name = self
-            .name
-            .clone()
-            .unwrap_or_else(|| tr!("projects-default-name"));
+        let name = self.export_name();
         let path = match files::route(
             kind,
             self.picker.is_some(),
@@ -1326,6 +1337,14 @@ impl DrumApp {
             },
         };
         self.carry_out(engine, kind, files::Target::Path(path));
+    }
+
+    /// The project's name, or "My beat" in the current language: the name of an exported file,
+    /// and of a keyboard style.
+    fn export_name(&self) -> String {
+        self.name
+            .clone()
+            .unwrap_or_else(|| tr!("projects-default-name"))
     }
 
     /// Does what a pick was for, with the file it chose.
@@ -1358,6 +1377,20 @@ impl DrumApp {
                 self.message = Some(match export::write_midi(&target, &self.project) {
                     Ok(()) => tr!("projects-midi-saved", place = self.saved_where(&target)),
                     Err(e) => tr!("projects-midi-failed", reason = e.to_string()),
+                });
+                self.export_message = self.message.clone();
+            }
+            PickKind::ExportStyle => {
+                let Some((kind, sections)) = self.style_export.take() else {
+                    return;
+                };
+                let written = kind
+                    .write(&self.project, &sections, &self.export_name())
+                    .map_err(|problem| keyboard::problem_text(&problem))
+                    .and_then(|bytes| target.write_all(&bytes).map_err(|e| e.to_string()));
+                self.message = Some(match written {
+                    Ok(()) => tr!("projects-style-saved", place = self.saved_where(&target)),
+                    Err(reason) => tr!("projects-style-failed", reason = reason),
                 });
                 self.export_message = self.message.clone();
             }

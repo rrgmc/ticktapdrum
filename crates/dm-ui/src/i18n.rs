@@ -132,6 +132,7 @@ locale_files!(
     "sounds.ftl",
     "bank.ftl",
     "errors.ftl",
+    "keyboard.ftl",
 );
 
 type Bundle = FluentBundle<FluentResource>;

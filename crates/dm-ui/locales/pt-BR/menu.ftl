@@ -112,6 +112,21 @@ menu-wav-about = O som, para tocar em qualquer player.
 menu-wav-about-no-bank = O som, para tocar em qualquer player. Precisa dos sons da bateria, que ainda não foram carregados.
 # $place é onde um celular põe os arquivos exportados, como "o app Arquivos, em No Meu iPhone, …".
 menu-export-place = Local das exportações: { $place }.
+# Um título pequeno sobre os dois botões de estilo para teclado. Um teclado arranjador toca um
+# "estilo" de acompanhamento que segue os acordes de quem toca.
+menu-for-keyboard = Para um teclado
+# Um botão. Sempre "Estilo para teclado", nunca só "Estilo": o app já chama suas batidas prontas
+# de estilos. Também é o título da etapa que escolhe as seções.
+menu-keyboard-style = Estilo para teclado
+# A linha sob Estilo para teclado, para teclados Yamaha. "User" é o nome do botão do teclado,
+# como vem impresso nele. Só estas linhas citam marca; os botões nunca.
+menu-keyboard-style-about-yamaha = Um estilo para teclado arranjador Yamaha, como o PSR-SX720. Copie para um pen drive e escolha em User.
+# Um botão que envia o estilo direto ao teclado. Também é o título da etapa que escolhe as seções.
+menu-keyboard-send = Enviar ao teclado
+menu-keyboard-send-about = Põe o estilo direto nos estilos User do teclado, pela saída MIDI.
+# Sob Enviar ao teclado enquanto ele está desativado porque nenhuma saída MIDI está conectada.
+# "Ajustes" e "Saída MIDI" são o grupo e o item do menu.
+menu-keyboard-send-about-no-output = Escolha antes o teclado em Ajustes, Saída MIDI.
 
 ## O grupo Ajustes no fim do menu.
 

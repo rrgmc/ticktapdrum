@@ -112,6 +112,22 @@ menu-wav-about = The sound, for any music player.
 menu-wav-about-no-bank = The sound, for any music player. It needs the drum sounds, which are not loaded yet.
 # $place is where a phone puts exported files, such as "the Files app, under On My iPhone, …".
 menu-export-place = Exports are saved in { $place }.
+# A small heading over the two keyboard style buttons. An arranger keyboard plays a backing
+# "style" that follows the player's chords.
+menu-for-keyboard = For a keyboard
+# A button. Always "Keyboard style", never "Style" alone: the app already calls its ready-made
+# beats styles. It also titles the step that chooses the sections.
+menu-keyboard-style = Keyboard style
+# The line under Keyboard style, for Yamaha keyboards. "User" is the keyboard's own button name,
+# as printed on it. Only these lines name a brand; the buttons never do.
+menu-keyboard-style-about-yamaha = A style for a Yamaha arranger keyboard, such as the PSR-SX720. Copy it to a USB stick and choose it under User.
+# A button that sends the style straight to the keyboard. It also titles the step that chooses
+# the sections.
+menu-keyboard-send = Send to keyboard
+menu-keyboard-send-about = Puts the style straight into the keyboard's User styles, through the MIDI output.
+# Under Send to keyboard while it is greyed out because no MIDI output is connected. "Settings"
+# and "MIDI output" are the menu's group and item.
+menu-keyboard-send-about-no-output = Choose the keyboard under Settings, MIDI output first.
 
 ## The Settings group at the bottom of the menu.
 

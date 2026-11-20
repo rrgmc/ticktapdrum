@@ -21,6 +21,17 @@ pub(crate) enum ProjectEvent {
     Preset(&'static str),
     ExportMidi,
     ExportWav,
+    /// Save a keyboard style file of this kind, with these sections.
+    ExportStyle {
+        kind: dm_project::KeyboardKind,
+        sections: dm_project::StyleSections,
+    },
+    /// Send a keyboard style of this kind, with these sections, to the keyboard on the MIDI
+    /// output.
+    SendStyle {
+        kind: dm_project::KeyboardKind,
+        sections: dm_project::StyleSections,
+    },
     CancelExport,
     /// Keep the screen in landscape, or let it turn freely.
     Landscape(bool),

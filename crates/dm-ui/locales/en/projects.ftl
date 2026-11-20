@@ -27,6 +27,9 @@ projects-midi-saved = Saved the MIDI file to { $place }.
 projects-midi-failed = The MIDI file was not saved: { $reason }
 projects-wav-saved = Saved the recording to { $place }.
 projects-wav-failed = The recording was not saved: { $reason }
+projects-style-saved = Saved the keyboard style to { $place }.
+# $reason is a keyboard-problem message or the system's reason the file could not be written.
+projects-style-failed = The keyboard style was not saved: { $reason }
 # An exported file's name, then where a phone keeps exports, such as "the Files app, under On My
 # iPhone, …".
 projects-saved-where = { $file } in { $place }
@@ -40,3 +43,4 @@ projects-export-stopped = the recording stopped unexpectedly.
 projects-file-kind-project = TickTapDrum project
 projects-file-kind-midi = MIDI file
 projects-file-kind-wav = WAV recording
+projects-file-kind-style = Keyboard style
