@@ -110,5 +110,6 @@ mapped through the kit its setup bar chose.
 
 1. Listen to a few imported sections next to the keyboard playing the same style, to check the
    hi-hat openness threshold and the snare choices.
-2. Decide the channel 9 rule.
-3. Then design the import in `DESIGN.md`.
+2. Done: channel 9 is merged into each section's groove, with General MIDI percussion counting
+   as drum keys for styles (decided 2026-11-20).
+3. Done: the import is designed in `DESIGN.md`, "Import grooves from a keyboard style".

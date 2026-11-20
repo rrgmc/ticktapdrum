@@ -1507,6 +1507,64 @@ Not checked:
 - **Phone screens.** The section step's pickers are small for a finger.
 - **iOS and macOS,** and the Send to keyboard failure messages on real hardware.
 
+## Import grooves from a keyboard style (planned)
+
+Planned, not started. The reverse of "Export as a keyboard style": the drum parts of a Yamaha
+style become grooves in the groove list.
+[`research/style-import-spike.md`](research/style-import-spike.md) has the findings it rests on:
+172 real styles, of which 65% of the sections import once each kit's keys are mapped.
+
+### What a person sees
+
+- **"Add grooves from a file" also takes a style.** The file picker offers Yamaha's style
+  extensions (`.sty`, `.prs`, `.sst`, `.scp`, `.fps`, `.bcs`) beside `.mid` and `.zip`. A zip may
+  hold styles too. Sharing to the app and "Add grooves from a link" take them the same way, since
+  they all go through the groove import.
+- **A style becomes a pack,** named after the file, with one groove per section that passes:
+  "Bossa Main A", "Bossa Fill In AA", "Bossa Ending B". The groove list shows it like any pack,
+  with the style's tempo, and a groove goes into the project as a new pattern, as now.
+- **What did not come in is said in one line,** as for a pack today: "11 of 15 parts added; 3
+  were played off the grid, 1 uses sounds the app does not have." A style in 3/4 is refused as a
+  whole: "This style is in 3/4."
+- **Nothing is asked.** As with other imports, the person chooses afterwards, by adding the
+  grooves they want.
+
+### How a style is read
+
+- **Only the MIDI track.** The reader stops after it; the CASM, OTS and MDB blocks that follow
+  are skipped. The track is cut at its section markers, and the setup bar before the first one
+  is read only for its tempo, time signature and kits.
+- **The drums are channels 10 and 9, merged into one groove.** Channel 10 holds the main drums
+  and channel 9 the extra percussion (congas, shakers, cajon). Bass, chords and phrases on
+  channels 11 to 16 are ignored.
+- **Each channel's keys go through its kit's key map.** The setup bar's bank select and program
+  change say which kit each channel uses. A table maps every key of every known kit to a General
+  MIDI key, or leaves it out: a hi-hat from "Tip"/"Edge" 00 to 25 becomes the closed hi-hat, 50
+  and over the open one; extra snares become the snare; clicks, loop slices and effects are left
+  out. A sound already on a General MIDI key of its own kind keeps it. With a kit the table does
+  not know, notes on General MIDI keys keep their key and the rest are left out.
+- **Then each section goes through the groove rules,** with one change for styles: General MIDI
+  percussion (keys 60 to 81) counts as drum keys, since the map has put it there. The other rules
+  stay: 4/4 only, one tempo, at most 16 bars, notes on the grid.
+
+### The key map
+
+- **It covers the SX920 and SX720 kits,** made once from the "Drum&SFX Kit List" sheet of
+  Yamaha's Data List, the same way as in the research. It holds numbers only: bank, program, key
+  and the General MIDI key or "leave out". Other Yamaha models (Genos, PSR-S, Tyros) can be added
+  the same way when someone has their Data List.
+- **A small script in `tools/` makes it** from the Data List spreadsheet, which is not committed.
+  The script writes a Rust table into `dm-groove`.
+
+### Build order
+
+1. **The style reader and the key map** in `dm-groove`, with tests. A round trip is a strong test:
+   a project written by "Keyboard style" and read back must give the same patterns.
+2. **The file types** in `dm-ui`: the picker's filter, Android's MIME types, the share and link
+   routes.
+3. **Check on real styles:** the 172 from the research, and listen to a few imported sections
+   next to the keyboard playing the same style, to check the hi-hat threshold and the snares.
+
 ## Open questions
 
 None at present. The three earlier ones were researched in
