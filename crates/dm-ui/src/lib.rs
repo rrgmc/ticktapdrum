@@ -649,7 +649,10 @@ impl DrumApp {
             MIN_STEP_WIDTH
         };
         let pattern_bars = self.project.patterns()[self.current].bars();
-        let fits = ((width - grid::label_width(self.row_labels))
+        // The grid's height is not known yet: the strip and the bar line come first. The height
+        // left now is a little more, so near the edge the guess may pick the narrower column.
+        let rows_tall = grid::row_height(ui.available_height(), self.project.rows().len());
+        let fits = ((width - grid::label_width(self.row_labels, rows_tall))
             / (STEPS_PER_BAR as f32 * min_step))
             .floor() as usize;
         let split = fits == 0;

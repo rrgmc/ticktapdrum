@@ -16,19 +16,31 @@ use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, Str
 const LABEL_WIDTH: f32 = 96.0;
 /// The same with pictures alone, which need less room and leave more for the steps.
 const PICTURE_LABEL_WIDTH: f32 = 60.0;
-/// The same with a picture and the name under it: wider, so long names such as Portuguese
-/// "Chimbal fechado" fit on one line under the picture.
+/// The same with a picture and its name on a row with room for one line of name: wider, so long
+/// names such as Portuguese "Chimbal fechado" fit on that line.
 const PICTURE_NAME_LABEL_WIDTH: f32 = 112.0;
+/// The same on a row tall enough for two lines of name under the picture, where a long name
+/// wraps instead, so the column can be narrower and leave more room for the steps.
+const PICTURE_NAME_TALL_LABEL_WIDTH: f32 = 80.0;
+/// The row height from which a name under its picture may take two lines.
+const TWO_LINE_ROW: f32 = 64.0;
 /// The size of a name beside or under its picture.
 const PICTURE_NAME_SIZE: f32 = 12.0;
 
-/// The width of the column of row names for this way of labelling rows.
-pub(crate) fn label_width(labels: RowLabels) -> f32 {
+/// The width of the column of row names for this way of labelling rows, on rows `row_height`
+/// points tall (see [`row_height`]).
+pub(crate) fn label_width(labels: RowLabels, row_height: f32) -> f32 {
     match labels {
         RowLabels::Pictures => PICTURE_LABEL_WIDTH,
+        RowLabels::PicturesAndNames if row_height >= TWO_LINE_ROW => PICTURE_NAME_TALL_LABEL_WIDTH,
         RowLabels::PicturesAndNames => PICTURE_NAME_LABEL_WIDTH,
         RowLabels::Names => LABEL_WIDTH,
     }
+}
+
+/// How tall each of `rows` rows is in a grid `height` points tall, header included.
+pub(crate) fn row_height(height: f32, rows: usize) -> f32 {
+    ((height - HEADER_HEIGHT) / rows.max(1) as f32).clamp(8.0, MAX_ROW_HEIGHT)
 }
 const HEADER_HEIGHT: f32 = 26.0;
 const GAP: f32 = 3.0;
@@ -160,7 +172,7 @@ impl Grid {
     ) -> Vec<GridEvent> {
         let area = ui.available_rect_before_wrap();
         let rows = project.rows().len().max(1);
-        let label_width = label_width(self.row_labels);
+        let label_width = label_width(self.row_labels, row_height(area.height(), rows));
         let header = Rect::from_min_max(
             Pos2::new(area.min.x + label_width, area.min.y),
             Pos2::new(area.max.x, area.min.y + HEADER_HEIGHT),
@@ -460,7 +472,7 @@ fn draw_label(
             // A tall row: the picture above, the name under it on up to two lines. The name is
             // laid out first, and the picture takes the height left, so a long name is not cut.
             let line = ui.fonts_mut(|f| f.row_height(&FontId::proportional(PICTURE_NAME_SIZE)));
-            let name_room = if rect.height() >= 64.0 {
+            let name_room = if rect.height() >= TWO_LINE_ROW {
                 2.0 * line
             } else {
                 line
