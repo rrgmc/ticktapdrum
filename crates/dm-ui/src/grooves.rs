@@ -171,22 +171,55 @@ pub(crate) fn list(
         });
         state.store(ui.ctx());
         if state.is_open() {
+            let names = short_names(&pack.grooves);
             for (index, groove) in pack.grooves.iter().enumerate() {
                 let playing = view.playing == Some((key.as_str(), index));
-                groove_row(ui, key, index, groove, playing, ask, events);
+                groove_row(ui, key, index, groove, &names[index], playing, ask, events);
             }
         }
     }
     *focus = None;
 }
 
-/// One groove: Play or Stop, its name with its folder and length below, then Add and Delete.
-/// Everything fits on one line on a phone; a long name is cut short.
+/// The grooves' names without the words they all start with, so a phone shows what tells them
+/// apart: "076 Chilled Beat 1 Clap A" and "076 Chilled Beat 1 Fill 2" become "Clap A" and
+/// "Fill 2". A name that would be left empty keeps its full form.
+pub(crate) fn short_names(grooves: &[Groove]) -> Vec<String> {
+    let words: Vec<Vec<&str>> = grooves
+        .iter()
+        .map(|g| g.name.split_whitespace().collect())
+        .collect();
+    let shared = if words.len() < 2 {
+        0
+    } else {
+        let first = &words[0];
+        (0..first.len())
+            .take_while(|&i| words.iter().all(|w| w.get(i) == Some(&first[i])))
+            .count()
+    };
+    grooves
+        .iter()
+        .zip(&words)
+        .map(|(groove, words)| {
+            if shared < words.len() {
+                words[shared..].join(" ")
+            } else {
+                groove.name.clone()
+            }
+        })
+        .collect()
+}
+
+/// One groove: Play or Stop, its short name with its folder and length below, then Add and
+/// Delete. Everything fits on one line on a phone; a long name is cut short, and the full name
+/// shows on hover.
+#[allow(clippy::too_many_arguments)]
 fn groove_row(
     ui: &mut egui::Ui,
     key: &str,
     index: usize,
     groove: &Groove,
+    name: &str,
     playing: bool,
     ask: &mut Option<Ask>,
     events: &mut Vec<GrooveEvent>,
@@ -235,7 +268,8 @@ fn groove_row(
             }
             ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
-                ui.add(egui::Label::new(big(&groove.name)).truncate());
+                ui.add(egui::Label::new(big(name)).truncate())
+                    .on_hover_text(&groove.name);
                 let bars = tr!("grooves-bars", count = groove.bars.len());
                 let detail = if groove.folder.is_empty() {
                     bars
@@ -384,6 +418,26 @@ pub(crate) fn add_refused(refused: dm_project::Refused) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn short_names_drop_the_words_all_grooves_share() {
+        let groove = |name: &str| Groove {
+            name: name.into(),
+            folder: String::new(),
+            bpm: 100.0,
+            bars: vec![Vec::new()],
+        };
+        let pack = [
+            groove("076 Chilled Beat 1 Clap A"),
+            groove("076 Chilled Beat 1 Fill 2"),
+            groove("076 Chilled Beat 1"),
+        ];
+        assert_eq!(
+            short_names(&pack),
+            vec!["Clap A", "Fill 2", "076 Chilled Beat 1"]
+        );
+        assert_eq!(short_names(&pack[..1]), vec!["076 Chilled Beat 1 Clap A"]);
+    }
 
     fn groove(bars: usize) -> Groove {
         Groove {

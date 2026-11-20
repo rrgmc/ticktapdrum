@@ -80,7 +80,13 @@ grooves-added-pattern = { $bars ->
     [one] Padrão { $pattern } criado: { $name }, 1 compasso.
    *[other] Padrão { $pattern } criado: { $name }, { $bars } compassos.
 }
-grooves-repeats = Os { $given } compassos se repetem a cada { $bars }, então o padrão tem só esses.
+grooves-repeats = O arquivo repete { $bars ->
+    [one] o mesmo compasso
+   *[other] os mesmos { $bars } compassos
+} nos seus { $given } compassos, então o padrão fica só com { $bars ->
+    [one] ele
+   *[other] eles
+}.
 grooves-bars-left-out = { $count } compassos depois dos 16 primeiros ficaram de fora.
 grooves-rows-added = { $count ->
     [one] 1 linha foi adicionada para uma peça nova.

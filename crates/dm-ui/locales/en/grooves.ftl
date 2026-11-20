@@ -103,7 +103,13 @@ grooves-added-pattern = { $bars ->
    *[other] Added pattern { $pattern }: { $name }, { $bars } bars.
 }
 # The groove's bars were one shorter groove played again and again.
-grooves-repeats = Its { $given } bars repeat every { $bars }, so the pattern has those.
+grooves-repeats = The file repeats the same { $bars ->
+    [one] bar
+   *[other] { $bars } bars
+} over its { $given } bars, so the pattern keeps just { $bars ->
+    [one] that bar
+   *[other] those
+}.
 grooves-bars-left-out = { $count } bars after the first 16 were left out.
 grooves-rows-added = { $count ->
     [one] 1 row was added for a new drum.

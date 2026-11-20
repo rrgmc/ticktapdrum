@@ -33,7 +33,7 @@ menu-landscape = Keep in landscape
 # A simpler version of the app: one pattern, no song.
 menu-basic = Basic mode
 # Offers menu-paste-tab in the menu. Experimental: it may not read every tab.
-menu-paste-tabs = Experimental: paste drum tabs
+menu-paste-tabs = Experimental: drum tabs
 menu-language = Language
 # The first choice in the Language dialog: follow the system's language. $language is that
 # language's own name, such as "English".

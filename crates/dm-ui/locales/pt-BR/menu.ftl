@@ -33,7 +33,7 @@ menu-landscape = Manter na horizontal
 # Uma versão mais simples do app: um padrão, sem música.
 menu-basic = Modo básico
 # Mostra menu-paste-tab no menu. Experimental: pode não ler toda tablatura.
-menu-paste-tabs = Experimental: colar tablaturas de bateria
+menu-paste-tabs = Experimental: tablaturas
 menu-language = Idioma
 # A primeira escolha da janela Idioma: seguir o idioma do sistema. $language é o nome desse
 # idioma nele mesmo, como "English".
