@@ -2,12 +2,15 @@
 #   - the format check and clippy, on Linux;
 #   - the tests, on Linux, Windows and macOS;
 #   - a debug build of the Android app;
-#   - a debug build of the iOS app, for the simulator and unsigned for devices.
+#   - a debug build of the iOS app, for the simulator and unsigned for devices;
+#   - the changelog entries in changelog.d/, which must use the known headings.
 # Tests that need a SoundFont (DM_TEST_SF2) or the network skip themselves, since CI has neither.
 #
-# A change that touches only documentation (Markdown files, docs/, .gitignore) skips the build
-# jobs, and so does a change to the workspace version alone (Cargo.toml's version and the
-# workspace crates' versions in Cargo.lock), since the release workflow builds the tag. The last job, "CI result", always runs and fails if any job before it failed or was
+# A change that touches only documentation (Markdown files, docs/, changelog.d/, .gitignore) skips
+# the build jobs. So does a release's version pull request: the workspace version (Cargo.toml's
+# version and the workspace crates' versions in Cargo.lock) together with the changelog merge
+# (CHANGELOG.md and the deleted entries in changelog.d/), since the release workflow builds the
+# tag. The last job, "CI result", always runs and fails if any job before it failed or was
 # cancelled; skipped jobs count as passed. It is the one check master's branch protection requires.
 # Requiring the jobs themselves does not work: a skipped matrix job reports a single check named
 # "Tests (${{ matrix.os }})", so the per-system names never report and the pull request cannot merge.
@@ -64,7 +67,9 @@ jobs:
             echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          code=$(git diff --name-only "$BASE...HEAD" | grep -v -E '\.md$|^docs/|^\.gitignore$' || true)
+          # Documentation. CHANGELOG.md and changelog.d/ count too, so a release's changelog merge
+          # leaves only the version files for the check below.
+          code=$(git diff --name-only "$BASE...HEAD" | grep -v -E '\.md$|^docs/|^changelog\.d/|^\.gitignore$' || true)
           if [ -z "$code" ]; then
             echo "Only documentation changed; skipping the build jobs."
             echo "code=false" >> "$GITHUB_OUTPUT"
@@ -88,8 +93,9 @@ jobs:
               END { flush() }'
           }
 
-          # A version bump changes nothing else, and the release workflow builds and checks
-          # everything when the version is tagged.
+          # A version bump changes nothing else besides the changelog, which the documentation
+          # filter above already removed. The release workflow builds and checks everything when
+          # the version is tagged.
           if [ -z "$(echo "$code" | grep -v -x -E 'Cargo\.(toml|lock)')" ]; then
             merge_base=$(git merge-base "$BASE" HEAD)
             if [ "$(without_version "$merge_base")" = "$(without_version HEAD)" ]; then
@@ -102,6 +108,15 @@ jobs:
           echo "Changed outside the documentation:"
           echo "$code"
           echo "code=true" >> "$GITHUB_OUTPUT"
+
+  changelog:
+    name: Changelog entries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The entries use the known headings
+        run: bash tools/changelog/changelog.sh preview
 
   lint:
     name: Format and clippy
@@ -209,7 +224,7 @@ jobs:
 
   result:
     name: CI result
-    needs: [changes, lint, test, android, ios]
+    needs: [changes, changelog, lint, test, android, ios]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
