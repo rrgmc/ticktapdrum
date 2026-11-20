@@ -74,6 +74,8 @@ const NOTICE_SECONDS: f64 = 4.0;
 /// How often the interface looks for hits from the MIDI input while nothing plays, in seconds,
 /// so a key's flash shows soon after the key is played.
 const INPUT_POLL: f64 = 0.05;
+/// How much longer a notice with a button stays, so there is time to tap it.
+const KIT_NOTICE_EXTRA: f64 = 5.0;
 
 /// The whole application state the interface draws.
 pub struct DrumApp {
@@ -135,6 +137,9 @@ pub struct DrumApp {
     offered: offered::Offered,
     /// A one-line notice shown over the grid, and the time (egui's clock, in seconds) it goes.
     notice: Option<(String, f64)>,
+    /// A button the notice carries: its words and the kit it chooses. Only a groove from a
+    /// keyboard style sets one, to offer the nearest kit.
+    notice_kit: Option<(String, u8)>,
     /// The language the person chose in the menu, or `None` to follow the system.
     language_choice: Option<i18n::Language>,
     /// The system's language, if the interface is translated into it.
@@ -240,6 +245,7 @@ impl DrumApp {
             takes: 0,
             offered: offered::Offered::default(),
             notice: None,
+            notice_kit: None,
             language_choice,
             system_language,
             titled: None,
@@ -456,7 +462,7 @@ impl DrumApp {
                 self.notice = Some((text.clone(), until));
                 self.message = Some(text);
             }
-            self.show_notice(ui);
+            self.show_notice(ui, &mut engine);
             // Sends changes that waited because the audio queue was full.
             if !engine.flush() {
                 ui.ctx().request_repaint();
@@ -469,29 +475,42 @@ impl DrumApp {
     /// Shows the current notice, if any, as one line near the bottom of the screen until it
     /// expires. Messages in the menu's status line are seen only when the menu opens; a notice is
     /// for news the person should see at once, such as a MIDI output going away.
-    fn show_notice(&mut self, ui: &egui::Ui) {
+    fn show_notice(&mut self, ui: &egui::Ui, engine: &mut Engine) {
         let Some((text, until)) = &self.notice else {
             return;
         };
         let now = ui.input(|i| i.time);
         if now >= *until {
             self.notice = None;
+            self.notice_kit = None;
             return;
         }
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_secs_f64(until - now));
         let rect = ui.max_rect();
-        egui::Area::new(egui::Id::unique("dm-notice"))
+        let chosen = egui::Area::new(egui::Id::unique("dm-notice"))
             .order(egui::Order::Foreground)
-            .interactable(false)
+            .interactable(self.notice_kit.is_some())
             .pivot(egui::Align2::CENTER_BOTTOM)
             .fixed_pos(egui::pos2(rect.center().x, rect.bottom() - 16.0))
             .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_max_width(rect.width() - 32.0);
-                    ui.label(text.as_str());
-                });
-            });
+                egui::Frame::popup(ui.style())
+                    .show(ui, |ui| {
+                        ui.set_max_width(rect.width() - 32.0);
+                        ui.label(text.as_str());
+                        let (words, program) = self.notice_kit.as_ref()?;
+                        ui.add(widgets::button(icons::SPEAKER_HIGH, words))
+                            .clicked()
+                            .then_some(*program)
+                    })
+                    .inner
+            })
+            .inner;
+        if let Some(program) = chosen {
+            self.notice = None;
+            self.notice_kit = None;
+            self.handle_sounds(engine, vec![sounds::SoundEvent::Kit(program)]);
+        }
     }
 
     /// Tells the host to keep the screen on when playing starts, and to let it sleep when
@@ -948,7 +967,8 @@ impl DrumApp {
             ui,
             egui::Rect::from_min_max(egui::pos2(rest.left(), indicator_top), rest.max),
             pattern_bars,
-            shown.clone(),
+            // The bar being heard; while this pattern is not playing, the bars the grid shows.
+            playing_bar.map_or(shown.clone(), |bar| bar..bar + 1),
         );
         for event in &grid_events {
             if let grid::GridEvent::OpenRow { row, rect } = event {
@@ -1830,6 +1850,26 @@ impl DrumApp {
     }
 
     /// Shows a notice over the grid for a few seconds.
+    /// After a groove from a keyboard style is added: when the keyboard's kit has a near kit in
+    /// the app and the project uses another one, a notice names the keyboard's kit and offers the
+    /// near one. Nothing changes unless the button is tapped.
+    fn offer_kit(&mut self, engine: &Engine, groove: &dm_groove::Groove) {
+        let (Some(kit), Some(similar)) = (&groove.kit, groove.similar_kit) else {
+            return;
+        };
+        if similar == self.project.kit() {
+            return;
+        }
+        let Some(near) = engine.kits().iter().find(|k| k.program == similar) else {
+            return;
+        };
+        self.show_notice_text(tr!("grooves-kit-notice", kit = kit.as_str()));
+        if let Some((_, until)) = &mut self.notice {
+            *until += KIT_NOTICE_EXTRA;
+        }
+        self.notice_kit = Some((tr!("grooves-use-kit", kit = near.name.as_str()), similar));
+    }
+
     fn show_notice_text(&mut self, text: String) {
         let until = self.ctx.input(|i| i.time) + NOTICE_SECONDS;
         self.notice = Some((text, until));
@@ -1917,6 +1957,7 @@ impl DrumApp {
                         self.menu.close_grooves();
                         let pattern = self.project.patterns()[added.index].name();
                         self.message = Some(grooves::added_pattern(&added, &groove, pattern));
+                        self.offer_kit(engine, &groove);
                     }
                     Err(refused) => self.groove_note = Some(grooves::add_refused(refused)),
                 }

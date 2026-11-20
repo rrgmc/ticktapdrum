@@ -13,6 +13,7 @@ members = [
     "apps/dm-ios",
     "tools/icons",
     "tools/groove-spike",
+    "tools/yamaha-kits",
 ]
 
 [workspace.package]

@@ -1080,6 +1080,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dm-yamaha-kits"
+version = "1.2.0"
+dependencies = [
+ "zip",
+]
+
+[[package]]
 name = "document-features"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"

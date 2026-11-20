@@ -39,6 +39,9 @@ const PERCUSSION_IN_KIT_RANGE: [u8; 3] = [54, 56, 58];
 fn is_kit_key(key: u8) -> bool {
     KIT_KEYS.contains(&key) && !PERCUSSION_IN_KIT_RANGE.contains(&key)
 }
+/// General MIDI's hand percussion above the kit: bongos to open triangle. In a style these count
+/// as drum keys, since the kit's key map has already put each sound on its General MIDI key.
+const STYLE_PERCUSSION_KEYS: std::ops::RangeInclusive<u8> = 60..=81;
 /// Keys that General MIDI and the Roland GS extras give a drum sound.
 const KNOWN_KEYS: std::ops::RangeInclusive<u8> = 27..=87;
 /// The most notes the swing fit looks at. Real grooves have far fewer, so this only limits the
@@ -52,16 +55,27 @@ pub struct Fitted {
     pub bars: Vec<Vec<BarHit>>,
 }
 
+/// Where the notes come from. A style's notes have been through its kit's key map already, so
+/// they are checked a little differently: see [`map_keys`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    /// An ordinary MIDI file.
+    MidiFile,
+    /// One section of a keyboard style.
+    Style,
+}
+
 /// Reads and checks one MIDI file.
 pub fn analyze(bytes: &[u8]) -> Result<Fitted, Refusal> {
     if bytes.len() > MAX_MIDI_BYTES {
         return Err(Refusal::NotMidi);
     }
     let file = midi::parse(bytes).ok_or(Refusal::NotMidi)?;
-    fit(&file)
+    fit(&file, Source::MidiFile)
 }
 
-fn fit(file: &MidiFile) -> Result<Fitted, Refusal> {
+/// Checks notes already read, and snaps them to the grid.
+pub fn fit(file: &MidiFile, source: Source) -> Result<Fitted, Refusal> {
     if file.notes.is_empty() {
         return Err(Refusal::NoNotes);
     }
@@ -74,11 +88,13 @@ fn fit(file: &MidiFile) -> Result<Fitted, Refusal> {
         return Err(Refusal::NotFourFour);
     }
     let bpm = file.tempos.first().map_or(DEFAULT_BPM, |t| t.1);
-    if file.tempos.iter().any(|t| (t.1 - bpm).abs() >= SAME_TEMPO) {
+    // A style's tempo is the one its setup bar sets; the keyboard player chooses the tempo, so a
+    // change inside a section (an Ending slowing down, say) is ignored.
+    if source == Source::MidiFile && file.tempos.iter().any(|t| (t.1 - bpm).abs() >= SAME_TEMPO) {
         return Err(Refusal::TempoChanges);
     }
 
-    let keys = map_keys(file)?;
+    let keys = map_keys(file, source)?;
 
     // Positions in steps, from the start of the file.
     let step_ticks = f64::from(file.ppq) / 4.0;
@@ -147,10 +163,13 @@ fn fit(file: &MidiFile) -> Result<Fitted, Refusal> {
 
 /// Maps every note's key to the General MIDI key the app plays, or refuses the file as made for
 /// another drum program.
-fn map_keys(file: &MidiFile) -> Result<Vec<u8>, Refusal> {
+///
+/// A style's keys are General MIDI already, so they skip the TD-11 mapping, and its hand
+/// percussion (keys 60 to 81) counts as drum keys.
+fn map_keys(file: &MidiFile, source: Source) -> Result<Vec<u8>, Refusal> {
     // Keys 22 and 26 are the hi-hat edge of the Roland TD-11, the kit Google's Groove MIDI
     // Dataset was recorded on. General MIDI has no drum there.
-    let td11 = file.notes.iter().any(|n| n.key == 22 || n.key == 26);
+    let td11 = source == Source::MidiFile && file.notes.iter().any(|n| n.key == 22 || n.key == 26);
     let keys: Vec<u8> = file
         .notes
         .iter()
@@ -159,7 +178,13 @@ fn map_keys(file: &MidiFile) -> Result<Vec<u8>, Refusal> {
     if keys.iter().any(|k| !KNOWN_KEYS.contains(k)) {
         return Err(Refusal::OtherDrumProgram);
     }
-    let kit = keys.iter().filter(|&&k| is_kit_key(k)).count();
+    // In a style, the tambourine, cowbell and vibraslap keys hold those sounds: the key map put
+    // them there, so they count too.
+    let counts = |k: u8| match source {
+        Source::MidiFile => is_kit_key(k),
+        Source::Style => KIT_KEYS.contains(&k) || STYLE_PERCUSSION_KEYS.contains(&k),
+    };
+    let kit = keys.iter().filter(|&&k| counts(k)).count();
     if (kit as f64) < MIN_KIT_SHARE * keys.len() as f64 {
         return Err(Refusal::OtherDrumProgram);
     }

@@ -1,0 +1,11 @@
+[package]
+name = "dm-yamaha-kits"
+description = "Writes dm-groove's Yamaha drum kit key map from Yamaha's Data List spreadsheet"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+zip = { workspace = true }

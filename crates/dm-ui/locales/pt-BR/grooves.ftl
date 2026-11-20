@@ -21,7 +21,7 @@ grooves-keep = Cancelar
 grooves-delete-pack-question = Apagar todos os grooves de { $name }?
 grooves-delete-groove-question = Apagar o groove { $name }?
 grooves-delete-failed = Não foi apagado: { $reason }
-grooves-file-kind = Arquivos MIDI e zips
+grooves-file-kind = Arquivos MIDI, zips e estilos de teclado
 
 ## A janela Adicionar grooves de um link.
 
@@ -105,3 +105,8 @@ grooves-magenta-credits = Do Groove MIDI Dataset, do Google Magenta (Gillick, Ro
 grooves-magenta-page = O Groove MIDI Dataset
 grooves-magenta-license = A licença CC BY 4.0
 grooves-magenta-load-tip = Começar uma batida nova com este groove
+
+# Depois de adicionar um groove de um estilo de teclado. $kit é o kit do teclado, como RockDrumKit.
+grooves-kit-notice = O teclado toca isto com { $kit }.
+# Um botão abaixo de grooves-kit-notice. $kit é o kit mais parecido do app, como Power Kit.
+grooves-use-kit = Usar { $kit }
