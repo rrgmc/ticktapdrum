@@ -7,16 +7,23 @@
 //! [`MidiStatus::Connected`], the interface keeps the engine's MIDI out on (which silences the
 //! internal synthesizer); otherwise off.
 //!
-//! See "Milestone 9: MIDI out" in `docs/DESIGN.md`.
+//! [`MidiOut::send_style`] writes a style file into a Yamaha arranger keyboard through the same
+//! output, with the input of the same name for the keyboard's replies.
+//!
+//! See "Milestone 9: MIDI out" and "Export as a keyboard style" in `docs/DESIGN.md`.
 
 use std::time::Instant;
 
 use dm_audio::{MidiEvent, MidiEvents};
 
 #[cfg_attr(target_os = "android", allow(dead_code))]
+mod liveness;
+#[cfg_attr(target_os = "android", allow(dead_code))]
 mod schedule;
 #[cfg(not(target_os = "android"))]
 mod sender;
+#[doc(hidden)]
+pub mod transfer;
 
 /// The name of the virtual output port the app creates where the system allows it (macOS and
 /// Linux), which other programs see as an input.
@@ -35,6 +42,44 @@ pub enum MidiStatus {
     /// The chosen output is there but would not open, for example because another program holds
     /// it. The text is the system's reason, for the log. The thread keeps trying.
     Failed(String),
+}
+
+/// Which kind of keyboard a style goes to. Each brand has its own file transfer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyboardTarget {
+    /// A Yamaha arranger: PSR-SX, Genos and the like. The style goes into the User drive's
+    /// `STYLE` folder.
+    Yamaha,
+}
+
+/// What a style transfer started with [`MidiOut::send_style`] is doing.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransferStatus {
+    /// No transfer has been asked for.
+    Idle,
+    /// The transfer is under way: the share of the file sent so far, from 0 to 1.
+    Running(f32),
+    /// The file is saved on the keyboard under this name. Stays until the next transfer.
+    Done(String),
+    /// The transfer failed. Stays until the next transfer.
+    Failed(TransferError),
+}
+
+/// Why a style transfer failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransferError {
+    /// No output is connected, or it changed or went away during the transfer.
+    NotConnected,
+    /// The output has no input of the same name, so the keyboard's replies cannot be heard.
+    NoInput,
+    /// The keyboard did not answer.
+    NoAnswer,
+    /// Something answered, but it does not take files the way the target's brand does. The text
+    /// is the model it named, or its reply in hex if it named none.
+    UnknownKeyboard(String),
+    /// The keyboard refused a step, or a file of the same name could not be replaced. The text
+    /// is for the log.
+    Refused(String),
 }
 
 /// The MIDI sender: a thread that owns the connection.
@@ -111,6 +156,32 @@ impl MidiOut {
             MidiStatus::Off
         }
     }
+
+    /// Starts writing a style file into the keyboard where `target` keeps its styles (for
+    /// Yamaha, the User drive's `STYLE` folder), through the chosen output and the input of the
+    /// same name. Replaces a file of the same name. Never blocks: the thread does the work, and
+    /// [`MidiOut::transfer`] tells how it goes.
+    ///
+    /// While the transfer runs, the thread silences the output and discards the engine's
+    /// messages. Asking again while one runs lets the first finish, then starts the second.
+    pub fn send_style(&mut self, target: KeyboardTarget, file_name: String, data: Vec<u8>) {
+        #[cfg(not(target_os = "android"))]
+        self.handle.send_style(target, file_name, data);
+        #[cfg(target_os = "android")]
+        let _ = (target, file_name, data);
+    }
+
+    /// What the style transfer is doing. Cheap; call it every frame.
+    pub fn transfer(&self) -> TransferStatus {
+        #[cfg(not(target_os = "android"))]
+        {
+            self.handle.transfer()
+        }
+        #[cfg(target_os = "android")]
+        {
+            TransferStatus::Idle
+        }
+    }
 }
 
 #[cfg(all(test, not(target_os = "android")))]
@@ -158,6 +229,18 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         assert_eq!(producer.slots(), 16, "the thread should empty the queue");
+
+        // A style cannot go to an output that is not there.
+        assert_eq!(midi.transfer(), TransferStatus::Idle);
+        midi.send_style(KeyboardTarget::Yamaha, "A.sty".to_owned(), vec![1, 2, 3]);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while matches!(midi.transfer(), TransferStatus::Running(_)) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            midi.transfer(),
+            TransferStatus::Failed(TransferError::NotConnected)
+        );
 
         midi.select(None);
         assert_eq!(wait_for(&midi, |s| *s == MidiStatus::Off), MidiStatus::Off);
