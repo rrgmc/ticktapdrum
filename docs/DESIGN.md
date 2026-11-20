@@ -123,7 +123,7 @@ Deleting a pattern is a separate, explicit command.
   green, cymbals blue, everything else purple. A row's lit steps take its colour, and so do a
   stripe beside its name and one on each drum in the drum list. Loud and soft steps still differ
   in shape as well, so the grid reads without colour vision.
-- **Rows can show pictures**, for children who cannot read yet. ☰ → "Rows: …" cycles through
+- **Rows can show pictures**, for children who cannot read yet. ☰ → "Instruments: …" cycles through
   three choices, a device setting:
   - **Names** (the default): the name with the family's stripe.
   - **Pictures and names**: a picture with the name, the name under it on a tall row and beside
@@ -299,7 +299,7 @@ the beat.
 | **♩ 120** | Opens the tempo pop-up: large − and + buttons, a slider, and Swing. |
 | **▂▄▆** | Step levels: moves to the next choice of what a tap on a step does (see "Steps and loudness"). |
 | **↶** | Undo. Redo sits beside it when there is room. Either is in ☰ when it does not fit. |
-| **☰** | Opens the menu: Undo, Redo and the tempo on one line at the top when the strip has no room for them, then Save, Save as, Open, New, Load default style, Sounds, Export MIDI and Export WAV. Last, under "Settings": Rows (names or pictures), Keep in landscape, and Language. Sounds opens the Sounds dialog: the drum kit and "Add a row". |
+| **☰** | Opens the menu: Undo, Redo and the tempo on one line at the top when the strip has no room for them, then Save, Save as, Open, New, Load default style, Sounds, Export MIDI and Export WAV. Last, under "Settings": Instruments (names or pictures), Keep in landscape, Language, MIDI output, MIDI input and Keyboard notes. Sounds opens the Sounds dialog: the drum kit and "Add a row". |
 
 - **The strip never wraps and never scrolls.** Each button shows an icon and a word when there is
   room, and only the icon when there is not. If the icons still do not fit, buttons move into ☰
