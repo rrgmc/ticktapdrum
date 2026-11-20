@@ -1,0 +1,77 @@
+# A lista de levadas e a importação de levadas. Os ids começam com "grooves-".
+# Uma levada é um trecho curto de bateria que se repete, vindo de um arquivo MIDI. Um pacote é
+# um zip com muitos desses arquivos, ou um arquivo só.
+
+## Os itens do menu ☰ e a janela da lista de levadas.
+
+grooves-add-from-file = Juntar levadas de um arquivo
+grooves-title = Levadas
+grooves-intro = Toque em Tocar para ouvir uma levada. Juntar coloca a levada no projeto como um padrão novo.
+grooves-empty = Nenhuma levada ainda.
+grooves-pack = { $name } ({ $count })
+grooves-bars = { $count ->
+    [one] 1 compasso
+   *[other] { $count } compassos
+}
+grooves-play = Tocar
+grooves-stop = Parar
+grooves-add = Juntar
+grooves-add-tip = Juntar como um padrão novo
+grooves-delete = Apagar
+grooves-keep = Cancelar
+grooves-delete-pack-question = Apagar todas as levadas de { $name }?
+grooves-delete-groove-question = Apagar a levada { $name }?
+grooves-delete-failed = Não foi apagado: { $reason }
+grooves-file-kind = Arquivos MIDI e zips
+
+## O que uma importação fez.
+
+grooves-added = { $count ->
+    [one] 1 levada adicionada de { $name }.
+   *[other] { $count } levadas adicionadas de { $name }.
+}
+grooves-left-out = { $refused ->
+    [one] 1 arquivo ficou de fora: { $reasons }.
+   *[other] { $refused } arquivos ficaram de fora: { $reasons }.
+}
+grooves-only-general-midi = Só a versão General MIDI foi usada.
+grooves-not-added = { $name } não foi adicionado: { $reason }.
+grooves-none-added = Nada foi adicionado de { $name }. { $refused } arquivos ficaram de fora: { $reasons }.
+grooves-none-found = Nada foi adicionado de { $name }: não há levadas nele.
+grooves-reason-count = { $reason } ({ $count })
+grooves-read-failed = Não deu para ler { $name }: { $reason }
+grooves-not-saved = As levadas não foram guardadas: { $reason }
+
+## Por que um arquivo não é uma levada que o app aceita, em palavras simples.
+
+grooves-refusal-not-midi = não é um arquivo MIDI
+grooves-refusal-no-notes = não tem notas
+grooves-refusal-several-channels = é uma música inteira, não uma levada
+grooves-refusal-not-four-four = não está em 4/4
+grooves-refusal-tempo-changes = o andamento muda
+grooves-refusal-too-long = tem mais de 16 compassos
+grooves-refusal-off-grid = tocado livre, fora da grade
+grooves-refusal-other-drum-program = feito para outro programa de bateria (tente a versão General MIDI do pacote)
+
+## Por que um arquivo não pôde ser importado.
+
+grooves-error-not-grooves = { $name } não é um arquivo MIDI nem um zip.
+grooves-error-too-large = { $name } é grande demais.
+grooves-error-broken-zip = { $name } é um zip danificado.
+grooves-error-no-midi-files = { $name } não tem arquivos MIDI.
+
+## O que juntar uma levada ao projeto fez.
+
+grooves-added-pattern = { $bars ->
+    [one] Padrão { $pattern } criado: { $name }, 1 compasso.
+   *[other] Padrão { $pattern } criado: { $name }, { $bars } compassos.
+}
+grooves-repeats = Os { $given } compassos se repetem a cada { $bars }, então o padrão tem só esses.
+grooves-bars-left-out = { $count } compassos depois dos 16 primeiros ficaram de fora.
+grooves-rows-added = { $count ->
+    [one] 1 linha foi adicionada para uma peça nova.
+   *[other] { $count } linhas foram adicionadas para peças novas.
+}
+grooves-drums-left-out = { $count } peças ficaram de fora: o projeto não tem espaço para mais linhas.
+grooves-no-room = Não há espaço para outro padrão: um projeto comporta 26.
+grooves-add-failed = A levada não foi adicionada.

@@ -1,5 +1,6 @@
 //! The menu under ☰, and the dialogs its items open: Save as, Open, Load default style, Export,
-//! Language, MIDI output, Paste a drum tab, and the tempo when the strip has no room for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
+//! Language, MIDI output, Paste a drum tab, Grooves, and the tempo when the strip has no room
+//! for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
 //!
 //! It does everything the old Projects screen did. Starting a new project, opening one, opening
 //! a file or starting from a beat asks first when there are unsaved changes, and deleting always
@@ -7,6 +8,7 @@
 
 use egui::{RichText, Vec2};
 
+use crate::grooves::{self, GrooveEvent, GroovesView};
 use crate::i18n::{self, Language};
 use crate::icons;
 use crate::pictures::RowLabels;
@@ -31,6 +33,8 @@ pub(crate) enum MenuEvent {
     ListMidiOutputs,
     /// Send the drums to this MIDI output, or play them on this device if `None`.
     MidiOutput(Option<String>),
+    /// Import grooves, or use the groove list.
+    Grooves(GrooveEvent),
 }
 
 /// What the MIDI output item and its dialog show.
@@ -59,6 +63,7 @@ pub(crate) struct MenuView<'a> {
     pub(crate) system_language: Language,
     /// The MIDI output setting, or `None` where the platform cannot send MIDI.
     pub(crate) midi: Option<MidiView<'a>>,
+    pub(crate) grooves: GroovesView<'a>,
 }
 
 /// The dialog a menu item opened.
@@ -76,6 +81,10 @@ enum Shown {
         text: String,
         refusal: Option<String>,
     },
+    /// The groove list, and a pack to open and show once, such as the one just imported.
+    Grooves {
+        focus: Option<String>,
+    },
     /// "Start new?" when there are unsaved changes.
     New,
 }
@@ -87,6 +96,7 @@ enum Ask {
     OpenFile,
     Delete(String),
     Preset(&'static str),
+    Groove(grooves::Ask),
 }
 
 #[derive(Default)]
@@ -134,6 +144,24 @@ impl Menu {
     /// Closes the Paste a drum tab dialog once its tab has been added.
     pub(crate) fn close_paste(&mut self) {
         if matches!(self.dialog, Some(Shown::PasteTab { .. })) {
+            self.dialog = None;
+            self.ask = None;
+        }
+    }
+
+    /// Opens the groove list, showing the pack with key `focus` if there is one.
+    pub(crate) fn open_grooves(&mut self, focus: Option<String>) {
+        self.open(Shown::Grooves { focus });
+    }
+
+    /// Whether the groove list is open.
+    pub(crate) fn grooves_open(&self) -> bool {
+        matches!(self.dialog, Some(Shown::Grooves { .. }))
+    }
+
+    /// Closes the groove list, once a groove from it has been added.
+    pub(crate) fn close_grooves(&mut self) {
+        if self.grooves_open() {
             self.dialog = None;
             self.ask = None;
         }
@@ -272,6 +300,27 @@ impl Menu {
                 text: String::new(),
                 refusal: None,
             });
+            ui.close();
+        }
+        // Grooves become new patterns, so basic mode, with its one pattern, has no use for them.
+        // A file can be chosen on a desktop and where the host has a picker.
+        if !p.basic
+            && p.file_items
+            && ui
+                .add(item(icons::FILE_ARROW_UP, &tr!("grooves-add-from-file")))
+                .clicked()
+        {
+            events.push(MenuEvent::Grooves(GrooveEvent::AddFromFile));
+            ui.close();
+        }
+        if !p.basic
+            && view.grooves.any
+            && ui
+                .add(item(icons::PLAYLIST, &tr!("grooves-title")))
+                .clicked()
+        {
+            self.open(Shown::Grooves { focus: None });
+            events.push(MenuEvent::Grooves(GrooveEvent::Open));
             ui.close();
         }
         if ui
@@ -435,6 +484,19 @@ impl Menu {
                 })
                 .closed
             }
+            Shown::Grooves { focus } => {
+                let mut ask = None;
+                let mut list_events = Vec::new();
+                let closed = widgets::dialog(ctx, "grooves", &tr!("grooves-title"), |ui| {
+                    grooves::list(ui, &view.grooves, focus, &mut ask, &mut list_events);
+                })
+                .closed;
+                if let Some(ask) = ask {
+                    self.ask = Some(Ask::Groove(ask));
+                }
+                events.extend(list_events.into_iter().map(MenuEvent::Grooves));
+                closed
+            }
             Shown::New => match widgets::confirm(
                 ctx,
                 "new",
@@ -474,6 +536,7 @@ impl Menu {
                     tr!("menu-start"),
                     tr!("menu-keep-this"),
                 ),
+                Ask::Groove(ask) => ask.words(),
             };
             match widgets::confirm(ctx, "menu-question", &question, &yes, &no) {
                 Some(true) => {
@@ -495,6 +558,8 @@ impl Menu {
                             events.push(MenuEvent::Project(ProjectEvent::Preset(name)));
                             done = true;
                         }
+                        // The list stays open, to play, add or delete another.
+                        Ask::Groove(ask) => events.push(MenuEvent::Grooves(ask.event())),
                     }
                 }
                 Some(false) => self.ask = None,

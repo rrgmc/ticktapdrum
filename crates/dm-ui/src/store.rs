@@ -1,4 +1,5 @@
 //! Where projects live on the device: named projects in a `projects` folder, and one autosave.
+//! The groove list lives beside them, in a `grooves` folder, as one file per pack.
 //!
 //! Every write goes to a temporary file first and is then renamed over the old one, so a crash or
 //! a phone stopping the app mid-write never leaves a half-written project. The same reading and
@@ -10,9 +11,10 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use dm_groove::{Pack, pack_from_json, pack_to_json};
 use dm_project::{FILE_EXTENSION, InvalidReason, LoadError, Project, from_json, to_json};
 
-use crate::files::Target;
+use crate::files::{Target, write_atomic};
 use crate::i18n::Language;
 
 use crate::pictures::RowLabels;
@@ -32,6 +34,10 @@ const LANGUAGE: &str = "language";
 const MIDI_OUTPUT: &str = "midi.output";
 /// Holds how row names show, when not as names.
 const ROW_LABELS: &str = "row.labels";
+/// The extension of a pack's file in the groove list.
+const PACK_EXTENSION: &str = "json";
+/// A pack's file name when nothing is left of its own name once cleaned.
+const PACK_FALLBACK: &str = "Grooves";
 /// The longest project name, in characters.
 const MAX_NAME: usize = 60;
 
@@ -86,6 +92,81 @@ impl Store {
 
     pub(crate) fn delete(&self, name: &str) -> Result<(), String> {
         fs::remove_file(self.project_path(name)).map_err(delete_error)
+    }
+
+    fn grooves_dir(&self) -> PathBuf {
+        self.dir.join("grooves")
+    }
+
+    fn pack_path(&self, key: &str) -> PathBuf {
+        self.grooves_dir().join(format!("{key}.{PACK_EXTENSION}"))
+    }
+
+    /// The keys of the packs in the groove list, sorted, case ignored. A pack's key is the name
+    /// of its file, without the extension.
+    pub(crate) fn pack_keys(&self) -> Vec<String> {
+        let Ok(entries) = fs::read_dir(self.grooves_dir()) else {
+            return Vec::new();
+        };
+        let mut keys: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == PACK_EXTENSION))
+            .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+            .collect();
+        keys.sort_by_key(|k| k.to_lowercase());
+        keys
+    }
+
+    /// Every pack in the groove list, with its key, in the order of [`Store::pack_keys`]. A pack
+    /// that does not load is left out, and the log says why.
+    pub(crate) fn load_packs(&self) -> Vec<(String, Pack)> {
+        self.pack_keys()
+            .into_iter()
+            .filter_map(|key| match self.load_pack(&key) {
+                Ok(pack) => Some((key, pack)),
+                Err(e) => {
+                    log::warn!("the groove pack {key} did not load: {e}");
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn load_pack(&self, key: &str) -> Result<Pack, String> {
+        let text = fs::read_to_string(self.pack_path(key)).map_err(read_error)?;
+        pack_from_json(&text)
+    }
+
+    /// Keeps a pack in the groove list, and returns its key. The key is the pack's name made
+    /// safe as a file name, so a pack with the same name replaces the one there.
+    pub(crate) fn save_pack(&self, pack: &Pack) -> Result<String, String> {
+        let key = pack_key(&pack.name);
+        self.write_pack(&key, &pack_to_json(pack))?;
+        Ok(key)
+    }
+
+    fn write_pack(&self, key: &str, text: &str) -> Result<(), String> {
+        fs::create_dir_all(self.grooves_dir()).map_err(folder_error)?;
+        write_atomic(&self.pack_path(key), text.as_bytes()).map_err(write_error)
+    }
+
+    /// Removes a pack and all its grooves from the groove list.
+    pub(crate) fn delete_pack(&self, key: &str) -> Result<(), String> {
+        fs::remove_file(self.pack_path(key)).map_err(delete_error)
+    }
+
+    /// Removes the groove at `index` from a pack. The pack goes too once it is empty.
+    pub(crate) fn delete_groove(&self, key: &str, index: usize) -> Result<(), String> {
+        let mut pack = self.load_pack(key)?;
+        if index < pack.grooves.len() {
+            pack.grooves.remove(index);
+        }
+        if pack.grooves.is_empty() {
+            self.delete_pack(key)
+        } else {
+            self.write_pack(key, &pack_to_json(&pack))
+        }
     }
 
     /// Writes the autosave and the name of the project it belongs to.
@@ -322,6 +403,11 @@ pub(crate) fn clean_name(raw: &str) -> Option<String> {
     (!cleaned.is_empty()).then_some(cleaned)
 }
 
+/// The key, and file name, of a pack named `name`.
+fn pack_key(name: &str) -> String {
+    clean_name(name).unwrap_or_else(|| PACK_FALLBACK.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,6 +494,61 @@ mod tests {
         assert_eq!(store.load("Rock").unwrap(), p);
         store.delete("Rock").unwrap();
         assert!(!store.exists("Rock"));
+    }
+
+    #[test]
+    fn packs_are_kept_under_their_cleaned_names() {
+        assert_eq!(pack_key("Chilled Beat 1 (GM)"), "Chilled Beat 1 GM");
+        assert_eq!(pack_key("???"), PACK_FALLBACK);
+        let store = temp_store("pack-files");
+        assert!(store.pack_keys().is_empty());
+        assert!(store.load_packs().is_empty());
+        store.write_pack("rock", "{}").unwrap();
+        store.write_pack("Funk", "{}").unwrap();
+        // A project is not a pack, and a pack is not a project.
+        store.save("Beat", &Project::new()).unwrap();
+        assert_eq!(
+            store.pack_keys(),
+            vec!["Funk".to_owned(), "rock".to_owned()]
+        );
+        assert_eq!(store.list(), vec!["Beat".to_owned()]);
+        // The same key replaces the file.
+        store.write_pack("rock", "[]").unwrap();
+        assert_eq!(fs::read_to_string(store.pack_path("rock")).unwrap(), "[]");
+        store.delete_pack("rock").unwrap();
+        assert_eq!(store.pack_keys(), vec!["Funk".to_owned()]);
+        let error = store.delete_pack("rock").unwrap_err();
+        assert!(!error.starts_with("errors-"), "{error}");
+    }
+
+    fn groove(name: &str) -> dm_groove::Groove {
+        dm_groove::Groove {
+            name: name.to_owned(),
+            folder: String::new(),
+            bpm: 100.0,
+            bars: vec![vec![dm_groove::BarHit {
+                key: 36,
+                step: 0,
+                velocity: 100,
+            }]],
+        }
+    }
+
+    #[test]
+    fn grooves_are_saved_loaded_and_deleted() {
+        let store = temp_store("packs");
+        let pack = Pack {
+            name: "Chilled Beat".to_owned(),
+            grooves: vec![groove("One"), groove("Two")],
+        };
+        let key = store.save_pack(&pack).unwrap();
+        assert_eq!(store.load_packs(), vec![(key.clone(), pack)]);
+        store.delete_groove(&key, 0).unwrap();
+        let packs = store.load_packs();
+        assert_eq!(packs[0].1.grooves, vec![groove("Two")]);
+        // The last groove takes its pack with it.
+        store.delete_groove(&key, 0).unwrap();
+        assert!(store.pack_keys().is_empty());
     }
 
     #[test]

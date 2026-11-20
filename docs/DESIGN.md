@@ -1126,8 +1126,8 @@ it, and **add it to the project as a new pattern**, using the project's own temp
 asks nothing more; undo removes it. A groove whose drums are not among the project's rows adds the
 rows it needs.
 
-A single file opened or shared shows its groove right away, with "Add as pattern" and "Keep in
-list"; a pack shows the list.
+Every import, a single file or a pack, opens the groove list on the new pack, so a single groove
+is one tap away from Play or Add. Re-importing a file of the same name replaces its pack.
 
 ### Milestone 11: groove import from files
 

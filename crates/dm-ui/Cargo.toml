@@ -16,6 +16,7 @@ midi = ["dep:dm-midi"]
 [dependencies]
 dm-audio = { workspace = true }
 dm-bank = { workspace = true }
+dm-groove = { workspace = true }
 dm-midi = { workspace = true, optional = true }
 dm-project = { workspace = true }
 dm-tab = { workspace = true }

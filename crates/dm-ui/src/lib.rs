@@ -23,9 +23,11 @@ mod drums;
 mod export;
 mod files;
 mod grid;
+mod grooves;
 mod history;
 #[allow(dead_code)] // Not every icon is used.
 mod icons;
+mod incoming;
 mod menu;
 mod midi;
 mod paste_tab;
@@ -41,8 +43,9 @@ mod strip;
 mod tempo;
 mod widgets;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+pub use incoming::IncomingFiles;
 pub use picker::{PickAnswers, PickKind, PickRequest, PickedFile};
 
 use bank::BankState;
@@ -150,6 +153,16 @@ pub struct DrumApp {
     picks: picker::PickInbox,
     /// The picks sent to the host's picker and not yet answered.
     pending: files::Pending,
+    /// Where files a host hands in, such as a shared groove pack, arrive.
+    incoming: incoming::IncomingInbox,
+    /// Whether the groove list has any packs, which the menu's Grooves item needs.
+    has_grooves: bool,
+    /// The groove list's packs and their keys, read when the list opens.
+    groove_packs: Vec<(String, dm_groove::Pack)>,
+    /// The line at the top of the groove list: what the last import did, or why an add failed.
+    groove_note: Option<String>,
+    /// The groove playing on its own, as its pack's key and its place in the pack.
+    preview: Option<(String, usize)>,
 }
 
 impl DrumApp {
@@ -165,6 +178,8 @@ impl DrumApp {
         let row_labels = store.row_labels();
         let paste_tabs = store.paste_tabs();
         let midi = midi::Midi::new(store.midi_output());
+        // Only the names: reading the packs waits until the list opens.
+        let has_grooves = !store.pack_keys().is_empty();
         let app = Self {
             bank: BankState::new(data_dir),
             project,
@@ -214,6 +229,11 @@ impl DrumApp {
             picker: None,
             picks: picker::PickInbox::new(),
             pending: files::Pending::default(),
+            incoming: incoming::IncomingInbox::new(),
+            has_grooves,
+            groove_packs: Vec::new(),
+            groove_note: None,
+            preview: None,
         };
         app.apply_language();
         app
@@ -312,6 +332,13 @@ impl DrumApp {
         self.picks.answers()
     }
 
+    /// Where a host hands in files from outside the app to import as grooves, such as a MIDI
+    /// file or a zip shared to the app. Each is imported on the next frame, as a file chosen with
+    /// "Add grooves from a file" is. See [`IncomingFiles::send`].
+    pub fn incoming_files(&self) -> IncomingFiles {
+        self.incoming.files()
+    }
+
     /// Space kept clear around the content, in points. A phone host uses it to stay clear of the
     /// status bar and the navigation bar, which eframe does not report on Android.
     pub fn with_padding(mut self, padding: egui::Margin) -> Self {
@@ -352,6 +379,12 @@ impl DrumApp {
         }
         self.bank.poll(&ctx);
         self.picks.set_context(&ctx);
+        self.incoming.set_context(&ctx);
+        self.ctx = ctx.clone();
+        while let Some((name, bytes)) = self.incoming.take() {
+            self.import_grooves(&name, bytes);
+        }
+        self.dropped_files(&ctx);
         self.back(&ctx);
         let frame = egui::Frame::central_panel(ui.style()).inner_margin(self.padding);
         egui::CentralPanel::default().frame(frame).show(ui, |ui| {
@@ -454,6 +487,7 @@ impl DrumApp {
         let now = ui.input(|i| i.time);
         // A copy of the project before this frame's edits. Typically a few kilobytes.
         let before = self.project.clone();
+        let message_before = self.message.clone();
         self.frame_group = Group::Single;
         self.skip_record = false;
         self.ctx = ui.ctx().clone();
@@ -477,8 +511,11 @@ impl DrumApp {
         if self.project != before {
             if !self.skip_record {
                 self.history.record(&before, self.frame_group, now);
-                // An edit makes "Saved" or "Opened" out of date.
-                self.message = None;
+                // An edit makes "Saved" or "Opened" out of date, but not a message about the
+                // edit itself, such as what adding a groove did.
+                if self.message == message_before {
+                    self.message = None;
+                }
             }
             self.unsaved_since = Some(now);
         }
@@ -745,6 +782,12 @@ impl DrumApp {
                 connected: self.midi.connected(),
                 outputs: self.midi.outputs(),
             }),
+            grooves: grooves::GroovesView {
+                any: self.has_grooves,
+                packs: &self.groove_packs,
+                playing: self.preview.as_ref().map(|(key, i)| (key.as_str(), *i)),
+                note: self.groove_note.as_deref(),
+            },
         };
         let mut menu_events =
             widgets::popup(&strip.menu, |ui| self.menu.contents(ui, &view)).unwrap_or_default();
@@ -882,7 +925,16 @@ impl DrumApp {
                     // This frame was drawn in the old language; the next shows the new one.
                     ui.ctx().request_repaint();
                 }
+                menu::MenuEvent::Grooves(event) => {
+                    self.handle_grooves(engine, event);
+                    // This frame drew the list as it was.
+                    ui.ctx().request_repaint();
+                }
             }
+        }
+        // A groove plays only while its list is open.
+        if self.preview.is_some() && !self.menu.grooves_open() {
+            self.stop_preview(engine);
         }
         for event in bar_events {
             let result = match event {
@@ -1271,6 +1323,17 @@ impl DrumApp {
                 });
                 self.export_message = self.message.clone();
             }
+            PickKind::OpenGrooves => {
+                let name = target.file_name();
+                match target.read_limited(grooves::MAX_FILE) {
+                    Ok(bytes) => self.import_grooves(&name, bytes),
+                    Err(e) => self.import_failed(tr!(
+                        "grooves-read-failed",
+                        name = name.as_str(),
+                        reason = e.to_string()
+                    )),
+                }
+            }
             PickKind::ExportWav => {
                 let Some(soundfont) = self.bank.soundfont() else {
                     return;
@@ -1343,6 +1406,8 @@ impl DrumApp {
                 engine.play_song(0);
             }
         }
+        // Playing the project also stops a groove playing on its own.
+        self.preview = None;
         self.playing = true;
         self.follow = true;
     }
@@ -1378,6 +1443,174 @@ impl DrumApp {
                 self.message = Some(paste_tab::added(&added, &tab, pattern));
             }
             Err(error) => self.menu.refuse_paste(paste_tab::add_error(&error)),
+        }
+    }
+
+    /// Imports grooves from a file: a MIDI file or a zip of them, by its name (such as
+    /// `Chilled Beat.zip`) and its whole contents. The grooves accepted are kept in the groove
+    /// list as one pack, named after the file, which replaces a pack of the same name. Then the
+    /// list opens on that pack, and its note and the menu's message say what was added and what
+    /// was left out, and why. A file with no grooves adds no pack, and a notice says why.
+    ///
+    /// Every way a file arrives ends here: the menu's file item, a file dropped on a desktop
+    /// window, and files a host hands in through [`DrumApp::incoming_files`], such as a share on
+    /// Android or a download from a link. In basic mode the list does not open, since it adds
+    /// patterns that basic mode does not show; a notice says what was kept instead.
+    pub(crate) fn import_grooves(&mut self, name: &str, bytes: Vec<u8>) {
+        let result = if bytes.len() > grooves::MAX_FILE {
+            Err(dm_groove::ImportError::TooLarge)
+        } else {
+            dm_groove::import(name, &bytes)
+        };
+        let import = match result {
+            Ok(import) => import,
+            Err(error) => return self.import_failed(grooves::import_error(&error, name)),
+        };
+        if import.grooves.is_empty() {
+            return self.import_failed(grooves::nothing_added(&import, name));
+        }
+        let message = grooves::added(&import, name);
+        let pack = dm_groove::Pack {
+            name: Path::new(name)
+                .file_stem()
+                .map_or_else(|| name.to_owned(), |s| s.to_string_lossy().into_owned()),
+            grooves: import.grooves,
+        };
+        let key = match self.store.save_pack(&pack) {
+            Ok(key) => key,
+            Err(e) => return self.import_failed(tr!("grooves-not-saved", reason = e)),
+        };
+        self.has_grooves = true;
+        self.message = Some(message.clone());
+        if self.basic {
+            self.show_notice_text(message);
+        } else {
+            self.groove_note = Some(message);
+            self.open_groove_list(Some(key));
+        }
+    }
+
+    /// Says why an import added nothing: in the menu's message, in the groove list's note if the
+    /// list is open, and otherwise in a notice over the grid.
+    fn import_failed(&mut self, message: String) {
+        self.message = Some(message.clone());
+        if self.menu.grooves_open() {
+            self.groove_note = Some(message);
+        } else {
+            self.show_notice_text(message);
+        }
+    }
+
+    /// Shows a notice over the grid for a few seconds.
+    fn show_notice_text(&mut self, text: String) {
+        let until = self.ctx.input(|i| i.time) + NOTICE_SECONDS;
+        self.notice = Some((text, until));
+        self.ctx.request_repaint();
+    }
+
+    /// Imports the files dropped on a desktop's window, except in basic mode, which has no
+    /// grooves. Each file is read from its path.
+    fn dropped_files(&mut self, ctx: &egui::Context) {
+        let dropped = ctx.input(|i| i.raw.dropped_files.clone());
+        if self.basic {
+            return;
+        }
+        for file in dropped {
+            let target = files::Target::Path(file.path().to_path_buf());
+            let name = target.file_name();
+            match target.read_limited(grooves::MAX_FILE) {
+                Ok(bytes) => self.import_grooves(&name, bytes),
+                Err(e) => self.import_failed(tr!(
+                    "grooves-read-failed",
+                    name = name.as_str(),
+                    reason = e.to_string()
+                )),
+            }
+        }
+    }
+
+    /// Reads the groove list again and opens it, showing the pack with key `focus` if given.
+    fn open_groove_list(&mut self, focus: Option<String>) {
+        self.reload_grooves();
+        self.menu.open_grooves(focus);
+    }
+
+    /// Reads the groove list again, after an import or a delete.
+    fn reload_grooves(&mut self) {
+        self.groove_packs = self.store.load_packs();
+        self.has_grooves = !self.groove_packs.is_empty();
+    }
+
+    /// The groove at `index` in the pack with `key`, if both are there.
+    fn groove(&self, key: &str, index: usize) -> Option<&dm_groove::Groove> {
+        self.groove_packs
+            .iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, pack)| pack.grooves.get(index))
+    }
+
+    /// Stops the groove playing on its own, if one is.
+    fn stop_preview(&mut self, engine: &mut Engine) {
+        if self.preview.take().is_some() {
+            engine.stop_preview();
+        }
+    }
+
+    fn handle_grooves(&mut self, engine: &mut Engine, event: grooves::GrooveEvent) {
+        use grooves::GrooveEvent;
+        match event {
+            GrooveEvent::AddFromFile => self.pick(engine, PickKind::OpenGrooves),
+            GrooveEvent::Open => {
+                // The menu opened the list; the note was about an earlier visit.
+                self.groove_note = None;
+                self.stop_preview(engine);
+                self.reload_grooves();
+            }
+            GrooveEvent::Play { pack, groove } => {
+                let Some((hits, steps)) = self.groove(&pack, groove).map(grooves::preview_hits)
+                else {
+                    return;
+                };
+                // The preview stops the project's playback.
+                engine.preview(hits, steps);
+                self.playing = false;
+                self.preview = Some((pack, groove));
+            }
+            GrooveEvent::Stop => self.stop_preview(engine),
+            GrooveEvent::Add { pack, groove } => {
+                let Some(groove) = self.groove(&pack, groove).cloned() else {
+                    return;
+                };
+                match self.project.add_imported_pattern(&groove.bars) {
+                    Ok((added, changes)) => {
+                        apply(engine, changes);
+                        self.stop_preview(engine);
+                        self.select_pattern(engine, added.index);
+                        self.menu.close_grooves();
+                        let pattern = self.project.patterns()[added.index].name();
+                        self.message = Some(grooves::added_pattern(&added, &groove, pattern));
+                    }
+                    Err(refused) => self.groove_note = Some(grooves::add_refused(refused)),
+                }
+            }
+            GrooveEvent::DeletePack(key) => {
+                if self.preview.as_ref().is_some_and(|(k, _)| *k == key) {
+                    self.stop_preview(engine);
+                }
+                if let Err(e) = self.store.delete_pack(&key) {
+                    self.groove_note = Some(tr!("grooves-delete-failed", reason = e));
+                }
+                self.reload_grooves();
+            }
+            GrooveEvent::DeleteGroove { pack, groove } => {
+                if self.preview.as_ref().is_some_and(|(k, _)| *k == pack) {
+                    self.stop_preview(engine);
+                }
+                if let Err(e) = self.store.delete_groove(&pack, groove) {
+                    self.groove_note = Some(tr!("grooves-delete-failed", reason = e));
+                }
+                self.reload_grooves();
+            }
         }
     }
 
