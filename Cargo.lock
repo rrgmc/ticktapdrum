@@ -1040,6 +1040,7 @@ name = "dm-midi"
 version = "1.2.0"
 dependencies = [
  "dm-audio",
+ "dm-groove",
  "log",
  "midir",
  "rtrb",

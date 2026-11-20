@@ -10,11 +10,11 @@
 use dm_audio::Engine;
 #[cfg(feature = "midi")]
 pub(crate) use dm_midi::{
-    InputChoice, KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus,
+    InputChoice, InputKit, KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus,
 };
 #[cfg(not(feature = "midi"))]
 pub(crate) use off::{
-    InputChoice, KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus,
+    InputChoice, InputKit, KeyboardTarget, MidiOut, MidiStatus, TransferError, TransferStatus,
 };
 
 /// Stands in for `dm-midi` in a build without the `midi` feature: it reports no MIDI, so the
@@ -65,6 +65,10 @@ mod off {
             MidiStatus::Off
         }
 
+        pub(crate) fn input_kit(&self) -> Option<InputKit> {
+            None
+        }
+
         pub(crate) fn send_style(
             &mut self,
             _target: KeyboardTarget,
@@ -76,6 +80,14 @@ mod off {
         pub(crate) fn transfer(&self) -> TransferStatus {
             TransferStatus::Idle
         }
+    }
+
+    #[allow(dead_code)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub(crate) struct InputKit {
+        pub name: Option<&'static str>,
+        pub similar: Option<u8>,
+        pub change: u64,
     }
 
     #[allow(dead_code)]
@@ -218,6 +230,8 @@ pub(crate) struct Midi {
     input_device: Option<String>,
     /// The inputs listed when the input dialog last opened.
     inputs: Vec<String>,
+    /// The [`InputKit::change`] of the keyboard's kit seen last, or 0.
+    kit_seen: u64,
 }
 
 impl Midi {
@@ -261,6 +275,17 @@ impl Midi {
         if let Some(out) = &mut self.out {
             out.set_listening(on);
         }
+    }
+
+    /// The drum kit the keyboard switched to since the last call, if MIDI in is on. A keyboard
+    /// tells only when its kit changes, so this says nothing about the kit it started with.
+    pub(crate) fn new_input_kit(&mut self) -> Option<InputKit> {
+        let kit = self.out.as_ref()?.input_kit()?;
+        if kit.change == self.kit_seen {
+            return None;
+        }
+        self.kit_seen = kit.change;
+        self.input.then_some(kit)
     }
 
     /// The chosen input's name, or `None` for the output's own device.
@@ -390,6 +415,8 @@ impl Midi {
             out.select_input(input_choice(self.input_device.as_deref()));
             out.set_listening(self.input);
             self.out = Some(out);
+            // A new sender counts its kit changes from 1 again.
+            self.kit_seen = 0;
             self.last = None;
             self.sending = false;
             self.by_hand = false;

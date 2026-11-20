@@ -17,6 +17,8 @@
 //! input's own timestamp. The hit sounds in the app unless it comes from the output's own device. An input with the
 //! output's name is opened once and shared with Send to keyboard and the switch-off check, since
 //! Windows lets only one connection hold a port. [`MidiOut::input_status`] says how it goes.
+//! The input also follows the kit chosen on the keyboard: on a Yamaha keyboard, each key goes
+//! through that kit's key map, and [`MidiOut::input_kit`] tells the interface about the change.
 //!
 //! See "Milestone 9: MIDI out", "Export as a keyboard style" and "Milestone 14: MIDI in" in
 //! `docs/DESIGN.md`.
@@ -66,6 +68,26 @@ pub enum InputChoice {
     Named(String),
     /// No input: hits are not listened to.
     None,
+}
+
+/// A drum kit chosen on the keyboard, as the MIDI input heard it. See [`MidiOut::input_kit`].
+///
+/// A keyboard says which voice a part plays only when the voice changes, with a program change.
+/// Two kinds of change are reported: a Yamaha kit the key map knows (`dm_groove::yamaha_kit`)
+/// from a device that sent Yamaha SysEx, and a standard General MIDI kit on channel 10 from any
+/// other device. Other voices, melodic ones included, report nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputKit {
+    /// The kit's name as the keyboard shows it, such as `ElectroKit`. `None` for a General MIDI
+    /// kit, which has a number but no name the keyboard shows.
+    pub name: Option<&'static str>,
+    /// The General MIDI program of the nearest kit in the app's short list: the key map's
+    /// choice for a Yamaha kit, the kit's own program for a General MIDI kit. `None` for
+    /// Yamaha's percussion and effect kits.
+    pub similar: Option<u8>,
+    /// Counts the reports since the sender started, from 1. A new number means a new program
+    /// change, even one that picks the same kit again.
+    pub change: u64,
 }
 
 /// Which kind of keyboard a style goes to. Each brand has its own file transfer.
@@ -235,6 +257,24 @@ impl MidiOut {
         #[cfg(target_os = "android")]
         {
             MidiStatus::Off
+        }
+    }
+
+    /// The latest drum kit the keyboard switched to on the channel the input listens to, while
+    /// [`MidiOut::set_listening`] was on. Before the input has taken a channel, a change on any
+    /// channel counts. `None` until the first one. Cheap; call it every frame, and compare
+    /// [`InputKit::change`] with the one seen last to notice a new change.
+    ///
+    /// On a Yamaha keyboard, the same change also makes the input read each key of the kit
+    /// through the key map, so a sound the app has no row for is ignored.
+    pub fn input_kit(&self) -> Option<InputKit> {
+        #[cfg(not(target_os = "android"))]
+        {
+            self.handle.input_kit()
+        }
+        #[cfg(target_os = "android")]
+        {
+            None
         }
     }
 

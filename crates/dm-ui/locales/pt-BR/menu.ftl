@@ -59,6 +59,12 @@ menu-midi-gone = { $device } não está mais disponível. Tocando neste aparelho
 menu-midi-in-use = { $device } está em uso por outro programa.
 # Mensagem de uma linha quando a entrada MIDI some durante a gravação. $device é o nome dela.
 menu-midi-input-gone = { $device } não está mais disponível. A gravação parou.
+# Aviso quando o teclado troca o kit de bateria com a entrada MIDI ligada. $kit é o nome do kit
+# como o teclado mostra, como ElectroKit. O botão grooves-use-kit pode vir em seguida.
+menu-midi-kit = Kit do teclado: { $kit }
+# O mesmo, para um teclado que dá ao kit um número, mas nenhum nome. O botão grooves-use-kit vem
+# em seguida.
+menu-midi-kit-other = O teclado trocou o kit de bateria.
 # De onde vêm as batidas tocadas num aparelho MIDI. $device é o nome da entrada escolhida, como o
 # sistema informa e encurtado para caber, ou menu-midi-input-same.
 menu-midi-input-choice = Entrada MIDI: { $device }

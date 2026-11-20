@@ -23,6 +23,7 @@ pub use dm_project::BarHit;
 pub use groove::{MAX_GROOVE_BARS, MAX_MIDI_BYTES, snap};
 pub use json::PACK_FORMAT;
 pub use link::{LinkError, download, link_address};
+pub use style::{KeyboardKit, yamaha_kit};
 
 /// The largest file [`import`] reads, in bytes.
 pub const MAX_INPUT_BYTES: usize = 30 * 1024 * 1024;

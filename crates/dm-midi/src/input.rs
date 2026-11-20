@@ -6,9 +6,102 @@
 use std::time::{Duration, Instant};
 
 use dm_audio::LiveHit;
+use dm_groove::KeyboardKit;
 
 /// The General MIDI drum keys. Keys outside them are ignored: the app has no sound for them.
 pub(crate) const DRUM_KEYS: std::ops::RangeInclusive<u8> = 35..=81;
+
+/// Channel 10, counted from 0: General MIDI's drum channel.
+const DRUM_CHANNEL: u8 = 9;
+
+/// The programs of General MIDI's drum kits on channel 10, counted from 0: Standard, Room,
+/// Power, Electronic, TR-808, Jazz, Brush, Orchestra and SFX. Other programs there are not
+/// standard, so they say nothing about the kit.
+const GENERAL_MIDI_KITS: [u8; 9] = [0, 8, 16, 24, 25, 32, 40, 48, 56];
+
+/// Yamaha's manufacturer ID, the second byte of its SysEx messages.
+const YAMAHA_ID: u8 = 0x43;
+
+/// A drum kit the keyboard switched to, heard in a program change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct KitChange {
+    /// The channel of the program change, 0 to 15.
+    pub channel: u8,
+    /// The kit's name, for a Yamaha kit the key map knows. `None` for a General MIDI kit.
+    pub name: Option<&'static str>,
+    /// The General MIDI program of the nearest app kit: the table's choice for a Yamaha kit,
+    /// the program itself for a General MIDI kit. `None` for Yamaha's percussion and effect
+    /// kits.
+    pub similar: Option<u8>,
+}
+
+/// The voice each channel of one input connection plays, as far as its messages tell.
+///
+/// A keyboard says nothing about the voice already chosen, so this knows a channel's voice only
+/// from its next program change on. A Yamaha keyboard sends XG SysEx when a voice changes, so a
+/// connection that has sent any Yamaha SysEx is taken to be a Yamaha keyboard, and its kits are
+/// read from the key map.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Voices {
+    /// The last bank select MSB (controller 0) on each channel.
+    msb: [u8; 16],
+    /// The Yamaha kit the last program change on each channel picked, if the key map knows it.
+    kits: [Option<KeyboardKit>; 16],
+    /// Whether the connection has sent a Yamaha SysEx message.
+    yamaha: bool,
+}
+
+impl Voices {
+    /// Learns from one message. Returns the kit a program change picks, if it is one the app
+    /// can name or match: a Yamaha kit in the key map from a Yamaha keyboard, or a standard
+    /// General MIDI kit on channel 10 from any other device.
+    pub(crate) fn follow(&mut self, message: &[u8]) -> Option<KitChange> {
+        let &status = message.first()?;
+        if status == 0xF0 {
+            if message.get(1) == Some(&YAMAHA_ID) {
+                self.yamaha = true;
+            }
+            return None;
+        }
+        let channel = status & 0x0F;
+        let slot = usize::from(channel);
+        match (status & 0xF0, message.get(1..)) {
+            (0xB0, Some(&[0, value, ..])) if value <= 0x7F => {
+                self.msb[slot] = value;
+                None
+            }
+            (0xC0, Some(&[program, ..])) if program <= 0x7F => {
+                let kit = dm_groove::yamaha_kit(self.msb[slot], program);
+                self.kits[slot] = kit;
+                if self.yamaha {
+                    kit.map(|kit| KitChange {
+                        channel,
+                        name: Some(kit.name()),
+                        similar: kit.similar(),
+                    })
+                } else {
+                    (channel == DRUM_CHANNEL && GENERAL_MIDI_KITS.contains(&program)).then_some(
+                        KitChange {
+                            channel,
+                            name: None,
+                            similar: Some(program),
+                        },
+                    )
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// The Yamaha kit a channel plays, if the connection is a Yamaha keyboard and the key map
+    /// knows the kit.
+    pub(crate) fn kit(&self, channel: u8) -> Option<KeyboardKit> {
+        if !self.yamaha {
+            return None;
+        }
+        self.kits.get(usize::from(channel)).copied().flatten()
+    }
+}
 
 /// The drum a key below the General MIDI kit plays as, if it has a near one.
 ///
@@ -112,11 +205,13 @@ impl Clock {
     }
 }
 
-/// One input connection's notes: the channel it listens to and its clock.
+/// One input connection's notes: the channel it listens to, the voice of each channel and its
+/// clock. A connection that opens again starts with a new one, so nothing carries over.
 #[derive(Debug, Clone)]
 pub(crate) struct Notes {
     /// The channel taken by the first counted note-on, if one has come.
     channel: Option<u8>,
+    voices: Voices,
     clock: Clock,
 }
 
@@ -125,21 +220,34 @@ impl Notes {
     pub(crate) fn new(opened: Instant) -> Self {
         Notes {
             channel: None,
+            voices: Voices::default(),
             clock: Clock::new(opened),
         }
     }
 
-    /// Forgets the channel, so that the next counted note-on takes one again.
+    /// Forgets the channel, so that the next counted note-on takes one again. The voices stay.
     pub(crate) fn release_channel(&mut self) {
         self.channel = None;
+    }
+
+    /// Learns the voices from a message, whether or not its notes count. Returns the kit a
+    /// program change picks (see [`Voices::follow`]) when it is on the channel taken, or on any
+    /// channel while none is taken.
+    pub(crate) fn follow(&mut self, message: &[u8]) -> Option<KitChange> {
+        let change = self.voices.follow(message)?;
+        self.channel
+            .is_none_or(|channel| channel == change.channel)
+            .then_some(change)
     }
 
     /// Reads a message with this timestamp whose callback ran at `now`. Returns the hit it
     /// makes, if any. Every message teaches the clock, hit or not.
     ///
     /// A note-on counts when its velocity is above 0, its channel is the one taken (or none is
-    /// taken yet), and its key is a General MIDI drum or one with a near drum (see
-    /// [`near_drum`]), which it then plays as. The first one to count takes its channel.
+    /// taken yet), and its key is a drum. On a Yamaha keyboard whose channel plays a kit the key
+    /// map knows, the kit's map says which drum a key is, or that it is none. Otherwise the key
+    /// is a General MIDI drum or one with a near drum (see [`near_drum`]). The first note-on to
+    /// count takes its channel.
     pub(crate) fn read(
         &mut self,
         message: &[u8],
@@ -152,7 +260,10 @@ impl Notes {
         if self.channel.is_some_and(|channel| channel != note.channel) {
             return None;
         }
-        let key = near_drum(note.key)?;
+        let key = match self.voices.kit(note.channel) {
+            Some(kit) => kit.key(note.key)?,
+            None => near_drum(note.key)?,
+        };
         self.channel = Some(note.channel);
         Some(LiveHit {
             at,
@@ -243,6 +354,153 @@ mod tests {
         let mut notes = Notes::new(t);
         assert!(notes.read(&[0x92, 33, 70], 0, t, true).is_some());
         assert_eq!(notes.read(&[0x99, 36, 70], 0, t, true), None);
+    }
+
+    /// What the PSR-SX720 sent when its right-hand part, on channel 3, switched to ElectroKit.
+    const SX720_ELECTRO_KIT: [&[u8]; 4] = [
+        &[0xF0, 0x43, 0x10, 0x4C, 0x08, 0x02, 0x07, 0x01, 0xF7],
+        &[0xB2, 0x00, 0x7F],
+        &[0xB2, 0x20, 0x00],
+        &[0xC2, 0x46],
+    ];
+
+    /// Follows each message and returns the last kit change.
+    fn follow_all(notes: &mut Notes, messages: &[&[u8]]) -> Option<KitChange> {
+        messages
+            .iter()
+            .fold(None, |last, m| notes.follow(m).or(last))
+    }
+
+    fn key_of(notes: &mut Notes, message: &[u8]) -> Option<u8> {
+        notes
+            .read(message, 0, Instant::now(), true)
+            .map(|hit| hit.key)
+    }
+
+    #[test]
+    fn a_yamaha_kit_change_maps_the_keys_through_the_kit() {
+        let mut notes = Notes::new(Instant::now());
+        let change = follow_all(&mut notes, &SX720_ELECTRO_KIT);
+        assert_eq!(
+            change,
+            Some(KitChange {
+                channel: 2,
+                name: Some("ElectroKit"),
+                similar: Some(24),
+            })
+        );
+        // The table puts key 24 on the kick and key 27 on the clap.
+        assert_eq!(key_of(&mut notes, &[0x92, 24, 100]), Some(36));
+        assert_eq!(key_of(&mut notes, &[0x92, 27, 100]), Some(39));
+        // Key 35 keeps its General MIDI place.
+        assert_eq!(key_of(&mut notes, &[0x92, 35, 100]), Some(35));
+    }
+
+    #[test]
+    fn without_yamaha_sysex_the_table_is_not_used() {
+        let mut notes = Notes::new(Instant::now());
+        assert_eq!(follow_all(&mut notes, &SX720_ELECTRO_KIT[1..]), None);
+        // The default rule: 24 is outside the kit, 27 too, 33 is the soft kick.
+        assert_eq!(key_of(&mut notes, &[0x92, 24, 100]), None);
+        assert_eq!(key_of(&mut notes, &[0x92, 27, 100]), None);
+        assert_eq!(key_of(&mut notes, &[0x92, 33, 100]), Some(36));
+    }
+
+    #[test]
+    fn a_key_the_kit_leaves_out_is_ignored_and_takes_no_channel() {
+        let mut notes = Notes::new(Instant::now());
+        follow_all(&mut notes, &SX720_ELECTRO_KIT);
+        // ElectroKit leaves key 74 out, though General MIDI has a drum there.
+        assert_eq!(key_of(&mut notes, &[0x92, 74, 100]), None);
+        // So channel 1 can still take the lock with the default rule.
+        assert_eq!(key_of(&mut notes, &[0x90, 74, 100]), Some(74));
+        assert_eq!(key_of(&mut notes, &[0x92, 36, 100]), None);
+    }
+
+    #[test]
+    fn an_unknown_yamaha_voice_uses_the_default_rule() {
+        let mut notes = Notes::new(Instant::now());
+        follow_all(&mut notes, &SX720_ELECTRO_KIT);
+        // Bank 0, program 0: a piano. No report, and the kit's map no longer applies.
+        assert_eq!(
+            follow_all(&mut notes, &[&[0xB2, 0x00, 0x00], &[0xC2, 0x00]]),
+            None
+        );
+        assert_eq!(key_of(&mut notes, &[0x92, 24, 100]), None);
+        assert_eq!(key_of(&mut notes, &[0x92, 74, 100]), Some(74));
+    }
+
+    #[test]
+    fn reopening_forgets_the_voices() {
+        let t = Instant::now();
+        let mut notes = Notes::new(t);
+        follow_all(&mut notes, &SX720_ELECTRO_KIT);
+        assert_eq!(key_of(&mut notes, &[0x92, 24, 100]), Some(36));
+        // A connection that opens again starts afresh, SysEx included: the next program change
+        // does not use the table until Yamaha SysEx comes again.
+        let mut notes = Notes::new(t);
+        assert_eq!(key_of(&mut notes, &[0x92, 24, 100]), None);
+        assert_eq!(follow_all(&mut notes, &SX720_ELECTRO_KIT[1..]), None);
+        assert_eq!(key_of(&mut notes, &[0x92, 24, 100]), None);
+        // Releasing the channel keeps them.
+        let mut notes = Notes::new(t);
+        follow_all(&mut notes, &SX720_ELECTRO_KIT);
+        notes.release_channel();
+        assert_eq!(key_of(&mut notes, &[0x92, 24, 100]), Some(36));
+    }
+
+    #[test]
+    fn only_a_program_change_reports_a_kit() {
+        let mut notes = Notes::new(Instant::now());
+        for message in &SX720_ELECTRO_KIT[..3] {
+            assert_eq!(notes.follow(message), None);
+        }
+        assert!(notes.follow(SX720_ELECTRO_KIT[3]).is_some());
+        // Volume, reverb, more SysEx and notes report nothing.
+        for message in [
+            &[0xB2, 0x07, 0x64][..],
+            &[0xB2, 0x5B, 0x28],
+            &[0xF0, 0x43, 0x10, 0x4C, 0x08, 0x02, 0x11, 0x7F, 0xF7],
+            &[0x92, 36, 100],
+        ] {
+            assert_eq!(notes.follow(message), None, "{message:?}");
+        }
+        // The same kit chosen again is reported again.
+        assert!(notes.follow(&[0xC2, 0x46]).is_some());
+    }
+
+    #[test]
+    fn a_kit_is_reported_only_for_the_channel_taken() {
+        let mut notes = Notes::new(Instant::now());
+        notes.follow(SX720_ELECTRO_KIT[0]);
+        assert_eq!(key_of(&mut notes, &[0x90, 36, 100]), Some(36));
+        // Channel 3 is not the one taken: its kit is kept but not reported.
+        assert_eq!(follow_all(&mut notes, &SX720_ELECTRO_KIT[1..]), None);
+        assert_eq!(
+            follow_all(&mut notes, &[&[0xB0, 0, 127], &[0xC0, 70]]).map(|c| c.channel),
+            Some(0)
+        );
+        notes.release_channel();
+        assert_eq!(key_of(&mut notes, &[0x92, 24, 100]), Some(36));
+    }
+
+    #[test]
+    fn a_general_midi_kit_is_reported_from_channel_ten() {
+        let mut notes = Notes::new(Instant::now());
+        assert_eq!(
+            notes.follow(&[0xC9, 25]),
+            Some(KitChange {
+                channel: 9,
+                name: None,
+                similar: Some(25),
+            })
+        );
+        // Not a standard kit, or not channel 10.
+        assert_eq!(notes.follow(&[0xC9, 26]), None);
+        assert_eq!(notes.follow(&[0xC0, 25]), None);
+        // A Yamaha keyboard's kits come from the table alone.
+        notes.follow(SX720_ELECTRO_KIT[0]);
+        assert_eq!(notes.follow(&[0xC9, 25]), None);
     }
 
     #[test]
