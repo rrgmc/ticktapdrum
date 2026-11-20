@@ -166,8 +166,10 @@ The app's swing delays every second 16th. It cannot express 8th-note swing or tr
   jazz take in half time. Each pair sounded very similar. Both renders of a file use the same key
   mapping, so this says nothing about whether a mapping is right. The Perfect Drums sample plays
   congas in both.
-- **Not checked:** the projects were not opened in the app's interface. Nothing was tried on
-  Android.
+- **Opened in the app:** the user opened all eight sample projects in the desktop app. Seven
+  looked fine. The 80 BPM funk take showed a mostly silent first bar, which is in the recording
+  (see section 3).
+- **Not checked:** nothing was tried on Android.
 
 ## Recommendations for MIDI import
 
