@@ -22,6 +22,8 @@ use crate::pictures::RowLabels;
 const AUTOSAVE: &str = "autosave";
 /// Holds the name of the project the autosave belongs to, if it has one.
 const AUTOSAVE_NAME: &str = "autosave.name";
+/// Exists while row names show the keyboard key that plays each drum, with MIDI in on.
+const KEY_NAMES: &str = "keys.show";
 /// Exists while the screen is kept in landscape.
 const LANDSCAPE: &str = "landscape.lock";
 /// Holds the tag of the language the person chose. Missing while the app follows the system.
@@ -187,6 +189,16 @@ impl Store {
                 _ => Ok(()),
             },
         }
+    }
+
+    /// Whether row names show the keyboard key that plays each drum while MIDI in is on. Off
+    /// until chosen: drum pads have no key names. A device setting.
+    pub(crate) fn key_names(&self) -> bool {
+        self.flag(KEY_NAMES)
+    }
+
+    pub(crate) fn set_key_names(&self, on: bool) -> Result<(), String> {
+        self.set_flag(KEY_NAMES, on)
     }
 
     /// Whether the screen is kept in landscape. A device setting, not part of any project.
@@ -613,6 +625,17 @@ mod tests {
         assert_eq!(store.bar_strip(), Some(false));
         store.set_bar_strip(true).unwrap();
         assert_eq!(store.bar_strip(), Some(true));
+    }
+
+    #[test]
+    fn the_key_names_setting_is_kept() {
+        let store = temp_store("key-names");
+        assert!(!store.key_names());
+        store.set_key_names(true).unwrap();
+        assert!(store.key_names());
+        assert!(!store.landscape());
+        store.set_key_names(false).unwrap();
+        assert!(!store.key_names());
     }
 
     #[test]

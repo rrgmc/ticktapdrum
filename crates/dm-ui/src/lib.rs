@@ -91,6 +91,9 @@ pub struct DrumApp {
     follow: bool,
     /// How row names show: names, pictures and names, or pictures. A device setting.
     row_labels: pictures::RowLabels,
+    /// Whether row names show the keyboard key that plays each drum while MIDI in is on. A
+    /// device setting, kept in the store.
+    key_names: bool,
     /// Whether the bar thumbnails show under the strip, or `None` until the person chooses,
     /// when [`bar_line_default`] decides. A device setting.
     bar_line: Option<bool>,
@@ -208,6 +211,7 @@ impl DrumApp {
             half: 0,
             follow: true,
             row_labels,
+            key_names: store.key_names(),
             bar_line,
             grid: grid::Grid::default(),
             bar_strip: bars::BarStrip::default(),
@@ -701,6 +705,7 @@ impl DrumApp {
             self.row_labels,
             width,
             rows_tall,
+            self.key_names && self.midi.input_connected(),
         );
         let fits = ((width - labels) / (STEPS_PER_BAR as f32 * min_step)).floor() as usize;
         let split = fits == 0;
@@ -840,6 +845,7 @@ impl DrumApp {
                 can_render: self.bank.soundfont().is_some(),
                 export_place: export_place.as_deref(),
                 landscape: self.orientation.is_some().then(|| self.store.landscape()),
+                key_names: midi::MidiOut::supported().then_some(self.key_names),
                 row_labels: self.row_labels,
                 bar_line,
             },
@@ -900,6 +906,8 @@ impl DrumApp {
         self.grid.set_highlight(self.row_popup.row());
         self.grid.set_row_labels(self.row_labels);
         self.grid.set_step_levels(self.project.step_levels());
+        self.grid
+            .set_show_keys(self.key_names && self.midi.input_connected());
         let grid_playhead = playhead.filter(|_| heard).map(|p| p.step);
         // The grid takes the rest of the screen but a thin line at the bottom, the bar
         // indicator, which is inside the safe area so a phone's gesture bar does not hide it.
@@ -1342,6 +1350,12 @@ impl DrumApp {
                 ProjectEvent::CancelExport => {
                     if let Some(job) = &self.wav_job {
                         job.cancel();
+                    }
+                }
+                ProjectEvent::KeyNames(on) => {
+                    self.key_names = on;
+                    if let Err(e) = self.store.set_key_names(on) {
+                        log::warn!("the keyboard keys setting was not saved: {e}");
                     }
                 }
                 ProjectEvent::Landscape(on) => {

@@ -45,6 +45,21 @@ const PICTURE_NAME_SIZE: f32 = 12.0;
 const FLASH_SECONDS: f64 = 0.3;
 /// How faded a drum on offer is drawn.
 const OFFERED_FADE: f32 = 0.45;
+/// The size of the keyboard key's name shown in a row's name box.
+const KEY_NAME_SIZE: f32 = 10.0;
+/// Room kept beside a name for the keyboard key's name, while it shows.
+const KEY_ROOM: f32 = 30.0;
+
+/// The name of the keyboard key that sends `key`, as Yamaha keyboards name keys: middle C (60)
+/// is C3, so the kick (36) is C1.
+pub(crate) fn key_name(key: u8) -> String {
+    const NAMES: [&str; 12] = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
+    let octave = i32::from(key / 12) - 2;
+    format!("{}{octave}", NAMES[usize::from(key % 12)])
+}
+
 /// How strong the highlight behind a drum on offer is.
 const OFFERED_BAND: f32 = 0.22;
 
@@ -63,7 +78,9 @@ pub(crate) fn label_width(
     labels: RowLabels,
     width: f32,
     row_height: f32,
+    show_keys: bool,
 ) -> f32 {
+    let key_room = if show_keys { KEY_ROOM } else { 0.0 };
     let widest = |size: f32| {
         let font = FontId::proportional(size);
         project
@@ -85,7 +102,7 @@ pub(crate) fn label_width(
                 .clamp(PICTURE_NAME_MIN_WIDTH, PICTURE_NAME_LABEL_WIDTH)
         }
         RowLabels::PicturesAndNames => PICTURE_NAME_LABEL_WIDTH,
-        RowLabels::Names => (widest(NAME_SIZE) + 18.0 + BADGE_ROOM + 4.0)
+        RowLabels::Names => (widest(NAME_SIZE) + 18.0 + BADGE_ROOM + key_room + 4.0)
             .clamp(LABEL_WIDTH, (width * MAX_LABEL_SHARE).max(LABEL_WIDTH)),
     }
 }
@@ -148,6 +165,8 @@ pub(crate) struct Grid {
     /// The keys played on the MIDI keyboard lately, each with when (egui's clock, in seconds).
     /// Their rows' names light up for [`FLASH_SECONDS`].
     flashes: Vec<(u8, f64)>,
+    /// Whether each name box shows the keyboard key that plays its drum.
+    show_keys: bool,
 }
 
 struct Layout {
@@ -210,6 +229,13 @@ impl Grid {
         self.row_labels
     }
 
+    /// Shows in each name box the keyboard key that plays its drum, or stops. The caller sets it
+    /// every frame before [`Grid::ui`]: on while MIDI in is on and the "Keyboard keys" setting
+    /// is on.
+    pub(crate) fn set_show_keys(&mut self, show: bool) {
+        self.show_keys = show;
+    }
+
     /// Lights the name of the row whose settings are open, or none.
     pub(crate) fn set_highlight(&mut self, row: Option<usize>) {
         self.highlight = row;
@@ -261,6 +287,7 @@ impl Grid {
             self.row_labels,
             area.width(),
             row_height(area.height(), rows),
+            self.show_keys,
         );
         let header = Rect::from_min_max(
             Pos2::new(area.min.x + label_width, area.min.y),
@@ -348,6 +375,8 @@ impl Grid {
             } else {
                 None
             };
+            let badge_room = if badge.is_some() { BADGE_ROOM } else { 0.0 };
+            let key_room = self.draw_key(ui, rect, info.key, badge_room, text_color);
             draw_label(
                 ui,
                 rect,
@@ -356,7 +385,7 @@ impl Grid {
                 colour,
                 text_color,
                 self.row_labels,
-                if badge.is_some() { BADGE_ROOM } else { 0.0 },
+                badge_room + key_room,
             );
             if lit {
                 ui.painter().rect_stroke(
@@ -375,6 +404,46 @@ impl Grid {
                     ui.visuals().warn_fg_color,
                 );
             }
+        }
+    }
+
+    /// Draws the keyboard key that plays `key` in its name box `rect`, while keys show, and
+    /// returns the room it takes beside the name. Beside a name it sits on the right, left of
+    /// `right` points kept for badges. Over a picture with no name beside it, it sits in the top
+    /// left corner and takes no room.
+    fn draw_key(&self, ui: &egui::Ui, rect: Rect, key: u8, right: f32, text: Color32) -> f32 {
+        if !self.show_keys {
+            return 0.0;
+        }
+        let colour = text.gamma_multiply(0.75);
+        let font = FontId::proportional(KEY_NAME_SIZE);
+        let beside = match self.row_labels {
+            RowLabels::Names => true,
+            RowLabels::PicturesAndNames => rect.height() < NAME_UNDER_ROW,
+            RowLabels::Pictures => false,
+        };
+        if beside {
+            let x = rect.right() - 6.0 - right - if right > 0.0 { 2.0 } else { 0.0 };
+            let used = ui
+                .painter()
+                .text(
+                    Pos2::new(x, rect.center().y),
+                    Align2::RIGHT_CENTER,
+                    key_name(key),
+                    font,
+                    colour,
+                )
+                .width();
+            used + 6.0
+        } else {
+            ui.painter().text(
+                rect.left_top() + Vec2::new(4.0, 2.0),
+                Align2::LEFT_TOP,
+                key_name(key),
+                font,
+                colour,
+            );
+            0.0
         }
     }
 
@@ -449,6 +518,8 @@ impl Grid {
                 }
             };
             let text_color = fade(ui.visuals().text_color());
+            // Right of the name come the key, the plus sign and the cross.
+            let key_room = self.draw_key(ui, rect, drum.key, BADGE_ROOM + width, text_color);
             draw_label(
                 ui,
                 rect,
@@ -457,7 +528,7 @@ impl Grid {
                 fade(family),
                 text_color,
                 self.row_labels,
-                BADGE_ROOM + width,
+                BADGE_ROOM + width + key_room,
             );
             // The cross takes the right edge; the plus sign sits left of it. Over a picture
             // alone they go in the top and bottom right corners.
@@ -777,5 +848,22 @@ fn draw_label(
             let picture = rect.shrink(margin);
             crate::pictures::paint(painter, picture, key, colour, text);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::key_name;
+
+    #[test]
+    fn keys_are_named_as_yamaha_names_them() {
+        assert_eq!(key_name(60), "C3");
+        assert_eq!(key_name(36), "C1");
+        assert_eq!(key_name(38), "D1");
+        assert_eq!(key_name(42), "F#1");
+        assert_eq!(key_name(24), "C0");
+        assert_eq!(key_name(23), "B-1");
+        assert_eq!(key_name(0), "C-2");
+        assert_eq!(key_name(127), "G8");
     }
 }

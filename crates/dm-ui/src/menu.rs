@@ -530,6 +530,17 @@ fn settings_items(
     {
         events.push(MenuEvent::Project(ProjectEvent::Landscape(!landscape)));
     }
+    if let Some(keys) = p.key_names
+        && ui
+            .add(
+                widgets::toggle_button(keys, icons::PIANO_KEYS, &tr!("menu-key-names"))
+                    .min_size(Vec2::new(ITEM_WIDTH, TAP)),
+            )
+            .on_hover_text(tr!("menu-key-names-tip"))
+            .clicked()
+    {
+        events.push(MenuEvent::Project(ProjectEvent::KeyNames(!keys)));
+    }
     if ui.add(item(icons::GLOBE, &tr!("menu-language"))).clicked() {
         open(Shown::Language);
         ui.close();

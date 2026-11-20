@@ -1608,6 +1608,13 @@ there; see "Android, later".
   in. Adding the row keeps them, at the levels played. They are dropped when the row is pushed
   out, when another project opens or a new one starts, and on Undo or Redo, which work on the
   project alone. They do not play: only the keyboard sounded them.
+- **Rows can show the keyboard key that plays them.** Not every keyboard marks its keys with
+  drums, so with the "Keyboard keys" setting on (☰, under Settings) and MIDI in on, each name box
+  shows its key, small and on the right: C1 for the kick, D1 for the snare. Keys are named as
+  Yamaha names them, with middle C (60) as C3. A keyboard whose voice is shifted by an octave
+  sends other notes, so the names then sit an octave off the keys pressed. The setting is off
+  by default, because drum pads have no key names. It is a device setting, kept in the data
+  folder as `keys.show`.
 - **A keyboard that disappears** stops recording, keeps what was recorded, and shows one line.
 - **Checked on a real target:** the PSR-SX720 over Bluetooth on Windows, with a drum kit on its
   right-hand part. Record what was heard, how far off hits landed, and what was not checked.
