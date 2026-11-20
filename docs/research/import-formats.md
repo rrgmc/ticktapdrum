@@ -157,7 +157,8 @@ fallback for names that do not match.
 Plain-text tabs such as `HH|x-x-x-x-x-x-x-x-|` are widely posted online and would suit a paste-in
 box for users with little music knowledge. There is no standard: row labels, hit symbols, bar
 widths and repeat marks all vary. A forgiving parser could handle the common cases, but a large
-share of real tabs would not parse cleanly. *Unverified*: no survey of tab styles was done.
+share of real tabs would not parse cleanly. The [tab import spike](tab-import-spike.md) surveyed
+256 tabs: 37% parse cleanly, 47% need guesses and 16% fail.
 
 ## 5. Formats not worth importing
 
