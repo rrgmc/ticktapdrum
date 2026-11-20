@@ -8,16 +8,21 @@
 //! `docs/DESIGN.md`.
 
 use crate::offered::Offered;
-use dm_project::{Change, DEFAULT_VELOCITY, Project, Refused, SOFT_VELOCITY, StepLevels};
+use dm_project::{
+    ACCENT_VELOCITY, Change, DEFAULT_VELOCITY, Project, Refused, SOFT_VELOCITY, StepLevels,
+};
 
 /// A hit below this velocity makes a soft step. To be tuned by ear on a real keyboard.
 pub(crate) const SOFT_BELOW: u8 = 64;
+/// A hit at or above this velocity makes a loud step. To be tuned by ear on a real keyboard.
+pub(crate) const LOUD_FROM: u8 = 112;
 
-/// The step level a hit at `velocity` records: soft or normal. Recording never makes a loud
-/// step: hard hits on the PSR-SX720 seldom passed 100, so loud stays a tap on the grid.
+/// The step level a hit at `velocity` records: soft, normal or loud.
 pub(crate) fn level(velocity: u8) -> u8 {
     if velocity < SOFT_BELOW {
         SOFT_VELOCITY
+    } else if velocity >= LOUD_FROM {
+        ACCENT_VELOCITY
     } else {
         DEFAULT_VELOCITY
     }
@@ -103,7 +108,6 @@ pub(crate) fn record_hit(
 mod tests {
     use super::*;
     use crate::history::{Group, History};
-    use dm_project::ACCENT_VELOCITY;
 
     const KICK: u8 = 36;
     const SNARE: u8 = 38;
@@ -126,7 +130,9 @@ mod tests {
         assert_eq!(level(1), SOFT_VELOCITY);
         assert_eq!(level(SOFT_BELOW - 1), SOFT_VELOCITY);
         assert_eq!(level(SOFT_BELOW), DEFAULT_VELOCITY);
-        assert_eq!(level(127), DEFAULT_VELOCITY);
+        assert_eq!(level(LOUD_FROM - 1), DEFAULT_VELOCITY);
+        assert_eq!(level(LOUD_FROM), ACCENT_VELOCITY);
+        assert_eq!(level(127), ACCENT_VELOCITY);
     }
 
     #[test]
@@ -187,14 +193,10 @@ mod tests {
     fn a_step_keeps_the_louder_level() {
         let mut p = Project::new();
         hit(&mut p, 0, KICK, 120, 0.0).unwrap();
-        assert_eq!(p.patterns()[0].velocity(0, 0), DEFAULT_VELOCITY);
+        assert_eq!(p.patterns()[0].velocity(0, 0), ACCENT_VELOCITY);
         let changes = hit(&mut p, 0, KICK, 20, 0.0).unwrap();
         assert!(changes.is_empty());
-        assert_eq!(p.patterns()[0].velocity(0, 0), DEFAULT_VELOCITY);
-        // A loud step set by tapping stays loud.
-        p.set_step(0, 0, 4, ACCENT_VELOCITY).unwrap();
-        assert!(hit(&mut p, 0, KICK, 127, 4.0).unwrap().is_empty());
-        assert_eq!(p.patterns()[0].velocity(0, 4), ACCENT_VELOCITY);
+        assert_eq!(p.patterns()[0].velocity(0, 0), ACCENT_VELOCITY);
 
         hit(&mut p, 0, KICK, 20, 8.0).unwrap();
         assert_eq!(p.patterns()[0].velocity(0, 8), SOFT_VELOCITY);
@@ -218,7 +220,7 @@ mod tests {
         record_hit(&mut p, &mut o, 0, COWBELL, 20, 5.9).unwrap();
         record_hit(&mut p, &mut o, 0, COWBELL, 127, 6.2).unwrap();
         record_hit(&mut p, &mut o, 0, COWBELL, 20, 2.0).unwrap();
-        assert_eq!(o.rows()[0].velocity(slot, 6), DEFAULT_VELOCITY);
+        assert_eq!(o.rows()[0].velocity(slot, 6), ACCENT_VELOCITY);
         assert_eq!(o.rows()[0].velocity(slot, 2), DEFAULT_VELOCITY);
         assert_eq!(p, before);
         // The step levels wait until the row is added.
@@ -241,14 +243,14 @@ mod tests {
         assert_eq!(p.step_levels(), StepLevels::OnOff);
         hit(&mut p, 0, KICK, 20, 2.0).unwrap();
         assert_eq!(p.step_levels(), StepLevels::Soft);
-        // A hard hit is normal, and never asks for loud.
         hit(&mut p, 0, KICK, 127, 4.0).unwrap();
-        assert_eq!(p.step_levels(), StepLevels::Soft);
+        assert_eq!(p.step_levels(), StepLevels::LoudAndSoft);
+        hit(&mut p, 0, KICK, 20, 6.0).unwrap();
+        assert_eq!(p.step_levels(), StepLevels::LoudAndSoft);
 
-        // Levels already chosen are kept.
+        // A loud hit alone still needs both levels: loud is reached only past soft.
         let mut p = Project::new();
-        p.set_step_levels(StepLevels::LoudAndSoft);
-        hit(&mut p, 0, KICK, 20, 0.0).unwrap();
+        hit(&mut p, 0, KICK, 127, 0.0).unwrap();
         assert_eq!(p.step_levels(), StepLevels::LoudAndSoft);
     }
 
