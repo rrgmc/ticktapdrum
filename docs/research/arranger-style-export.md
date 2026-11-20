@@ -48,7 +48,8 @@ Yamaha does not publish the format; the document comes from its authors' experim
 **Bar 1** sets the style up. Everything usually sits at tick 0, in this order:
 
 1. Time signature and tempo. The tempo becomes the style's default tempo.
-2. A marker, `SFF1` or `SFF2`, then the style's name as a copyright text event (meta event 3).
+2. A marker, `SFF1` or `SFF2`, then the style's name as meta event 3. In the MIDI standard that
+   event is the sequence or track name, not the copyright notice (meta event 2).
 3. A marker, `SInt`, then the setup for each channel: the GM reset message
    (`F0 7E 7F 09 01 F7`), volume, reverb, then bank select (MSB, LSB) before the program change.
 
@@ -78,8 +79,9 @@ must be spelled exactly, spaces included:
   models, which suggests it does.
 - **Drum kit numbers:** older Yamaha keyboards put drum kits on bank MSB 127, LSB 0, with the
   kit as the program number. The SX720's own numbers, including its Revo kits, are in its Data
-  List ("Drum&SFX Kit List"). The General MIDI note numbers for each drum should still hold
-  (*unverified* for every note).
+  List ("Drum&SFX Kit List"). Yamaha publishes one Data List for the SX920 and SX720 together,
+  also as a spreadsheet (`.xlsx`) whose sheets include the style lists of both models. The
+  General MIDI note numbers for each drum should still hold (*unverified* for every note).
 - **Loading:** copy the `.sty` file to a USB stick, then on the keyboard choose a style, User,
   USB. To keep it without the stick, copy it to the User drive.
 - One user saw "content incomplete" when loading a style they had edited, so a malformed file
@@ -133,6 +135,19 @@ was not available.
 - **A style the converter saves for the SX720 is the best reference** for a direct export. Its
   bytes show the SX720's setup marker, ticks per beat, the setup bar and the CASM block.
 
+### Section numbers over MIDI
+
+A keyboard can also be told which section to play, live, by a SysEx message. A style file does
+not need this; it would matter only if the app ever drove a keyboard's style over MIDI. The Tyros2
+and Tyros3 Data Lists document the message, and a Genos 2 capture shows the same format on current
+models (the SX720's own Data List was not checked).
+
+- **Section Control:** `F0 43 7E 00 ss dd F7`, where `dd` is `7F` for on and `00` for off.
+- **Section numbers (`ss`):** Intro A to D are `00` to `03`, Main A to D `08` to `0B`, Fill In AA
+  to DD `10` to `13`, the Break `18`, and Ending A to D `20` to `23`. Registration files (`.rgt`)
+  use the same numbers for the current section.
+- The same group of messages sets the tempo (`43 7E 01`) and the chord (`43 7E 02`).
+
 ## Korg Pa
 
 - The Pa keyboards (Pa300, Pa800, Pa3X, Pa4X and others) import a **format-0 MIDI file** into a
@@ -183,8 +198,14 @@ possible mapping:
    5. Analyse the saved `.sty` file byte by byte. It shows what a direct export must write: the
       setup marker (`SFF1`, `SFF2` or `SFF4`), ticks per beat, the setup bar, the drum kit's bank
       and program, and the CASM block.
-2. **Write a test file by hand or with a small example program:** SFF1, no CASM, 1920 ticks per
-   beat, Main A and Fill In AA only. Load it on the SX720. If it is refused, try SFF2.
+2. **Load the hand-made test file on the SX720.** The example program `yamaha_style` writes it:
+   SFF1, no CASM, 1920 ticks per beat, a two-bar Main A and a one-bar Fill In AA, all on
+   channel 10 with the standard kit (bank MSB 127, LSB 0, program 0).
+   - `cargo run -p dm-project --example yamaha_style -- test1.sty` writes the SFF1 file.
+   - Add `--sff2` for the SFF2 file, and `--name <name>` to change the style's name.
+   - Load the SFF1 file first. If it is refused, try the SFF2 one.
+   - The file's bytes were checked against the layout above; nobody has loaded it on a keyboard
+     yet.
 3. **Read the SX720 Data List** for its drum kit bank and program numbers.
 4. **Only then** design the export option in `DESIGN.md`.
 
@@ -195,6 +216,9 @@ possible mapping:
   [for macOS](https://usa.yamaha.com/support/updates/midi-song-mac.html),
   [supplementary manual v1.2.0](https://ru.yamaha.com/files/download/other_assets/3/2928633/MIDI_song_to_style_v120_SM_En_A0.pdf)
 - Yamaha: [PSR-SX720+ downloads](https://usa.yamaha.com/products/musical_instruments/keyboards/arranger_workstations/psr-sx720plus/downloads.html)
+- Yamaha: Tyros2 Data List, [Section Control](https://www.manualslib.com/manual/477783/Yamaha-Tyros2.html?page=69);
+  Tyros3 Data List, [p.75](https://www.manualslib.com/manual/477788/Yamaha-Tyros3.html?page=75)
+- Yamaha Musicians forum: [Genos 2 Section Control capture](https://yamahamusicians.com/forum/viewtopic.php?t=21601)
 - StylePlayer: [loading styles from USB](https://styleplayer.io/community/d/58/2)
 - Yamaha Musicians forum: ["Empty" style from SX920/720](https://yamahamusicians.com/forum/threads/request-empty-style-from-sx920-720.22400/post-132463)
 - PSR Tutorial forum: [copying to the User drive](https://forum.psrtutorial.com/index.php?msg=493518),
