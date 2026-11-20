@@ -986,6 +986,10 @@ name = "dm-groove"
 version = "1.0.0"
 dependencies = [
  "dm-project",
+ "midly",
+ "serde",
+ "serde_json",
+ "zip",
 ]
 
 [[package]]
@@ -1037,6 +1041,7 @@ version = "1.0.0"
 dependencies = [
  "dm-audio",
  "dm-bank",
+ "dm-groove",
  "dm-midi",
  "dm-project",
  "dm-tab",
