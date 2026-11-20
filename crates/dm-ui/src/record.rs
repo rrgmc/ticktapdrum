@@ -2,13 +2,14 @@
 //!
 //! The engine plays each hit and reports where in the beat the player heard it (see
 //! `dm_audio::HeardHit`). The functions here turn one such hit into a step edit on the
-//! [`Project`], without an engine, so they can be tested alone. The caller sends the changes on
-//! to the engine and keeps one undo step per take. See "Milestone 14: MIDI in" in
+//! [`Project`], or into a pending note on a drum with no row (see [`Offered`]), without an
+//! engine, so they can be tested alone. The caller sends the changes on to the engine and keeps
+//! one undo step per take. See "Milestone 14: MIDI in" in
 //! `docs/DESIGN.md`.
 
+use crate::offered::Offered;
 use dm_project::{
-    ACCENT_VELOCITY, Change, DEFAULT_VELOCITY, MAX_ROWS, Project, Refused, SOFT_VELOCITY,
-    StepLevels,
+    ACCENT_VELOCITY, Change, DEFAULT_VELOCITY, Project, Refused, SOFT_VELOCITY, StepLevels,
 };
 
 /// A hit below this velocity makes a soft step. To be tuned by ear on a real keyboard.
@@ -61,41 +62,44 @@ fn rank(levels: StepLevels) -> u8 {
     }
 }
 
+/// Moves the step levels up to reach a step of `velocity`, as a beat to start from picks the
+/// fewest levels that reach its notes. They never move down.
+pub(crate) fn raise_levels(project: &mut Project, velocity: u8) {
+    let needed = levels_for(velocity);
+    if rank(needed) > rank(project.step_levels()) {
+        project.set_step_levels(needed);
+    }
+}
+
 /// Records one hit of `key` at `velocity` into the pattern at `index`, at `position` in straight
 /// steps. Returns the changes for the engine; none when nothing changed.
 ///
-/// - The hit plays on the first row with its key. A key with no row adds one for that drum at the
-///   bottom, as a groove import does. With [`MAX_ROWS`] rows already, the hit is left out.
+/// - The hit plays on the first row with its key. A key with no row never changes the project:
+///   the drum is offered in `offered`, and the hit waits there as a pending note.
 /// - The step keeps the louder of what it had and what the hit gives. Recording never removes or
 ///   softens a step.
-/// - The step levels move up to reach the level just recorded, as a beat to start from picks
-///   the fewest levels that reach its notes. They never move down.
+/// - The step levels move up to reach the level just recorded (see [`raise_levels`]).
 pub(crate) fn record_hit(
     project: &mut Project,
+    offered: &mut Offered,
     index: usize,
     key: u8,
     velocity: u8,
     position: f64,
 ) -> Result<Vec<Change>, Refused> {
-    let length = project.pattern(index).ok_or(Refused::OutOfRange)?.length();
+    let pattern = project.pattern(index).ok_or(Refused::OutOfRange)?;
+    let (slot, length) = (pattern.slot(), pattern.length());
     let step = nearest_step(position, project.swing(), length);
     let new = level(velocity);
-    let mut changes = Vec::new();
-    let row = match project.rows().iter().position(|r| r.key == key) {
-        Some(row) => row,
-        None if project.rows().len() < MAX_ROWS => {
-            changes.extend(project.add_row(key)?);
-            project.rows().len() - 1
-        }
-        None => return Ok(changes),
+    let Some(row) = project.rows().iter().position(|r| r.key == key) else {
+        offered.hold(key, slot, step, new);
+        return Ok(Vec::new());
     };
+    let mut changes = Vec::new();
     let old = project.patterns()[index].velocity(row, step);
     if new > old {
         changes.extend(project.set_step(index, row, step, new)?);
-        let needed = levels_for(new);
-        if rank(needed) > rank(project.step_levels()) {
-            project.set_step_levels(needed);
-        }
+        raise_levels(project, new);
     }
     Ok(changes)
 }
@@ -109,6 +113,17 @@ mod tests {
     const SNARE: u8 = 38;
     /// Not among the default rows.
     const COWBELL: u8 = 56;
+
+    /// Records a hit, with nothing on offer before or after.
+    fn hit(
+        p: &mut Project,
+        index: usize,
+        key: u8,
+        velocity: u8,
+        position: f64,
+    ) -> Result<Vec<Change>, Refused> {
+        record_hit(p, &mut Offered::default(), index, key, velocity, position)
+    }
 
     #[test]
     fn velocity_sets_the_level() {
@@ -161,7 +176,7 @@ mod tests {
     #[test]
     fn a_hit_sets_a_step_and_reports_it() {
         let mut p = Project::new();
-        let changes = record_hit(&mut p, 0, SNARE, 90, 4.1).unwrap();
+        let changes = hit(&mut p, 0, SNARE, 90, 4.1).unwrap();
         assert_eq!(p.patterns()[0].velocity(1, 4), DEFAULT_VELOCITY);
         assert_eq!(
             changes,
@@ -177,73 +192,72 @@ mod tests {
     #[test]
     fn a_step_keeps_the_louder_level() {
         let mut p = Project::new();
-        record_hit(&mut p, 0, KICK, 120, 0.0).unwrap();
+        hit(&mut p, 0, KICK, 120, 0.0).unwrap();
         assert_eq!(p.patterns()[0].velocity(0, 0), ACCENT_VELOCITY);
-        let changes = record_hit(&mut p, 0, KICK, 20, 0.0).unwrap();
+        let changes = hit(&mut p, 0, KICK, 20, 0.0).unwrap();
         assert!(changes.is_empty());
         assert_eq!(p.patterns()[0].velocity(0, 0), ACCENT_VELOCITY);
 
-        record_hit(&mut p, 0, KICK, 20, 8.0).unwrap();
+        hit(&mut p, 0, KICK, 20, 8.0).unwrap();
         assert_eq!(p.patterns()[0].velocity(0, 8), SOFT_VELOCITY);
-        record_hit(&mut p, 0, KICK, 90, 8.0).unwrap();
+        hit(&mut p, 0, KICK, 90, 8.0).unwrap();
         assert_eq!(p.patterns()[0].velocity(0, 8), DEFAULT_VELOCITY);
     }
 
     #[test]
-    fn a_key_with_no_row_adds_one_at_the_bottom() {
+    fn a_key_with_no_row_is_offered_not_added() {
         let mut p = Project::new();
-        let rows = p.rows().len();
-        let changes = record_hit(&mut p, 0, COWBELL, 90, 2.0).unwrap();
-        assert_eq!(p.rows().len(), rows + 1);
-        assert_eq!(p.rows()[rows].key, COWBELL);
-        assert_eq!(p.patterns()[0].velocity(rows, 2), DEFAULT_VELOCITY);
-        assert!(changes.contains(&Change::RowKey {
-            row: rows,
-            key: COWBELL
-        }));
-        // The next hit of that key uses the same row.
-        record_hit(&mut p, 0, COWBELL, 90, 6.0).unwrap();
-        assert_eq!(p.rows().len(), rows + 1);
-        assert_eq!(p.patterns()[0].velocity(rows, 6), DEFAULT_VELOCITY);
+        let before = p.clone();
+        let mut o = Offered::default();
+        let changes = record_hit(&mut p, &mut o, 0, COWBELL, 90, 2.0).unwrap();
+        assert!(changes.is_empty());
+        assert_eq!(p, before);
+        assert_eq!(o.keys(), vec![COWBELL]);
+        let slot = p.patterns()[0].slot();
+        assert_eq!(o.rows()[0].velocity(slot, 2), DEFAULT_VELOCITY);
+
+        // The same snapping and level as a real row, and the louder hit wins.
+        record_hit(&mut p, &mut o, 0, COWBELL, 20, 5.9).unwrap();
+        record_hit(&mut p, &mut o, 0, COWBELL, 127, 6.2).unwrap();
+        record_hit(&mut p, &mut o, 0, COWBELL, 20, 2.0).unwrap();
+        assert_eq!(o.rows()[0].velocity(slot, 6), ACCENT_VELOCITY);
+        assert_eq!(o.rows()[0].velocity(slot, 2), DEFAULT_VELOCITY);
+        assert_eq!(p, before);
+        // The step levels wait until the row is added.
+        assert_eq!(p.step_levels(), StepLevels::OnOff);
     }
 
     #[test]
-    fn a_key_with_no_row_is_left_out_when_the_rows_are_full() {
+    fn a_key_with_a_row_is_not_offered() {
         let mut p = Project::new();
-        let mut key = 60;
-        while p.rows().len() < MAX_ROWS {
-            p.add_row(key).unwrap();
-            key += 1;
-        }
-        let before = p.clone();
-        let changes = record_hit(&mut p, 0, 35, 90, 0.0).unwrap();
-        assert!(changes.is_empty());
-        assert_eq!(p, before);
+        let mut o = Offered::default();
+        record_hit(&mut p, &mut o, 0, KICK, 90, 0.0).unwrap();
+        assert_eq!(o.len(), 0);
     }
 
     #[test]
     fn step_levels_move_up_to_fit_and_never_down() {
         let mut p = Project::new();
         assert_eq!(p.step_levels(), StepLevels::OnOff);
-        record_hit(&mut p, 0, KICK, 90, 0.0).unwrap();
+        hit(&mut p, 0, KICK, 90, 0.0).unwrap();
         assert_eq!(p.step_levels(), StepLevels::OnOff);
-        record_hit(&mut p, 0, KICK, 20, 2.0).unwrap();
+        hit(&mut p, 0, KICK, 20, 2.0).unwrap();
         assert_eq!(p.step_levels(), StepLevels::Soft);
-        record_hit(&mut p, 0, KICK, 127, 4.0).unwrap();
+        hit(&mut p, 0, KICK, 127, 4.0).unwrap();
         assert_eq!(p.step_levels(), StepLevels::LoudAndSoft);
-        record_hit(&mut p, 0, KICK, 20, 6.0).unwrap();
+        hit(&mut p, 0, KICK, 20, 6.0).unwrap();
         assert_eq!(p.step_levels(), StepLevels::LoudAndSoft);
 
         // A loud hit alone still needs both levels: loud is reached only past soft.
         let mut p = Project::new();
-        record_hit(&mut p, 0, KICK, 127, 0.0).unwrap();
+        hit(&mut p, 0, KICK, 127, 0.0).unwrap();
         assert_eq!(p.step_levels(), StepLevels::LoudAndSoft);
     }
 
     #[test]
     fn a_hit_into_a_missing_pattern_is_refused() {
         let mut p = Project::new();
-        assert!(record_hit(&mut p, 5, KICK, 90, 0.0).is_err());
+        assert!(hit(&mut p, 5, KICK, 90, 0.0).is_err());
     }
 
     #[test]
@@ -257,7 +271,7 @@ mod tests {
             .enumerate()
         {
             let before = p.clone();
-            record_hit(&mut p, 0, key, 100, step).unwrap();
+            hit(&mut p, 0, key, 100, step).unwrap();
             history.record(&before, Group::Recording(1), i as f64 * 10.0);
         }
         assert!(history.undo(&mut p));
@@ -269,7 +283,7 @@ mod tests {
         let mut p = Project::new();
         for take in [1, 2] {
             let before = p.clone();
-            record_hit(&mut p, 0, KICK, 100, take as f64 * 4.0).unwrap();
+            hit(&mut p, 0, KICK, 100, take as f64 * 4.0).unwrap();
             history.record(&before, Group::Recording(take), 0.0);
         }
         assert!(history.undo(&mut p));

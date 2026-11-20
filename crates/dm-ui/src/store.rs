@@ -30,6 +30,8 @@ const LANGUAGE: &str = "language";
 const MIDI_OUTPUT: &str = "midi.output";
 /// Holds the MIDI output volume in percent. Missing while it is the default, 100.
 const MIDI_VOLUME: &str = "midi.volume";
+/// Holds "on" while the MIDI input is on. Missing while it is off, the default.
+const MIDI_INPUT: &str = "midi.input";
 /// Holds how row names show, when not as names.
 const ROW_LABELS: &str = "row.labels";
 /// Holds "on" or "off" for the bar strip under the buttons. Missing until the person chooses,
@@ -272,6 +274,25 @@ impl Store {
         }
         fs::create_dir_all(&self.dir).map_err(folder_error)?;
         fs::write(path, percent.to_string()).map_err(write_error)
+    }
+
+    /// Whether the MIDI input is on: the hits played on the chosen device are listened to. Off
+    /// when the file is missing or holds anything but "on". A device setting, not part of any
+    /// project.
+    pub(crate) fn midi_input(&self) -> bool {
+        fs::read_to_string(self.dir.join(MIDI_INPUT)).is_ok_and(|text| text.trim() == "on")
+    }
+
+    pub(crate) fn set_midi_input(&self, on: bool) -> Result<(), String> {
+        let path = self.dir.join(MIDI_INPUT);
+        if !on {
+            return match fs::remove_file(path) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(delete_error(e)),
+                _ => Ok(()),
+            };
+        }
+        fs::create_dir_all(&self.dir).map_err(folder_error)?;
+        fs::write(path, "on").map_err(write_error)
     }
 
     /// How row names show in the grid. A device setting, not part of any project.
@@ -650,6 +671,28 @@ mod tests {
         assert_eq!(store.midi_volume(), 100);
         fs::write(store.dir.join(MIDI_VOLUME), "250").unwrap();
         assert_eq!(store.midi_volume(), 100);
+    }
+
+    #[test]
+    fn the_midi_input_starts_off_and_is_kept() {
+        let store = temp_store("midi-input");
+        assert!(!store.midi_input());
+        store.set_midi_input(true).unwrap();
+        assert!(store.midi_input());
+        assert_eq!(
+            fs::read_to_string(store.dir.join(MIDI_INPUT)).unwrap(),
+            "on"
+        );
+        // Off is the default, so its file goes.
+        store.set_midi_input(false).unwrap();
+        store.set_midi_input(false).unwrap();
+        assert!(!store.dir.join(MIDI_INPUT).exists());
+        assert!(!store.midi_input());
+        // Anything but "on" reads as off.
+        fs::write(store.dir.join(MIDI_INPUT), "yes").unwrap();
+        assert!(!store.midi_input());
+        fs::write(store.dir.join(MIDI_INPUT), " on\n").unwrap();
+        assert!(store.midi_input());
     }
 
     #[test]

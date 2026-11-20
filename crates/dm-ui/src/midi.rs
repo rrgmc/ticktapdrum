@@ -165,6 +165,15 @@ fn channel_volume(percent: u8) -> u8 {
     ((u16::from(percent.min(100)) * 127 + 50) / 100) as u8
 }
 
+/// Which input to listen to: the chosen output's own, or none while the input is off.
+fn input_choice(on: bool) -> InputChoice {
+    if on {
+        InputChoice::SameAsOutput
+    } else {
+        InputChoice::None
+    }
+}
+
 /// `name` cut to at most `max` characters, the last of them an ellipsis, for a narrow label.
 pub(crate) fn shorten(name: &str, max: usize) -> String {
     if name.chars().count() <= max {
@@ -194,23 +203,44 @@ pub(crate) struct Midi {
     volume: u8,
     /// Whether the input of the chosen device was open when last looked at.
     input_connected: bool,
+    /// Whether the chosen device's input is listened to. Off by default. A device setting, kept
+    /// in the store.
+    input: bool,
 }
 
 impl Midi {
-    /// Follows the choice and the volume kept in the store. Nothing is sent until an engine
-    /// exists.
-    pub(crate) fn new(choice: Option<String>, volume: u8) -> Self {
+    /// Follows the choice, the volume and the input setting kept in the store. Nothing is sent
+    /// until an engine exists.
+    pub(crate) fn new(choice: Option<String>, volume: u8, input: bool) -> Self {
         Self {
             choice,
             volume: volume.min(100),
+            input,
             ..Self::default()
         }
     }
 
-    /// Whether the input of the chosen device is open now, so drum hits arrive and Record can
-    /// be offered.
+    /// Whether the input of the chosen device is open now, so drum hits arrive and playing a
+    /// pattern records them.
     pub(crate) fn input_connected(&self) -> bool {
-        self.input_connected
+        self.input && self.input_connected
+    }
+
+    /// Whether the input is on.
+    pub(crate) fn input(&self) -> bool {
+        self.input
+    }
+
+    /// Turns the input on or off. Off, the device's hits are not listened to at all. The
+    /// caller keeps the setting.
+    pub(crate) fn set_input(&mut self, on: bool) {
+        self.input = on;
+        if !on {
+            self.input_connected = false;
+        }
+        if let Some(out) = &mut self.out {
+            out.select_input(input_choice(on));
+        }
     }
 
     /// The MIDI output volume in percent.
@@ -301,7 +331,8 @@ impl Midi {
                 out.listen(hits);
             }
             // The hits come from the input named like the output: one choice for a keyboard.
-            out.select_input(InputChoice::SameAsOutput);
+            // While the input is off, nothing is listened to.
+            out.select_input(input_choice(self.input));
             self.out = Some(out);
             self.last = None;
             self.sending = false;
@@ -407,7 +438,7 @@ mod tests {
 
     #[test]
     fn a_choice_is_kept_before_any_engine_exists() {
-        let mut midi = Midi::new(Some("Synth".into()), 100);
+        let mut midi = Midi::new(Some("Synth".into()), 100, false);
         assert_eq!(midi.choice(), Some("Synth"));
         assert!(!midi.connected());
         midi.list();

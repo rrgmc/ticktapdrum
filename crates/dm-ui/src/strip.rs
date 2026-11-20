@@ -1,11 +1,11 @@
-//! The one row of buttons at the top: Play, Record while a MIDI input is connected, the
+//! The one row of buttons at the top: Play, MIDI in while a MIDI output is connected, the
 //! pattern, the bar, the tempo, the step levels, Undo, Redo and the menu. Sounds is in the menu.
 //! See "One control strip" in `docs/DESIGN.md`.
 //!
 //! The row never wraps and never scrolls. It measures what fits: first an icon and a word on
 //! every button, then icons only. If the icons still do not fit, Redo, then the tempo, then Undo
 //! leave the row, and the menu offers them instead. The step levels button always stays, and so
-//! does Record while it shows; with both, the fewest buttons fit a phone 375 points wide.
+//! does MIDI in while it shows; with both, the fewest buttons fit a phone 375 points wide.
 
 use egui::{CornerRadius, Response, RichText, Vec2};
 
@@ -16,7 +16,7 @@ use crate::widgets::{self, ICON_SIZE, TAP, TEXT_SIZE};
 
 /// The size of the keyboard mark on Play while the drums go to a MIDI output.
 const MIDI_MARK_SIZE: f32 = 13.0;
-/// The red of the Record button while it records, and of its dot while it does not.
+/// The red of the dot on Play while playing a pattern records from the MIDI input.
 const RECORD_RED: egui::Color32 = egui::Color32::from_rgb(214, 40, 40);
 
 /// What Play plays.
@@ -34,8 +34,8 @@ pub(crate) enum Mode {
 pub(crate) enum StripEvent {
     Play,
     Stop,
-    /// Start recording from the MIDI input, or stop.
-    Record,
+    /// Turn the MIDI input on or off.
+    MidiIn,
     /// Show the screen of steps before this one.
     PrevPage,
     /// Show the screen of steps after this one.
@@ -82,17 +82,11 @@ pub(crate) struct StripState<'a> {
     pub(crate) step_levels: StepLevels,
     /// The MIDI output the drums go to now, if any. Play then carries a small keyboard mark.
     pub(crate) midi_device: Option<&'a str>,
-    /// The Record button, shown while a MIDI input is connected.
-    pub(crate) record: Option<RecordView>,
-}
-
-/// What the Record button shows.
-#[derive(Clone, Copy)]
-pub(crate) struct RecordView {
-    /// A take is being recorded.
-    pub(crate) recording: bool,
-    /// Recording can start. False in song mode: recording goes into one pattern on a loop.
-    pub(crate) enabled: bool,
+    /// The MIDI input playing a pattern records from, if one is on and connected. Play then
+    /// carries a small red dot.
+    pub(crate) recording_from: Option<&'a str>,
+    /// Whether the MIDI input is on. `None` hides the MIDI in button: no output is connected.
+    pub(crate) midi_in: Option<bool>,
 }
 
 /// The buttons that did not fit. The menu offers them instead.
@@ -151,8 +145,8 @@ struct Texts {
     play_word: String,
     /// The play button shows a shorter word than `play_word`.
     play_short: bool,
-    /// The Record button, when it shows.
-    record: Option<RichText>,
+    /// The MIDI in button, when it shows.
+    midi_in: Option<RichText>,
     pattern: RichText,
     bar: RichText,
     tempo: RichText,
@@ -198,14 +192,13 @@ fn texts(ui: &egui::Ui, state: &StripState, words: bool, short_play: bool) -> Te
     } else {
         RichText::new(LEVELS_ROOM_ICON_ONLY).size(ICON_SIZE)
     };
-    let record = state
-        .record
-        .map(|_| widgets::label(icons::RECORD, &word(tr!("strip-record"))));
     Texts {
         play: widgets::label(play_icon, &word(play_shown)),
-        record,
         play_word,
         play_short,
+        midi_in: state
+            .midi_in
+            .map(|_| widgets::label(icons::PIANO_KEYS, &word(tr!("strip-midi-in")))),
         pattern: RichText::new(pattern).size(ICON_SIZE - 2.0),
         bar: RichText::new(bar_text(&state.bars, words)).size(bar_size),
         tempo: widgets::label(icons::METRONOME, &format!("{:.0}", state.bpm)),
@@ -243,8 +236,8 @@ fn width(ui: &egui::Ui, text: &RichText, min: f32) -> f32 {
 /// How wide the row is when drawn with these texts and sizes, leaving out what is hidden.
 fn row_width(ui: &egui::Ui, t: &Texts, m: Metrics, hidden: Hidden) -> f32 {
     let mut widths = vec![width(ui, &t.play, m.min_width)];
-    if let Some(record) = &t.record {
-        widths.push(width(ui, record, m.min_width));
+    if let Some(midi_in) = &t.midi_in {
+        widths.push(width(ui, midi_in, m.min_width));
     }
     widths.extend([
         width(ui, &t.pattern, m.min_width),
@@ -356,6 +349,22 @@ pub(crate) fn ui(ui: &mut egui::Ui, state: &StripState) -> StripOutput {
             }
             None => play,
         };
+        // While what is played on the MIDI input is recorded, a small red dot sits beside the
+        // keyboard mark: playing a pattern records.
+        let play = match state.recording_from {
+            Some(device) => {
+                let beside = if state.midi_device.is_some() {
+                    MIDI_MARK_SIZE + 5.0
+                } else {
+                    0.0
+                };
+                let centre = play.rect.right_top() + Vec2::new(-10.0 - beside, 10.0);
+                ui.painter()
+                    .circle_filled(centre, MIDI_MARK_SIZE / 2.0 - 1.0, RECORD_RED);
+                play.on_hover_text(tr!("strip-record-tip", device = device))
+            }
+            None => play,
+        };
         if play.clicked() || space {
             events.push(if state.playing {
                 StripEvent::Stop
@@ -364,31 +373,20 @@ pub(crate) fn ui(ui: &mut egui::Ui, state: &StripState) -> StripOutput {
             });
         }
 
-        // Record, while a MIDI input is connected. Its dot is red, and the whole button while
-        // it records.
-        if let (Some(view), Some(text)) = (state.record, &t.record) {
-            let text = if view.recording {
-                text.clone().color(egui::Color32::WHITE)
-            } else if view.enabled {
-                text.clone().color(RECORD_RED)
+        // MIDI in, while a MIDI output is connected: on, playing a pattern records what is
+        // played on the device.
+        if let (Some(on), Some(text)) = (state.midi_in, &t.midi_in) {
+            let device = state.midi_device.unwrap_or_default();
+            let tip = if on {
+                tr!("strip-midi-in-on-tip", device = device)
             } else {
-                text.clone()
+                tr!("strip-midi-in-off-tip", device = device)
             };
-            let mut button = egui::Button::new(text).min_size(size);
-            if view.recording {
-                button = button.fill(RECORD_RED);
-            }
-            let record = ui.add_enabled(view.enabled || view.recording, button);
-            let tip = if view.recording {
-                tr!("strip-record-stop-tip")
-            } else {
-                tr!("strip-record-tip")
-            };
-            let record = record
-                .on_hover_text(tip)
-                .on_disabled_hover_text(tr!("strip-record-song-tip"));
-            if record.clicked() {
-                events.push(StripEvent::Record);
+            let button = ui
+                .add(egui::Button::new(text.clone()).min_size(size).selected(on))
+                .on_hover_text(tip);
+            if button.clicked() {
+                events.push(StripEvent::MidiIn);
             }
         }
 

@@ -5,7 +5,12 @@
 //! off. The grid is never inside a scroll area, because a touch drag there would scroll instead.
 //!
 //! The grid draws from the project and reports what the user did; the caller changes the project.
+//!
+//! Under the project's rows come the drums on offer (see [`Offered`]): played on the MIDI
+//! keyboard, with no row yet. They are drawn faded, with a plus sign, and their steps cannot be
+//! tapped. A click on the name adds the drum as a row.
 
+use crate::offered::Offered;
 use crate::pictures::RowLabels;
 use dm_project::{
     ACCENT_VELOCITY, Pattern, Project, SOFT_VELOCITY, STEPS_PER_BAR, StepLevels, next_level,
@@ -34,9 +39,14 @@ const TWO_LINE_ROW: f32 = 64.0;
 const BADGE_ROOM: f32 = 14.0;
 /// The size of a name beside or under its picture.
 const PICTURE_NAME_SIZE: f32 = 12.0;
+/// How long a row's name stays lit after its key is played on the MIDI keyboard, in seconds.
+const FLASH_SECONDS: f64 = 0.3;
+/// How faded a drum on offer is drawn.
+const OFFERED_FADE: f32 = 0.45;
 
-/// The width of the column of row names for this way of labelling `project`'s rows, in a grid
-/// `width` points wide with rows `row_height` points tall (see [`row_height`]).
+/// The width of the column of row names for this way of labelling `project`'s rows and the
+/// drums on offer, `offered`, in a grid `width` points wide with rows `row_height` points tall
+/// (see [`row_height`]).
 ///
 /// The column is as wide as the longest name on one line needs, with room for a badge, within
 /// limits: with names alone, from 96 points up to a quarter of the grid, so a wide window shows
@@ -45,6 +55,7 @@ const PICTURE_NAME_SIZE: f32 = 12.0;
 pub(crate) fn label_width(
     ctx: &egui::Context,
     project: &Project,
+    offered: &[u8],
     labels: RowLabels,
     width: f32,
     row_height: f32,
@@ -54,8 +65,9 @@ pub(crate) fn label_width(
         project
             .rows()
             .iter()
-            .map(|info| {
-                let name = crate::drums::row_name(&info.name, info.key);
+            .map(|info| crate::drums::row_name(&info.name, info.key))
+            .chain(offered.iter().map(|&key| crate::drums::drum_name(key)))
+            .map(|name| {
                 ctx.fonts_mut(|f| f.layout_no_wrap(name, font.clone(), Color32::WHITE))
                     .size()
                     .x
@@ -97,6 +109,8 @@ pub(crate) enum GridEvent {
     /// Open the settings of a row beside its name. Comes with `Preview` when a name is tapped.
     /// `rect` is the name's place on the screen, for the pop-up to sit beside.
     OpenRow { row: usize, rect: Rect },
+    /// Add the drum on offer with this key as a row.
+    AddOffered { key: u8 },
 }
 
 /// Which steps the grid shows.
@@ -125,6 +139,9 @@ pub(crate) struct Grid {
     highlight: Option<usize>,
     /// Where each row's name was drawn on the last frame.
     label_rects: Vec<Rect>,
+    /// The keys played on the MIDI keyboard lately, each with when (egui's clock, in seconds).
+    /// Their rows' names light up for [`FLASH_SECONDS`].
+    flashes: Vec<(u8, f64)>,
 }
 
 struct Layout {
@@ -192,6 +209,23 @@ impl Grid {
         self.highlight = row;
     }
 
+    /// Lights the name of the row, real or on offer, that plays `key`, from `now` (egui's clock)
+    /// for [`FLASH_SECONDS`].
+    pub(crate) fn flash(&mut self, key: u8, now: f64) {
+        self.flashes.retain(|&(k, _)| k != key);
+        self.flashes.push((key, now));
+    }
+
+    /// How lit the name of the row playing `key` is at `now`: 1 just after the key is played,
+    /// falling to 0.
+    fn flash_at(&self, key: u8, now: f64) -> f32 {
+        self.flashes
+            .iter()
+            .find(|&&(k, _)| k == key)
+            .map(|&(_, at)| (1.0 - (now - at) / FLASH_SECONDS).clamp(0.0, 1.0) as f32)
+            .unwrap_or(0.0)
+    }
+
     /// Where a row's name was drawn on the last frame, in screen points.
     pub(crate) fn label_rect(&self, row: usize) -> Option<Rect> {
         self.label_rects.get(row).copied()
@@ -202,15 +236,22 @@ impl Grid {
         &mut self,
         ui: &mut egui::Ui,
         project: &Project,
+        offered: &Offered,
         pattern: &Pattern,
         view: View,
         playhead: Option<usize>,
     ) -> Vec<GridEvent> {
         let area = ui.available_rect_before_wrap();
-        let rows = project.rows().len().max(1);
+        let now = ui.input(|i| i.time);
+        self.flashes.retain(|&(_, at)| now - at < FLASH_SECONDS);
+        if !self.flashes.is_empty() {
+            ui.ctx().request_repaint();
+        }
+        let rows = (project.rows().len() + offered.len()).max(1);
         let label_width = label_width(
             ui.ctx(),
             project,
+            &offered.keys(),
             self.row_labels,
             area.width(),
             row_height(area.height(), rows),
@@ -238,9 +279,18 @@ impl Grid {
         };
 
         let mut events = Vec::new();
-        self.labels(ui, project, &layout, &mut events);
-        self.input(ui, pattern, &layout, rows, self.step_levels, &mut events);
-        paint(ui, project, pattern, &layout, header, playhead);
+        self.labels(ui, project, &layout, now, &mut events);
+        let real_rows = project.rows().len();
+        self.offered_labels(ui, real_rows, offered, &layout, now, &mut events);
+        self.input(
+            ui,
+            pattern,
+            &layout,
+            real_rows,
+            self.step_levels,
+            &mut events,
+        );
+        paint(ui, project, offered, pattern, &layout, header, playhead);
         ui.allocate_rect(
             Rect::from_min_max(area.min, Pos2::new(area.max.x, layout.cells.max.y)),
             Sense::hover(),
@@ -254,6 +304,7 @@ impl Grid {
         ui: &mut egui::Ui,
         project: &Project,
         layout: &Layout,
+        now: f64,
         events: &mut Vec<GridEvent>,
     ) {
         self.label_rects.clear();
@@ -273,14 +324,16 @@ impl Grid {
             } else {
                 ui.visuals().widgets.inactive.bg_fill
             };
+            let family = crate::widgets::family_colour(
+                dm_project::drum_family(info.key),
+                ui.visuals().dark_mode,
+            );
+            let fill = flashed(fill, family, self.flash_at(info.key, now));
             ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
             // A row that mute or solo silences is drawn faded, and says why.
             let audible = project.audible(row);
             let fade = |c: Color32| if audible { c } else { c.gamma_multiply(0.4) };
-            let colour = fade(crate::widgets::family_colour(
-                dm_project::drum_family(info.key),
-                ui.visuals().dark_mode,
-            ));
+            let colour = fade(family);
             let text_color = fade(ui.visuals().text_color());
             let badge = if info.mute {
                 Some(tr!("rows-badge-mute"))
@@ -316,6 +369,77 @@ impl Grid {
                     ui.visuals().warn_fg_color,
                 );
             }
+        }
+    }
+
+    /// The names of the drums on offer, under the project's `first` rows: faded, with a plus
+    /// sign. A click adds the drum as a row.
+    fn offered_labels(
+        &mut self,
+        ui: &mut egui::Ui,
+        first: usize,
+        offered: &Offered,
+        layout: &Layout,
+        now: f64,
+        events: &mut Vec<GridEvent>,
+    ) {
+        for (i, drum) in offered.rows().iter().enumerate() {
+            let rect = layout.label_rect(first + i);
+            let id = egui::Id::unique(("dm-grid-offered", drum.key));
+            let response = ui
+                .interact(rect, id, Sense::click())
+                .on_hover_text(tr!("rows-add-offered"));
+            if !self.names_blocked && response.clicked() {
+                events.push(GridEvent::AddOffered { key: drum.key });
+            }
+            let hovered = !self.names_blocked && response.hovered();
+            let family = crate::widgets::family_colour(
+                dm_project::drum_family(drum.key),
+                ui.visuals().dark_mode,
+            );
+            let fill = if hovered {
+                ui.visuals().widgets.hovered.bg_fill
+            } else {
+                ui.visuals().widgets.inactive.bg_fill
+            }
+            .gamma_multiply(OFFERED_FADE);
+            let fill = flashed(fill, family, self.flash_at(drum.key, now));
+            ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
+            let fade = |c: Color32| {
+                if hovered {
+                    c
+                } else {
+                    c.gamma_multiply(OFFERED_FADE)
+                }
+            };
+            let text_color = fade(ui.visuals().text_color());
+            draw_label(
+                ui,
+                rect,
+                &crate::drums::drum_name(drum.key),
+                drum.key,
+                fade(family),
+                text_color,
+                self.row_labels,
+                BADGE_ROOM,
+            );
+            // The plus sign sits where a mute badge would, or in the corner over a picture
+            // alone.
+            let (at, align) = if self.row_labels == RowLabels::Pictures {
+                (rect.right_top() + Vec2::new(-3.0, 1.0), Align2::RIGHT_TOP)
+            } else {
+                (
+                    rect.right_center() - Vec2::new(6.0, 0.0),
+                    Align2::RIGHT_CENTER,
+                )
+            };
+            ui.painter().text(
+                at,
+                align,
+                crate::icons::PLUS,
+                FontId::proportional(13.0),
+                text_color,
+            );
         }
     }
 
@@ -365,9 +489,19 @@ impl Grid {
     }
 }
 
+/// A row name's fill, lit by a flash of the row's family colour as strong as `flash`, 0 to 1.
+fn flashed(fill: Color32, family: Color32, flash: f32) -> Color32 {
+    if flash > 0.0 {
+        fill.lerp_to_gamma(family, 0.8 * flash)
+    } else {
+        fill
+    }
+}
+
 fn paint(
     ui: &egui::Ui,
     project: &Project,
+    offered: &Offered,
     pattern: &Pattern,
     layout: &Layout,
     header: Rect,
@@ -401,10 +535,6 @@ fn paint(
             crate::widgets::family_colour(dm_project::drum_family(row.key), visuals.dark_mode)
         })
         .collect();
-    let off_a = visuals.widgets.inactive.bg_fill;
-    let off_b = visuals
-        .faint_bg_color
-        .lerp_to_gamma(visuals.widgets.inactive.bg_fill, 0.4);
     let bar_line = Stroke::new(2.0, visuals.strong_text_color().gamma_multiply(0.6));
 
     for column in 0..view.visible {
@@ -430,47 +560,76 @@ fn paint(
             painter.vline(x, layout.cells.y_range(), bar_line);
         }
         for (row, &colour) in on.iter().enumerate() {
-            let rect = layout.cell_rect(row, column);
             let velocity = pattern.velocity(row, step);
-            let fill = if (step / 4).is_multiple_of(2) {
-                off_a
-            } else {
-                off_b
-            };
-            painter.rect_filled(rect, CornerRadius::same(4), fill);
-            if velocity > 0 {
-                // Loudness shows as how much of the cell is filled, and how bright: a soft
-                // step fills the lower half, faded; a loud one is full and carries a light
-                // top edge. Shape as well as colour, so it reads without colour vision.
-                let (share, brightness) = if velocity <= SOFT_VELOCITY {
-                    (0.5, 0.6)
-                } else {
-                    (1.0, 1.0)
-                };
-                let height = rect.height() * share;
-                let lit = Rect::from_min_max(Pos2::new(rect.min.x, rect.max.y - height), rect.max);
-                painter.rect_filled(
-                    lit,
-                    CornerRadius::same(4),
-                    colour.gamma_multiply(brightness),
-                );
-                if velocity >= ACCENT_VELOCITY {
-                    let edge = Rect::from_min_size(
-                        rect.min,
-                        Vec2::new(rect.width(), 4.0_f32.min(rect.height() * 0.2)),
-                    );
-                    painter.rect_filled(edge, CornerRadius::same(2), visuals.strong_text_color());
-                }
-            }
-            if step.is_multiple_of(4) {
-                painter.rect_stroke(
-                    rect,
-                    CornerRadius::same(4),
-                    Stroke::new(1.0, Color32::from_gray(128)),
-                    StrokeKind::Inside,
-                );
-            }
+            draw_step(
+                ui,
+                layout.cell_rect(row, column),
+                step,
+                velocity,
+                colour,
+                1.0,
+            );
         }
+        // The drums on offer: faint, with the notes recorded on them in this pattern.
+        for (i, drum) in offered.rows().iter().enumerate() {
+            let colour =
+                crate::widgets::family_colour(dm_project::drum_family(drum.key), visuals.dark_mode);
+            let velocity = drum.velocity(pattern.slot(), step);
+            let rect = layout.cell_rect(on.len() + i, column);
+            draw_step(ui, rect, step, velocity, colour, OFFERED_FADE);
+        }
+    }
+}
+
+/// One step's cell, with its loudness, everything faded by `fade` (1 for none).
+fn draw_step(ui: &egui::Ui, rect: Rect, step: usize, velocity: u8, colour: Color32, fade: f32) {
+    let painter = ui.painter();
+    let visuals = ui.visuals();
+    let off_a = visuals.widgets.inactive.bg_fill;
+    let off_b = visuals
+        .faint_bg_color
+        .lerp_to_gamma(visuals.widgets.inactive.bg_fill, 0.4);
+    let fill = if (step / 4).is_multiple_of(2) {
+        off_a
+    } else {
+        off_b
+    };
+    painter.rect_filled(rect, CornerRadius::same(4), fill.gamma_multiply(fade));
+    if velocity > 0 {
+        // Loudness shows as how much of the cell is filled, and how bright: a soft step fills
+        // the lower half, faded; a loud one is full and carries a light top edge. Shape as well
+        // as colour, so it reads without colour vision.
+        let (share, brightness) = if velocity <= SOFT_VELOCITY {
+            (0.5, 0.6)
+        } else {
+            (1.0, 1.0)
+        };
+        let height = rect.height() * share;
+        let lit = Rect::from_min_max(Pos2::new(rect.min.x, rect.max.y - height), rect.max);
+        painter.rect_filled(
+            lit,
+            CornerRadius::same(4),
+            colour.gamma_multiply(brightness * fade),
+        );
+        if velocity >= ACCENT_VELOCITY {
+            let edge = Rect::from_min_size(
+                rect.min,
+                Vec2::new(rect.width(), 4.0_f32.min(rect.height() * 0.2)),
+            );
+            painter.rect_filled(
+                edge,
+                CornerRadius::same(2),
+                visuals.strong_text_color().gamma_multiply(fade),
+            );
+        }
+    }
+    if step.is_multiple_of(4) {
+        painter.rect_stroke(
+            rect,
+            CornerRadius::same(4),
+            Stroke::new(1.0, Color32::from_gray(128).gamma_multiply(fade)),
+            StrokeKind::Inside,
+        );
     }
 }
 

@@ -27,3 +27,6 @@ rows-back = Back
 # One letter beside a row's name in the grid, for a muted row and a soloed row.
 rows-badge-mute = M
 rows-badge-solo = S
+
+# Hover text on an inactive row: a drum played on the MIDI keyboard that has no row yet.
+rows-add-offered = Add this drum

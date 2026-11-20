@@ -32,6 +32,7 @@ mod keyboard;
 mod link;
 mod menu;
 mod midi;
+mod offered;
 mod paste_tab;
 mod patterns;
 mod picker;
@@ -70,6 +71,9 @@ const SHORT: f32 = 560.0;
 const AUTOSAVE_DELAY: f64 = 1.0;
 /// How long a notice stays on screen, in seconds.
 const NOTICE_SECONDS: f64 = 4.0;
+/// How often the interface looks for hits from the MIDI input while nothing plays, in seconds,
+/// so a key's flash shows soon after the key is played.
+const INPUT_POLL: f64 = 0.05;
 
 /// The whole application state the interface draws.
 pub struct DrumApp {
@@ -118,10 +122,14 @@ pub struct DrumApp {
     /// The MIDI output the drums go to, if one is chosen, and the input drum hits come from.
     /// Started beside the engine.
     midi: midi::Midi,
-    /// The number of the take being recorded from the MIDI input, while one is.
+    /// The number of the take being recorded from the MIDI input, while one is: from Play to
+    /// Stop of a pattern, with the input on and connected.
     recording: Option<u64>,
     /// How many takes have started, to number the next one.
     takes: u64,
+    /// The drums played on the MIDI input that have no row, shown as inactive rows. This
+    /// session's, never saved.
+    offered: offered::Offered,
     /// A one-line notice shown over the grid, and the time (egui's clock, in seconds) it goes.
     notice: Option<(String, f64)>,
     /// The language the person chose in the menu, or `None` to follow the system.
@@ -188,7 +196,7 @@ impl DrumApp {
         let system_language = i18n::system_language();
         let row_labels = store.row_labels();
         let bar_line = store.bar_strip();
-        let midi = midi::Midi::new(store.midi_output(), store.midi_volume());
+        let midi = midi::Midi::new(store.midi_output(), store.midi_volume(), store.midi_input());
         // Only the names: reading the packs waits until the list opens.
         let app = Self {
             bank: BankState::new(data_dir),
@@ -221,6 +229,7 @@ impl DrumApp {
             midi,
             recording: None,
             takes: 0,
+            offered: offered::Offered::default(),
             notice: None,
             language_choice,
             system_language,
@@ -540,6 +549,8 @@ impl DrumApp {
             });
             self.export_message = self.message.clone();
         }
+        // A drum on offer that has a row by now, added another way, is offered no more.
+        self.offered.forget_rows_of(&self.project);
         self.editor_frame(ui, engine);
 
         if self.project != before {
@@ -600,6 +611,8 @@ impl DrumApp {
 
     fn undo(&mut self, engine: &mut Engine) {
         if self.history.undo(&mut self.project) {
+            // Undo works on the project alone; notes waiting on a drum on offer go.
+            self.offered.drop_notes();
             self.skip_record = true;
             self.resync(engine);
         }
@@ -607,6 +620,7 @@ impl DrumApp {
 
     fn redo(&mut self, engine: &mut Engine) {
         if self.history.redo(&mut self.project) {
+            self.offered.drop_notes();
             self.skip_record = true;
             self.resync(engine);
         }
@@ -678,9 +692,16 @@ impl DrumApp {
         // left now is a little more, so near the edge the guess may pick the narrower column.
         let rows_tall = grid::row_height(
             ui.available_height() - bars::INDICATOR_HEIGHT - bars::INDICATOR_GAP,
-            self.project.rows().len(),
+            self.project.rows().len() + self.offered.len(),
         );
-        let labels = grid::label_width(ui.ctx(), &self.project, self.row_labels, width, rows_tall);
+        let labels = grid::label_width(
+            ui.ctx(),
+            &self.project,
+            &self.offered.keys(),
+            self.row_labels,
+            width,
+            rows_tall,
+        );
         let fits = ((width - labels) / (STEPS_PER_BAR as f32 * min_step)).floor() as usize;
         let split = fits == 0;
         let shown_bars = fits.clamp(1, MAX_BARS_SHOWN).min(pattern_bars);
@@ -720,10 +741,8 @@ impl DrumApp {
             can_redo,
             step_levels: self.project.step_levels(),
             midi_device: self.midi.choice().filter(|_| self.midi.connected()),
-            record: self.midi.input_connected().then_some(strip::RecordView {
-                recording: self.recording.is_some(),
-                enabled: self.mode == Mode::Pattern,
-            }),
+            recording_from: self.midi.choice().filter(|_| self.midi.input_connected()),
+            midi_in: self.midi.connected().then_some(self.midi.input()),
         };
         let strip = strip::ui(ui, &state);
         ui.add_space(4.0);
@@ -895,6 +914,7 @@ impl DrumApp {
                 self.grid.ui(
                     ui,
                     &self.project,
+                    &self.offered,
                     &self.project.patterns()[self.current],
                     view,
                     grid_playhead,
@@ -919,6 +939,10 @@ impl DrumApp {
             match event {
                 grid::GridEvent::Preview { row } => self.preview_row(engine, row),
                 grid::GridEvent::OpenRow { .. } => {}
+                grid::GridEvent::AddOffered { key } => {
+                    let now = ui.input(|i| i.time);
+                    self.add_offered(engine, key, now);
+                }
                 grid::GridEvent::Set {
                     row,
                     step,
@@ -956,7 +980,19 @@ impl DrumApp {
                     self.playing = false;
                     self.recording = None;
                 }
-                strip::StripEvent::Record => self.toggle_recording(engine),
+                strip::StripEvent::MidiIn => {
+                    let on = !self.midi.input();
+                    if let Err(e) = self.store.set_midi_input(on) {
+                        log::warn!("could not keep the MIDI input setting: {e}");
+                    }
+                    self.midi.set_input(on);
+                    // Turning the input off ends the take, without the line about a keyboard
+                    // that went away, and takes the drums on offer away with their notes.
+                    if !on {
+                        self.recording = None;
+                        self.offered = offered::Offered::default();
+                    }
+                }
                 strip::StripEvent::PrevPage => self.page(split, shown_bars, false),
                 strip::StripEvent::NextPage => self.page(split, shown_bars, true),
                 strip::StripEvent::Undo => self.undo(engine),
@@ -1526,6 +1562,8 @@ impl DrumApp {
         self.project = project;
         self.name = name;
         self.history.clear();
+        // Notes waiting on a drum on offer were played against the old project.
+        self.offered.drop_notes();
         self.skip_record = true;
         self.current = 0;
         self.view_bar = 0;
@@ -1565,30 +1603,53 @@ impl DrumApp {
         self.follow = true;
     }
 
-    /// Record in the strip: starts a take, or ends the one being recorded. A take records into
-    /// the pattern being edited while it loops, so Record starts it if nothing plays. In song
-    /// mode the button is not offered.
-    fn toggle_recording(&mut self, engine: &mut Engine) {
-        if self.recording.take().is_some() || self.mode != Mode::Pattern {
-            return;
+    /// Adds the drum on offer with `key` as a row at the bottom, with the notes recorded on it.
+    /// One undo step, as the frame records it. With the rows full, it says so and stays on offer.
+    fn add_offered(&mut self, engine: &mut Engine, key: u8, now: f64) {
+        match self.offered.add_to(&mut self.project, key) {
+            Ok(changes) => apply(engine, changes),
+            Err(dm_project::Refused::TooManyRows) => {
+                let text = tr!("sounds-max-rows", count = dm_project::MAX_ROWS);
+                self.notice = Some((text, now + NOTICE_SECONDS));
+            }
+            Err(refused) => log::info!("refused: {refused:?}"),
         }
-        if !self.playing {
-            self.play(engine);
-        }
-        self.takes += 1;
-        self.recording = Some(self.takes);
     }
 
-    /// Takes the hits the engine played from the MIDI input, and while a take is being
-    /// recorded, turns those heard in the pattern being edited into steps. The hits are taken
-    /// every frame, recording or not, so their queue never fills. Each take undoes as one step.
+    /// Takes the hits the engine played from the MIDI input. Each lights its row's name, and a
+    /// drum with no row is offered. While a pattern plays with the input on and connected, a
+    /// take records: the hits heard in the pattern being edited become steps, or wait on a drum
+    /// on offer. Stopped, or playing the song, nothing is recorded. The hits are taken every
+    /// frame, so their queue never fills. Each take, from Play to Stop, undoes as one step.
     fn record_hits(&mut self, engine: &mut Engine, now: f64) {
         let hits = engine.take_heard_hits();
-        // Anything that stops the pattern looping ends the take: Stop, a song that is played,
-        // a groove preview, opening a project.
-        if self.recording.is_some() && (!self.playing || self.mode != Mode::Pattern) {
+        let input = self.midi.input_connected();
+        // A take runs from Play to Stop of a pattern. Anything that stops the pattern looping
+        // ends it: Stop, a song that is played, a groove preview, opening a project, the input
+        // turned off.
+        let armed = input && self.playing && self.mode == Mode::Pattern;
+        if !armed {
             self.recording = None;
+        } else if self.recording.is_none() {
+            self.takes += 1;
+            self.recording = Some(self.takes);
         }
+        if input && !self.playing {
+            // The interface may otherwise draw only on input, and a key's flash must show at
+            // once.
+            self.ctx
+                .request_repaint_after(std::time::Duration::from_secs_f64(INPUT_POLL));
+        }
+        if hits.is_empty() {
+            return;
+        }
+        for hit in &hits {
+            self.grid.flash(hit.key, now);
+            if !self.project.rows().iter().any(|r| r.key == hit.key) {
+                self.offered.offer(hit.key);
+            }
+        }
+        self.ctx.request_repaint();
         let Some(take) = self.recording else {
             return;
         };
@@ -1605,7 +1666,14 @@ impl DrumApp {
         }
         let before = self.project.clone();
         for (hit, step) in heard {
-            match record::record_hit(&mut self.project, self.current, hit.key, hit.velocity, step) {
+            match record::record_hit(
+                &mut self.project,
+                &mut self.offered,
+                self.current,
+                hit.key,
+                hit.velocity,
+                step,
+            ) {
                 Ok(changes) => apply(engine, changes),
                 Err(refused) => log::info!("recording refused: {refused:?}"),
             }

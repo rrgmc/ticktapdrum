@@ -57,8 +57,6 @@ pub(crate) const PENCIL_SIMPLE: &str = "\u{E3B4}";
 pub(crate) const PLAY: &str = "\u{E3D0}";
 pub(crate) const PLAYLIST: &str = "\u{E6AA}";
 pub(crate) const PLUS: &str = "\u{E3D4}";
-/// A ring round a dot: Record.
-pub(crate) const RECORD: &str = "\u{E3EE}";
 pub(crate) const REPEAT: &str = "\u{E3F6}";
 pub(crate) const SLIDERS_HORIZONTAL: &str = "\u{E434}";
 pub(crate) const SPARKLE: &str = "\u{E6A2}";
