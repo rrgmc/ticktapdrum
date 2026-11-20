@@ -652,9 +652,8 @@ impl DrumApp {
         // The grid's height is not known yet: the strip and the bar line come first. The height
         // left now is a little more, so near the edge the guess may pick the narrower column.
         let rows_tall = grid::row_height(ui.available_height(), self.project.rows().len());
-        let fits = ((width - grid::label_width(self.row_labels, rows_tall))
-            / (STEPS_PER_BAR as f32 * min_step))
-            .floor() as usize;
+        let labels = grid::label_width(ui.ctx(), &self.project, self.row_labels, rows_tall);
+        let fits = ((width - labels) / (STEPS_PER_BAR as f32 * min_step)).floor() as usize;
         let split = fits == 0;
         let shown_bars = fits.clamp(1, MAX_BARS_SHOWN).min(pattern_bars);
         self.view_bar = self.view_bar.min(pattern_bars - shown_bars);

@@ -16,23 +16,48 @@ use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, Str
 const LABEL_WIDTH: f32 = 96.0;
 /// The same with pictures alone, which need less room and leave more for the steps.
 const PICTURE_LABEL_WIDTH: f32 = 60.0;
-/// The same with a picture and its name on a row with room for one line of name: wider, so long
-/// names such as Portuguese "Chimbal fechado" fit on that line.
+/// The same with a picture and its name beside it, on a short row: wide enough for long names
+/// such as Portuguese "Chimbal fechado". It is also the most the column takes with the name
+/// under the picture.
 const PICTURE_NAME_LABEL_WIDTH: f32 = 112.0;
-/// The same on a row tall enough for two lines of name under the picture, where a long name
-/// wraps instead, so the column can be narrower and leave more room for the steps.
-const PICTURE_NAME_TALL_LABEL_WIDTH: f32 = 80.0;
+/// The least the column takes with the name under the picture, so the picture keeps its size.
+const PICTURE_NAME_MIN_WIDTH: f32 = 64.0;
+/// The row height from which the name goes under its picture.
+const NAME_UNDER_ROW: f32 = 44.0;
 /// The row height from which a name under its picture may take two lines.
 const TWO_LINE_ROW: f32 = 64.0;
+/// Room beside a name for the mute or solo badge.
+const BADGE_ROOM: f32 = 14.0;
 /// The size of a name beside or under its picture.
 const PICTURE_NAME_SIZE: f32 = 12.0;
 
-/// The width of the column of row names for this way of labelling rows, on rows `row_height`
-/// points tall (see [`row_height`]).
-pub(crate) fn label_width(labels: RowLabels, row_height: f32) -> f32 {
+/// The width of the column of row names for this way of labelling `project`'s rows, on rows
+/// `row_height` points tall (see [`row_height`]). With the name under the picture, the column
+/// is as wide as the longest name on one line needs, with room for a badge, so short names
+/// leave more room for the steps.
+pub(crate) fn label_width(
+    ctx: &egui::Context,
+    project: &Project,
+    labels: RowLabels,
+    row_height: f32,
+) -> f32 {
     match labels {
         RowLabels::Pictures => PICTURE_LABEL_WIDTH,
-        RowLabels::PicturesAndNames if row_height >= TWO_LINE_ROW => PICTURE_NAME_TALL_LABEL_WIDTH,
+        RowLabels::PicturesAndNames if row_height >= NAME_UNDER_ROW => {
+            let font = FontId::proportional(PICTURE_NAME_SIZE);
+            let widest = project
+                .rows()
+                .iter()
+                .map(|info| {
+                    let name = crate::drums::row_name(&info.name, info.key);
+                    ctx.fonts_mut(|f| f.layout_no_wrap(name, font.clone(), Color32::WHITE))
+                        .size()
+                        .x
+                })
+                .fold(0.0, f32::max);
+            (widest + 6.0 + BADGE_ROOM + 4.0)
+                .clamp(PICTURE_NAME_MIN_WIDTH, PICTURE_NAME_LABEL_WIDTH)
+        }
         RowLabels::PicturesAndNames => PICTURE_NAME_LABEL_WIDTH,
         RowLabels::Names => LABEL_WIDTH,
     }
@@ -172,7 +197,12 @@ impl Grid {
     ) -> Vec<GridEvent> {
         let area = ui.available_rect_before_wrap();
         let rows = project.rows().len().max(1);
-        let label_width = label_width(self.row_labels, row_height(area.height(), rows));
+        let label_width = label_width(
+            ui.ctx(),
+            project,
+            self.row_labels,
+            row_height(area.height(), rows),
+        );
         let header = Rect::from_min_max(
             Pos2::new(area.min.x + label_width, area.min.y),
             Pos2::new(area.max.x, area.min.y + HEADER_HEIGHT),
@@ -255,7 +285,7 @@ impl Grid {
                 colour,
                 text_color,
                 self.row_labels,
-                if badge.is_some() { 14.0 } else { 0.0 },
+                if badge.is_some() { BADGE_ROOM } else { 0.0 },
             );
             if lit {
                 ui.painter().rect_stroke(
@@ -468,7 +498,7 @@ fn draw_label(
             let top = rect.center().y - galley.size().y / 2.0;
             painter.galley(Pos2::new(rect.left() + 14.0, top), galley, text);
         }
-        RowLabels::PicturesAndNames if rect.height() >= 44.0 => {
+        RowLabels::PicturesAndNames if rect.height() >= NAME_UNDER_ROW => {
             // A tall row: the picture above, the name under it on up to two lines. The name is
             // laid out first, and the picture takes the height left, so a long name is not cut.
             let line = ui.fonts_mut(|f| f.row_height(&FontId::proportional(PICTURE_NAME_SIZE)));
