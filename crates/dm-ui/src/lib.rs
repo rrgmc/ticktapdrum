@@ -28,6 +28,7 @@ mod history;
 #[allow(dead_code)] // Not every icon is used.
 mod icons;
 mod incoming;
+mod link;
 mod menu;
 mod midi;
 mod paste_tab;
@@ -126,6 +127,8 @@ pub struct DrumApp {
     titled: Option<i18n::Language>,
     /// A WAV export in progress.
     wav_job: Option<export::WavJob>,
+    /// A download from a link in progress. It runs only while the link dialog is open.
+    link_job: Option<link::LinkJob>,
     /// The egui context, kept so worker threads can ask for a redraw.
     ctx: egui::Context,
     /// Which undo group this frame's edits belong to. Set by the event handlers.
@@ -215,6 +218,7 @@ impl DrumApp {
             system_language,
             titled: None,
             wav_job: None,
+            link_job: None,
             ctx: egui::Context::default(),
             frame_group: Group::Single,
             skip_record: false,
@@ -387,6 +391,7 @@ impl DrumApp {
                 incoming::Incoming::Text(text) => self.incoming_text(&text),
             }
         }
+        self.poll_link();
         self.dropped_files(&ctx);
         self.back(&ctx);
         let frame = egui::Frame::central_panel(ui.style()).inner_margin(self.padding);
@@ -791,6 +796,7 @@ impl DrumApp {
                 playing: self.preview.as_ref().map(|(key, i)| (key.as_str(), *i)),
                 note: self.groove_note.as_deref(),
             },
+            downloading: self.link_job.as_ref().map(link::LinkJob::progress),
         };
         let mut menu_events =
             widgets::popup(&strip.menu, |ui| self.menu.contents(ui, &view)).unwrap_or_default();
@@ -1493,12 +1499,14 @@ impl DrumApp {
         }
     }
 
-    /// Says why an import added nothing: in the menu's message, in the groove list's note if the
-    /// list is open, and otherwise in a notice over the grid.
+    /// Says why an import added nothing: in the menu's message, in the groove list's note or the
+    /// link dialog if one is open, and otherwise in a notice over the grid.
     fn import_failed(&mut self, message: String) {
         self.message = Some(message.clone());
         if self.menu.grooves_open() {
             self.groove_note = Some(message);
+        } else if self.menu.link_open() {
+            self.menu.link_failed(message);
         } else {
             self.show_notice_text(message);
         }
@@ -1563,6 +1571,8 @@ impl DrumApp {
         use grooves::GrooveEvent;
         match event {
             GrooveEvent::AddFromFile => self.pick(engine, PickKind::OpenGrooves),
+            GrooveEvent::Download(link) => self.start_download(link),
+            GrooveEvent::StopDownload => self.stop_download(),
             GrooveEvent::Open => {
                 // The menu opened the list; the note was about an earlier visit.
                 self.groove_note = None;
@@ -1617,10 +1627,60 @@ impl DrumApp {
         }
     }
 
-    /// Text a host handed in, such as a link shared to the app. Milestone 13 downloads links;
-    /// until then the text is only logged.
+    /// Text a host handed in, such as a link shared to the app. A link opens the link dialog and
+    /// downloads at once, so a share needs no further tap. Other text goes to the Paste a drum
+    /// tab dialog while that experiment is on. Anything else is refused with a notice.
     fn incoming_text(&mut self, text: &str) {
-        log::info!("shared text not handled yet: {} characters", text.len());
+        match link::shared_text(text, self.paste_tabs, self.basic) {
+            link::SharedText::Download(address) => {
+                self.menu.open_link(address.clone());
+                self.start_download(address);
+            }
+            link::SharedText::PasteTab => self.menu.open_paste_tab(text.to_owned()),
+            link::SharedText::Refuse => {
+                let message = tr!("grooves-link-share-refused");
+                self.message = Some(message.clone());
+                self.show_notice_text(message);
+            }
+        }
+    }
+
+    /// Starts downloading `link` on a worker thread, stopping any download before it. The link
+    /// dialog shows its progress; [`DrumApp::poll_link`] takes the result.
+    fn start_download(&mut self, link: String) {
+        self.stop_download();
+        self.link_job = Some(link::LinkJob::start(link, self.ctx.clone()));
+    }
+
+    /// Stops the download, quietly. The worker ends at its next progress report, and its result
+    /// is not waited for.
+    fn stop_download(&mut self) {
+        if let Some(job) = self.link_job.take() {
+            job.cancel();
+        }
+    }
+
+    /// Takes the result of the download from a link, once it has finished. Closing the link
+    /// dialog stops the download. A file goes to the import, which opens the groove list on it.
+    /// A failure stays in the dialog, with the link, to be fixed or tried again. Basic mode keeps
+    /// no dialog open: the import or the failure shows in a notice.
+    fn poll_link(&mut self) {
+        if self.link_job.is_some() && !self.menu.link_open() {
+            self.stop_download();
+        }
+        let Some(result) = self.link_job.as_ref().and_then(link::LinkJob::poll) else {
+            return;
+        };
+        self.link_job = None;
+        if self.basic {
+            self.menu.close_link();
+        }
+        match result {
+            // Outside basic mode the groove list replaces the link dialog, or the dialog shows
+            // why the file was not taken.
+            Ok((name, bytes)) => self.import_grooves(&name, bytes),
+            Err(error) => self.import_failed(link::error_text(&error)),
+        }
     }
 
     fn finish(&mut self, engine: &mut Engine, result: Result<Vec<Change>, dm_project::Refused>) {

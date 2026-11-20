@@ -24,6 +24,20 @@ grooves-delete-groove-question = Apagar a levada { $name }?
 grooves-delete-failed = Não foi apagado: { $reason }
 grooves-file-kind = Arquivos MIDI e zips
 
+## A janela Juntar levadas de um link.
+
+grooves-add-from-link = Juntar levadas de um link
+grooves-link-hint = Cole um link para um arquivo de levada (.mid) ou um pacote (.zip).
+grooves-link-add = Adicionar
+grooves-link-downloading-kb = Baixando... { $kb } KB
+grooves-link-downloading-mb = Baixando... { $mb } MB
+grooves-link-not-a-link = Isto não é um link.
+grooves-link-failed = O download falhou. Confira o link e a conexão.
+grooves-link-status = O servidor respondeu com um erro ({ $code }).
+grooves-link-too-large = O arquivo é grande demais.
+grooves-link-web-page = Isto é uma página da web, não um arquivo de levada. Copie o link do próprio download, muitas vezes tocando e segurando o botão de download.
+grooves-link-share-refused = Só links para arquivos de levadas podem ser compartilhados com o TickTapDrum.
+
 ## O que uma importação fez.
 
 grooves-added = { $count ->

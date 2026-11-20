@@ -33,6 +33,26 @@ grooves-delete-failed = Not deleted: { $reason }
 # The kind of file a desktop's open dialog lists.
 grooves-file-kind = MIDI files and zips
 
+## The Add grooves from a link dialog. A link is a web address, such as https://example.com/a.mid.
+
+# The menu item and the dialog's title. Downloads a MIDI file or a zip from a link.
+grooves-add-from-link = Add grooves from a link
+grooves-link-hint = Paste a link to a groove file (.mid) or pack (.zip).
+# Starts the download.
+grooves-link-add = Add
+# While downloading. $kb is a whole number of kilobytes; $mb has one decimal.
+grooves-link-downloading-kb = Downloading... { $kb } KB
+grooves-link-downloading-mb = Downloading... { $mb } MB
+# Why a download failed.
+grooves-link-not-a-link = This is not a link.
+grooves-link-failed = The download failed. Check the link and the connection.
+# $code is the web server's error number, such as 404.
+grooves-link-status = The server answered with an error ({ $code }).
+grooves-link-too-large = The file is too large.
+grooves-link-web-page = This is a web page, not a groove file. Copy the link of the download itself, often by long-pressing the download button.
+# Text other than a link was shared to the app, such as from another app's Share menu.
+grooves-link-share-refused = Only links to groove files can be shared to TickTapDrum.
+
 ## What an import did.
 
 grooves-added = { $count ->

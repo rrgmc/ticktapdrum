@@ -22,6 +22,11 @@ pub(crate) const MAX_FILE: usize = 100 * 1024 * 1024;
 pub(crate) enum GrooveEvent {
     /// Choose a MIDI file or a zip to import.
     AddFromFile,
+    /// Download a MIDI file or a zip from this link, cleaned up by `dm_groove::link_address`,
+    /// and import it.
+    Download(String),
+    /// Stop the download from a link.
+    StopDownload,
     /// The groove list has just opened: read it again.
     Open,
     /// Loop a groove on its own, stopping any other.

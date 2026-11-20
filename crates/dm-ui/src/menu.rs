@@ -1,6 +1,6 @@
 //! The menu under ☰, and the dialogs its items open: Save as, Open, Load default style, Export,
-//! Language, MIDI output, Paste a drum tab, Grooves, and the tempo when the strip has no room
-//! for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
+//! Language, MIDI output, Paste a drum tab, Add grooves from a link, Grooves, and the tempo when
+//! the strip has no room for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
 //!
 //! It does everything the old Projects screen did. Starting a new project, opening one, opening
 //! a file or starting from a beat asks first when there are unsaved changes, and deleting always
@@ -11,6 +11,7 @@ use egui::{RichText, Vec2};
 use crate::grooves::{self, GrooveEvent, GroovesView};
 use crate::i18n::{self, Language};
 use crate::icons;
+use crate::link;
 use crate::pictures::RowLabels;
 use crate::projects::{ProjectEvent, ProjectsView};
 use crate::strip::Hidden;
@@ -64,6 +65,8 @@ pub(crate) struct MenuView<'a> {
     /// The MIDI output setting, or `None` where the platform cannot send MIDI.
     pub(crate) midi: Option<MidiView<'a>>,
     pub(crate) grooves: GroovesView<'a>,
+    /// How far a download from a link has got, while one runs.
+    pub(crate) downloading: Option<link::Progress>,
 }
 
 /// The dialog a menu item opened.
@@ -80,6 +83,13 @@ enum Shown {
     PasteTab {
         text: String,
         refusal: Option<String>,
+    },
+    /// The link being typed, why the last download failed, if it did, and whether the box still
+    /// has to ask for focus once.
+    AddLink {
+        text: String,
+        error: Option<String>,
+        focus: bool,
     },
     /// The groove list, and a pack to open and show once, such as the one just imported.
     Grooves {
@@ -144,6 +154,47 @@ impl Menu {
     /// Closes the Paste a drum tab dialog once its tab has been added.
     pub(crate) fn close_paste(&mut self) {
         if matches!(self.dialog, Some(Shown::PasteTab { .. })) {
+            self.dialog = None;
+            self.ask = None;
+        }
+    }
+
+    /// Opens the Paste a drum tab dialog with `text` in its box, such as text shared to the app.
+    /// Nothing is added until the person taps "Add as pattern".
+    pub(crate) fn open_paste_tab(&mut self, text: String) {
+        self.open(Shown::PasteTab {
+            text,
+            refusal: None,
+        });
+    }
+
+    /// Opens the Add grooves from a link dialog with `link` in its box, such as a link shared to
+    /// the app, whose download the app starts at once. The box does not ask for focus, which on
+    /// a phone would bring up the keyboard over the progress.
+    pub(crate) fn open_link(&mut self, link: String) {
+        self.open(Shown::AddLink {
+            text: link,
+            error: None,
+            focus: false,
+        });
+    }
+
+    /// Whether the Add grooves from a link dialog is open. A download runs only while it is.
+    pub(crate) fn link_open(&self) -> bool {
+        matches!(self.dialog, Some(Shown::AddLink { .. }))
+    }
+
+    /// Shows why a download or its import failed, in the link dialog, which stays open with the
+    /// link so it can be fixed or tried again.
+    pub(crate) fn link_failed(&mut self, message: String) {
+        if let Some(Shown::AddLink { error, .. }) = &mut self.dialog {
+            *error = Some(message);
+        }
+    }
+
+    /// Closes the link dialog, once its download has finished.
+    pub(crate) fn close_link(&mut self) {
+        if self.link_open() {
             self.dialog = None;
             self.ask = None;
         }
@@ -311,6 +362,19 @@ impl Menu {
                 .clicked()
         {
             events.push(MenuEvent::Grooves(GrooveEvent::AddFromFile));
+            ui.close();
+        }
+        // A link needs no file picker, so it is offered everywhere.
+        if !p.basic
+            && ui
+                .add(item(icons::LINK, &tr!("grooves-add-from-link")))
+                .clicked()
+        {
+            self.open(Shown::AddLink {
+                text: String::new(),
+                error: None,
+                focus: true,
+            });
             ui.close();
         }
         if !p.basic
@@ -481,6 +545,12 @@ impl Menu {
             Shown::PasteTab { text, refusal } => {
                 widgets::dialog_at_top(ctx, "paste-tab", &tr!("menu-paste-tab"), |ui| {
                     done = paste_tab(ui, text, refusal, &mut events);
+                })
+                .closed
+            }
+            Shown::AddLink { text, error, focus } => {
+                widgets::dialog_at_top(ctx, "add-link", &tr!("grooves-add-from-link"), |ui| {
+                    done = add_link(ui, text, error, focus, view.downloading, &mut events);
                 })
                 .closed
             }
@@ -766,6 +836,92 @@ fn paste_tab(
             done = true;
         }
     });
+    done
+}
+
+/// The Add grooves from a link dialog: a box for the link, and Add. While the download runs, the
+/// box is disabled and its progress shows, with Stop. Why the last try failed shows below the
+/// box. Add sends the link and leaves the dialog open: the app closes it once the grooves are in,
+/// or shows why not. Returns true when cancelled.
+fn add_link(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    error: &mut Option<String>,
+    focus: &mut bool,
+    downloading: Option<link::Progress>,
+    events: &mut Vec<MenuEvent>,
+) -> bool {
+    let mut done = false;
+    ui.label(tr!("grooves-link-hint"));
+    let edit = ui.add_enabled(
+        downloading.is_none(),
+        egui::TextEdit::singleline(text)
+            .hint_text("https://")
+            .desired_width(f32::INFINITY)
+            .font(egui::TextStyle::Heading),
+    );
+    // Focus the box once, when the dialog opens from the menu. Asking every frame would also
+    // interrupt the input method each frame, which on Android closes and reopens the on-screen
+    // keyboard over and over.
+    if *focus {
+        edit.request_focus();
+        *focus = false;
+    }
+    // An error is about the link as it was, so it goes once the link changes.
+    if edit.changed() {
+        *error = None;
+    }
+    let link = dm_groove::link_address(text);
+    // Enter adds, as it saves in the Save as dialog, and for the same reason.
+    let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+    match downloading {
+        Some((so_far, total)) => {
+            ui.label(big(&link::progress_text(so_far)));
+            ui.horizontal_wrapped(|ui| {
+                match total.filter(|&t| t > 0) {
+                    Some(total) => {
+                        let fraction = (so_far as f64 / total as f64).min(1.0) as f32;
+                        ui.add(
+                            egui::ProgressBar::new(fraction)
+                                .show_percentage()
+                                .desired_width(200.0),
+                        );
+                    }
+                    None => {
+                        ui.spinner();
+                    }
+                }
+                if ui
+                    .add(widgets::button(icons::STOP, &tr!("grooves-stop")))
+                    .clicked()
+                {
+                    events.push(MenuEvent::Grooves(GrooveEvent::StopDownload));
+                }
+            });
+        }
+        None => {
+            if let Some(message) = error.as_deref() {
+                ui.label(big(message).color(ui.visuals().warn_fg_color));
+            }
+            ui.horizontal_wrapped(|ui| {
+                let add = ui
+                    .add_enabled(
+                        link.is_some(),
+                        widgets::button(icons::PLUS, &tr!("grooves-link-add")),
+                    )
+                    .clicked();
+                if (add || enter)
+                    && let Some(link) = link
+                {
+                    *error = None;
+                    events.push(MenuEvent::Grooves(GrooveEvent::Download(link)));
+                }
+                if ui.add(word_button(&tr!("menu-cancel"))).clicked() {
+                    done = true;
+                }
+            });
+        }
+    }
     done
 }
 
