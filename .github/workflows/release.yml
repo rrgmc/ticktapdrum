@@ -4,7 +4,8 @@
 #   git push origin v0.2.0
 # Nothing runs on ordinary pushes. The tag must match the workspace version in Cargo.toml (v0.2.0
 # needs version = "0.2.0"), so bump that in a commit first. A tag with a suffix, such as
-# v0.2.0-rc.1, is published as a pre-release.
+# v0.2.0-rc.1, is published as a pre-release. The release notes are the version's section of
+# CHANGELOG.md; see changelog.d/README.md.
 #
 # What the release holds: see apps/dm-desktop/packaging/README.md and BUILDING.md.
 #
@@ -273,6 +274,8 @@ jobs:
     needs: [version, desktop, android, ios]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -282,6 +285,18 @@ jobs:
         working-directory: dist
         run: sha256sum * | tee SHA256SUMS.txt
 
+      - name: Release notes
+        # The version's section of CHANGELOG.md, or, for a pre-release tagged before the merge, the
+        # entries in changelog.d/. See changelog.d/README.md.
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          bash tools/changelog/changelog.sh notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "::warning::Neither CHANGELOG.md nor changelog.d/ has anything for $VERSION; GitHub writes the notes from the pull requests instead."
+          fi
+          cat "$RUNNER_TEMP/notes.md"
+
       - name: Create the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -289,8 +304,14 @@ jobs:
         run: |
           flags=()
           [ "$PRERELEASE" = true ] && flags+=(--prerelease)
+          # GitHub's generated notes, which list the pull requests, stand in when the changelog
+          # has nothing for this version.
+          if [ -s "$RUNNER_TEMP/notes.md" ]; then
+            flags+=(--notes-file "$RUNNER_TEMP/notes.md")
+          else
+            flags+=(--generate-notes)
+          fi
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "TickTapDrum $GITHUB_REF_NAME" \
-            --generate-notes \
             "${flags[@]}"

@@ -33,10 +33,18 @@ user asks.
 ## Releases
 
 A release is a pull request that sets the workspace version, then a `v<version>` tag on master.
-The tag runs `.github/workflows/release.yml`. The version pull request changes only the version:
-the `version` line under `[workspace.package]` in `Cargo.toml`, and the workspace crates' versions
-in `Cargo.lock` (refresh them with `cargo metadata`). CI skips the build jobs for such a change
-alone, so put anything else in a pull request of its own.
+The tag runs `.github/workflows/release.yml`. The version pull request changes only the version
+and the changelog: the `version` line under `[workspace.package]` in `Cargo.toml`, the workspace
+crates' versions in `Cargo.lock` (refresh them with `cargo metadata`), and the merge of
+`changelog.d/` into `CHANGELOG.md` (`tools/changelog/changelog.sh release <version>`). CI skips the
+build jobs for such a change alone, so put anything else in a pull request of its own. The release
+notes on GitHub are the version's section of `CHANGELOG.md`.
+
+## Changelog
+
+**Every pull request that changes what people who use the app see adds an entry file in
+`changelog.d/`**, never an edit to `CHANGELOG.md`. The format is in
+[`changelog.d/README.md`](changelog.d/README.md). Only a release merges the entries.
 
 ## Nothing committed describes the local machine
 

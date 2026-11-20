@@ -9,6 +9,7 @@
 #   task build:ios                 # the iOS app (macOS only); DM_IOS_TEAM signs it for devices
 #   task run:ios                   # start it on a simulator; DEVICE=1 for a connected device
 #   task bank:install DIR=<folder> # download and install the bank into a folder
+#   task changelog:release VERSION=1.2.0 # merge changelog.d/ into CHANGELOG.md
 #
 # Every task forwards to cargo or to a script under tools/, so all of them also work without
 # `task`. Task runs commands through its own POSIX shell on every system. Two rules follow:
@@ -120,6 +121,18 @@ tasks:
     cmds:
       - task: build:ios
       - task: run:ios
+
+  changelog:preview:
+    desc: Show the entries in changelog.d/ as the next release's notes.
+    cmds:
+      - '"{{.SH}}" tools/changelog/changelog.sh preview'
+
+  changelog:release:
+    desc: "Merge changelog.d/ into CHANGELOG.md for a release, e.g. `task changelog:release VERSION=1.2.0`."
+    requires:
+      vars: [VERSION]
+    cmds:
+      - '"{{.SH}}" tools/changelog/changelog.sh release {{.VERSION}}'
 
   bank:install:
     desc: Download and install the instrument bank into DIR, as the app does.

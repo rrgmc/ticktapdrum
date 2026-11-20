@@ -293,9 +293,19 @@ with a `SHA256SUMS.txt`, as a GitHub release named after the tag:
 
 To release:
 
-1. Set `version` under `[workspace.package]` in `Cargo.toml` to the new version, and commit it.
-   The workflow stops if the tag and this version differ.
-2. Tag the commit and push the tag:
+1. Set `version` under `[workspace.package]` in `Cargo.toml` to the new version. The workflow
+   stops if the tag and this version differ.
+2. Merge the changelog entries into `CHANGELOG.md`:
+
+   ```sh
+   tools/changelog/changelog.sh release 0.2.0
+   ```
+
+   The release notes on GitHub are this version's section of `CHANGELOG.md`. How entries are
+   written is in [`changelog.d/README.md`](changelog.d/README.md).
+3. Commit both, and merge them through a pull request. CI skips the build jobs for a change to the
+   version and the changelog alone.
+4. Tag the merged commit and push the tag:
 
    ```sh
    git tag v0.2.0
