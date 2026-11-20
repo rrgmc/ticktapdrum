@@ -107,8 +107,14 @@ standard kit (bank MSB 127, LSB 0, program 0).
 
 A Yamaha arranger accepts files over MIDI, so a style can go straight into its User drive without
 a USB stick. StylePlayer.io does this from the browser with Web MIDI. The messages below come from
-reading its page script; a test program sending the same messages worked on the SX720 (see "Tried
-on the SX720"). Yamaha does not document them.
+reading its page script. Yamaha does not document them. The example program `style_send` sends
+the same messages, and it worked on the SX720 (see "Tried on the SX720"):
+
+- `cargo run -p dm-midi --example style_send -- ports` lists the MIDI inputs and outputs.
+- `... -- probe <port>` shows the model and the drives and lists the User drive's `STYLE` folder.
+  It changes nothing.
+- `... -- send <port> <file.sty>` writes the file into that folder. Add `--verbose` to print
+  every message.
 
 **Encoding.** All messages are SysEx starting `F0 43 50`. Texts end with a zero byte. Paths and
 file data use a 7-bit packing: each group of up to 7 bytes becomes one byte of high bits followed
