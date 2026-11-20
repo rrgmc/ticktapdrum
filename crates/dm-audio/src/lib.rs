@@ -1393,6 +1393,16 @@ impl Engine {
         self.commands.send(Command::SetSongLoop { looped });
     }
 
+    /// PLACEHOLDER, to be implemented: loops `hits` over `steps` steps on a preview track that is
+    /// separate from the project's patterns and rows, at the engine's tempo, swing and kit.
+    /// Stops song or pattern playback first.
+    pub fn preview(&mut self, hits: Vec<PreviewHit>, steps: usize) {
+        let _ = (hits, steps);
+    }
+
+    /// PLACEHOLDER, to be implemented: stops the preview, if one plays.
+    pub fn stop_preview(&mut self) {}
+
     /// Loops one pattern from its step 0, starting now. Leaves song mode if the song was playing.
     /// `pattern` must be below [`MAX_PATTERNS`]; larger values are ignored.
     pub fn play_pattern(&mut self, pattern: usize) {
@@ -2929,4 +2939,12 @@ mod tests {
         }
         assert_eq!(midi_sent(&mut events).len(), MIDI_QUEUE_CAPACITY);
     }
+}
+
+/// PLACEHOLDER, to be implemented: one hit of a preview, by its step from the preview's start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreviewHit {
+    pub step: usize,
+    pub key: u8,
+    pub velocity: u8,
 }

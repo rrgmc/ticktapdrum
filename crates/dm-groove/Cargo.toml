@@ -1,0 +1,11 @@
+[package]
+name = "dm-groove"
+description = "TickTapDrum's import of MIDI groove packs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+dm-project = { workspace = true }

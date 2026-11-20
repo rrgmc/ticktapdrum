@@ -982,6 +982,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dm-groove"
+version = "1.0.0"
+dependencies = [
+ "dm-project",
+]
+
+[[package]]
 name = "dm-icons"
 version = "1.0.0"
 dependencies = [
