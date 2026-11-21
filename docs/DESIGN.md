@@ -1952,6 +1952,11 @@ Three independent pieces, then the interface:
   (program 30) is not there; its GS group's first kit, Electronic (24), plays instead.
 - The app is dark on every platform now, title bar included. Windows used to follow the system's
   light theme.
+- Asking for the dark title bar on the first frame was too late on Windows with light apps. The
+  text and buttons turned white, but the background stayed light until the window was minimised
+  and restored. The desktop app now sets the title bar dark while the window is still hidden and
+  makes Windows recalculate the frame. Checked on Windows 11 by screenshot: the title bar is dark
+  from the start.
 
 Checked on Windows with GeneralUser GS added and chosen: the app starts on it from the setting; an
 autosave made with ColomboGMGS2 on kit Swirls opens with the notice "Made with ColomboGMGS2
