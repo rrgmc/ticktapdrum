@@ -76,6 +76,57 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "TickTapDrum",
         options,
-        Box::new(move |_cc| Ok(Box::new(Host { app }))),
+        Box::new(move |cc| {
+            #[cfg(windows)]
+            dark_title_bar(cc);
+            #[cfg(not(windows))]
+            let _ = cc;
+            Ok(Box::new(Host { app }))
+        }),
     )
+}
+
+/// Makes the window's title bar dark while the window is still hidden.
+///
+/// The app is dark on every platform, and `dm-ui` asks for a dark title bar on its first frame.
+/// By then Windows has drawn the title bar in the system's app colour. When that is light, the
+/// background stays light and only the text and buttons turn white, until something makes Windows
+/// redraw the frame. Setting the attribute here, before the window first shows, avoids that.
+#[cfg(windows)]
+fn dark_title_bar(cc: &eframe::CreationContext<'_>) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+    };
+
+    let Ok(handle) = cc.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = handle.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+    let dark: i32 = 1;
+    // SAFETY: `hwnd` is this app's own live window, and `dark` outlives the call, which reads
+    // exactly `size_of::<i32>()` bytes from it.
+    #[allow(unsafe_code)]
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
+            (&raw const dark).cast(),
+            size_of::<i32>() as u32,
+        );
+        // Makes Windows recalculate the frame, so the title bar is drawn with the new colours.
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
 }

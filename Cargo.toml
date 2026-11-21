@@ -60,6 +60,10 @@ sys-locale = "0.3.2"
 ndk = { version = "0.9.0", default-features = false }
 libc = "0.2"
 
+# Windows only: dm-desktop makes the window's title bar dark before the window first shows.
+raw-window-handle = "0.6"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_WindowsAndMessaging"] }
+
 [profile.dev.package."*"]
 # The synthesizer and the zip inflater are far too slow unoptimised to judge latency by ear.
 opt-level = 2
