@@ -298,15 +298,20 @@ the beat.
 | **◀ Bar 1 of 4 ▶** | The arrows move one screen of steps back or forward. The label opens the bar pop-up: the bar thumbnails, add a bar, remove the last bar (it asks first), copy the bar, and Follow. |
 | **♩ 120** | Opens the tempo pop-up: large − and + buttons, a slider, and Swing. |
 | **▂▄▆** | Step levels: moves to the next choice of what a tap on a step does (see "Steps and loudness"). |
+| **🔊 Sound kits** | Opens the Sound kits dialog, which chooses the drum kit. |
 | **↶** | Undo. Redo sits beside it when there is room. Either is in ☰ when it does not fit. |
-| **☰** | Opens the menu: Undo, Redo and the tempo on one line at the top when the strip has no room for them, then Save, Save as, Open, New, Load default style, Sounds, Export MIDI and Export WAV. Last, under "Settings": Instruments (names or pictures), Keep in landscape, Language, MIDI output, MIDI input and Keyboard notes. Sounds opens the Sounds dialog: the drum kit and "Add a row". |
+| **☰** | Opens the menu: Undo, Redo and the tempo on one line at the top when the strip has no room for them, then Save, Save as, Open, New, Load default style, Sound kits, Add instrument and Export. Last, under "Settings": Instruments (names or pictures), Keep in landscape, Language, MIDI output, MIDI input and Keyboard notes. Add instrument opens a dialog with the drums for a new row; choosing one adds the row and closes the dialog. |
 
 - **The strip never wraps and never scrolls.** Each button shows an icon and a word when there is
   room, and only the icon when there is not. If the icons still do not fit, buttons move into ☰
-  in this order: Redo, the tempo, Undo. The step levels button stays. On a phone in portrait
-  that leaves Play, the pattern, the bar button, step levels and ☰, with Undo in ☰.
-- **Sounds is in ☰, never in the strip** (changed after milestone 8). It is changed rarely, and
-  the strip has more room for the grid's own buttons without it.
+  in this order: Redo, Sound kits, the tempo, Undo. The step levels button stays. On a phone in
+  portrait that leaves Play, the pattern, the bar button, step levels and ☰, with Undo in ☰.
+  The menu always has Sound kits, so it needs no place in the menu's top line.
+- **The Sounds dialog is split in two** (2026-11-21): Sound kits, in the strip before Undo and
+  in ☰, and Add instrument, in ☰. Until then Sounds was in ☰ only and held both. Checked on
+  Windows at 1096, 640 and 480 pixels wide: the button shows with its word, then as an icon,
+  then leaves the strip; choosing a kit and adding a Cowbell row both worked. Not checked on a
+  phone.
 - **The bar button replaces the bar strip and the half switch.** When the grid shows half a bar,
   the label reads "Bar 2 of 4" ("2/4" with icons only) with two dots under it. The dots show which half is on screen, and the
   half the playhead is in is lit, as the half switch did. The arrows move by half a bar there.
@@ -344,7 +349,7 @@ the beat.
   to B swapped the two in the tiles and in the song, and Undo brought them back.
 - **Two kinds of pop-up, both from egui 0.37 itself.** A small pop-up opens under its button
   (`egui::Popup`): patterns, bars, tempo, a row's settings. A larger dialog sits in the middle
-  of the screen over a dimmed grid (`egui::Modal`): Sounds, and the menu's Save as, Open,
+  of the screen over a dimmed grid (`egui::Modal`): Sound kits, Add instrument, and the menu's Save as, Open,
   Load default style, Export and (when the strip has no room) Tempo. Both kinds close with a tap outside them, scroll when
   they are taller than the screen, and stay clear of the system bars. A dialog leaves some of
   the grid visible around it.

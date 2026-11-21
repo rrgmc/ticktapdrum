@@ -1,10 +1,10 @@
 //! The one row of buttons at the top: Play, MIDI in while a MIDI output is connected, the
-//! pattern, the bar, the tempo, the step levels, Undo, Redo and the menu. Sounds is in the menu.
-//! See "One control strip" in `docs/DESIGN.md`.
+//! pattern, the bar, the tempo, the step levels, Sound kits, Undo, Redo and the menu. See "One
+//! control strip" in `docs/DESIGN.md`.
 //!
 //! The row never wraps and never scrolls. It measures what fits: first an icon and a word on
-//! every button, then icons only. If the icons still do not fit, Redo, then the tempo, then Undo
-//! leave the row, and the menu offers them instead. The step levels button always stays, and so
+//! every button, then icons only. If the icons still do not fit, Redo, then Sound kits, then the
+//! tempo, then Undo leave the row, and the menu offers them instead. The step levels button always stays, and so
 //! does MIDI in while it shows; with both, the fewest buttons fit a phone 375 points wide.
 
 use egui::{CornerRadius, Response, RichText, Vec2};
@@ -42,6 +42,8 @@ pub(crate) enum StripEvent {
     NextPage,
     /// Move to the next choice of step levels.
     StepLevels,
+    /// Open the Sound kits dialog.
+    SoundKits,
     Undo,
     Redo,
 }
@@ -90,10 +92,11 @@ pub(crate) struct StripState<'a> {
     pub(crate) midi_in: Option<(bool, &'a str)>,
 }
 
-/// The buttons that did not fit. The menu offers them instead.
+/// The buttons that did not fit. The menu offers them instead; it always has Sound kits.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
 pub(crate) struct Hidden {
     pub(crate) redo: bool,
+    pub(crate) kits: bool,
     pub(crate) tempo: bool,
     pub(crate) undo: bool,
 }
@@ -152,6 +155,7 @@ struct Texts {
     bar: RichText,
     tempo: RichText,
     levels: RichText,
+    kits: RichText,
     undo: RichText,
     redo: RichText,
     menu: RichText,
@@ -204,6 +208,7 @@ fn texts(ui: &egui::Ui, state: &StripState, words: bool, short_play: bool) -> Te
         bar: RichText::new(bar_text(&state.bars, words)).size(bar_size),
         tempo: widgets::label(icons::METRONOME, &format!("{:.0}", state.bpm)),
         levels,
+        kits: widgets::label(icons::SPEAKER_HIGH, &word(tr!("strip-sound-kits"))),
         undo: widgets::label(icons::UNDO, &word(tr!("strip-undo"))),
         redo: widgets::label(icons::REDO, &word(tr!("strip-redo"))),
         menu: widgets::label(icons::LIST, &word(tr!("strip-menu"))),
@@ -249,6 +254,9 @@ fn row_width(ui: &egui::Ui, t: &Texts, m: Metrics, hidden: Hidden) -> f32 {
         widths.push(width(ui, &t.tempo, m.min_width));
     }
     widths.push(width(ui, &t.levels, m.min_width));
+    if !hidden.kits {
+        widths.push(width(ui, &t.kits, m.min_width));
+    }
     if !hidden.undo {
         widths.push(width(ui, &t.undo, m.min_width));
     }
@@ -279,6 +287,12 @@ fn plan(ui: &egui::Ui, state: &StripState, available: f32) -> (Metrics, Texts, H
         },
         Hidden {
             redo: true,
+            kits: true,
+            ..Hidden::default()
+        },
+        Hidden {
+            redo: true,
+            kits: true,
             tempo: true,
             undo: false,
         },
@@ -292,6 +306,7 @@ fn plan(ui: &egui::Ui, state: &StripState, available: f32) -> (Metrics, Texts, H
     // rather than wrap.
     let hidden = Hidden {
         redo: true,
+        kits: true,
         tempo: true,
         undo: true,
     };
@@ -425,6 +440,12 @@ pub(crate) fn ui(ui: &mut egui::Ui, state: &StripState) -> StripOutput {
             }
         }
 
+        if !hidden.kits {
+            let kits = ui.add(egui::Button::new(t.kits.clone()).min_size(size));
+            if hover(kits, &tr!("strip-sound-kits")).clicked() {
+                events.push(StripEvent::SoundKits);
+            }
+        }
         if !hidden.undo {
             let undo = ui.add_enabled(
                 state.can_undo,

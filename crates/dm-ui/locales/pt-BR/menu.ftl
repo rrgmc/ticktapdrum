@@ -25,7 +25,8 @@ menu-presets = Estilos prontos
 # Uma tablatura de bateria é a bateria
 # escrita como texto, uma linha por peça, como "SD |----o-------o---|".
 menu-paste-tab = Colar uma tablatura de bateria
-menu-sounds = Sons
+menu-sound-kits = Kits de sons
+menu-add-instrument = Adicionar instrumento
 menu-song = Música
 menu-export = Exportar
 # Trava a tela na horizontal.
