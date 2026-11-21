@@ -20,6 +20,7 @@ rows-back = Voltar
 # Uma letra ao lado do nome da linha na grade: linha muda (Mudo) e linha em solo (Solo).
 rows-badge-mute = M
 rows-badge-solo = S
+rows-no-sound = Este kit não tem som para esta peça.
 
 # Dica numa linha inativa: uma peça tocada no teclado MIDI que ainda não tem linha.
 rows-add-offered = Adicionar esta peça

@@ -112,6 +112,7 @@ fn extension(kind: PickKind) -> &'static str {
         PickKind::ExportStyle => dm_project::KeyboardKind::ALL[0].extension(),
         // Grooves come as `.mid`, `.midi` or `.zip`; see `dialog`.
         PickKind::OpenGrooves => "mid",
+        PickKind::OpenSoundfont => "sf2",
     }
 }
 
@@ -124,6 +125,8 @@ pub(crate) fn request(id: u64, kind: PickKind, name: &str) -> PickRequest {
         PickKind::OpenProject => "*/*",
         // MIDI files and zips are labelled in many ways; the import checks what each file holds.
         PickKind::OpenGrooves => "*/*",
+        // SoundFonts have no MIME type that providers agree on; loading checks the file.
+        PickKind::OpenSoundfont => "*/*",
         // Not application/json: Android's Downloads provider then adds .json to the name.
         PickKind::SaveProject => "application/octet-stream",
         PickKind::ExportMidi => "audio/midi",
@@ -211,6 +214,7 @@ pub(crate) fn dialog(kind: PickKind, name: &str) -> Option<PathBuf> {
         PickKind::ExportWav => tr!("projects-file-kind-wav"),
         PickKind::ExportStyle => tr!("projects-file-kind-style"),
         PickKind::OpenGrooves => tr!("grooves-file-kind"),
+        PickKind::OpenSoundfont => tr!("soundbank-file-kind"),
     };
     let extension = extension(kind);
     let extensions: &[&str] = if kind == PickKind::OpenGrooves {

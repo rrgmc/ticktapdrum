@@ -27,12 +27,17 @@ pub enum PickKind {
     ExportStyle,
     /// Open a MIDI file or a zip of them to import as grooves (as `OpenProject`).
     OpenGrooves,
+    /// Open a SoundFont (`.sf2`) to add (as `OpenProject`).
+    OpenSoundfont,
 }
 
 impl PickKind {
     /// Whether the picker creates a file to write, rather than opening one to read.
     pub fn creates(self) -> bool {
-        !matches!(self, PickKind::OpenProject | PickKind::OpenGrooves)
+        !matches!(
+            self,
+            PickKind::OpenProject | PickKind::OpenGrooves | PickKind::OpenSoundfont
+        )
     }
 }
 

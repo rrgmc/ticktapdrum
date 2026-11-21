@@ -1,8 +1,8 @@
 # Getting the sound bank: the offer to download it, the download, loading and errors.
 # Ids start with "bank-". $bank is the bank's name, which is not translated.
 
-bank-offer-title = Drum sounds needed
-bank-offer = TickTapDrum plays its sounds from an instrument bank, { $bank }. It is downloaded once and kept on this device.
+bank-offer-title = Get the drum sounds
+bank-offer = To play your beats, TickTapDrum needs a set of recorded drum sounds called { $bank }. Download it once and it stays on this device.
 # Sizes in whole mebibytes (MiB): the download, and the space the bank takes once installed.
 bank-offer-sizes = Download: { $download } MiB. Space used: { $space } MiB.
 # The licence of the bank ColomboGMGS2.
@@ -38,3 +38,24 @@ bank-error-nothing = There is nothing to play.
 bank-error-render-cancelled = The render was cancelled.
 bank-error-installer-stopped = The download stopped unexpectedly.
 bank-error-loading-stopped = Loading the drum sounds stopped unexpectedly.
+
+# Adding a SoundFont of one's own. $name is the file's name without .sf2, which is not translated.
+bank-adding-title = Adding a SoundFont
+bank-add-cancelled = Adding the SoundFont was cancelled.
+# $reason is one of the errors above, or the system's own words.
+bank-add-failed = { $name } could not be added. { $reason }
+bank-add-no-kits = { $name } has no drum kits, so it was not added.
+bank-add-busy = A SoundFont is already being added. Wait for it to finish.
+bank-chosen-missing = The SoundFont { $name } is no longer on this device, so the app went back to its own drum sounds.
+bank-load-failed = { $name } did not load, so the app went back to its own drum sounds. { $reason }
+bank-delete-failed = { $name } could not be deleted. { $reason }
+
+# How the project's kit plays in the SoundFont playing. These sentences are joined into one
+# notice. $bank is a SoundFont's name. $kit is the kit the project asks for; $played is the kit
+# that plays instead.
+bank-now-playing = Now playing { $bank }.
+bank-made-with = Made with { $bank }.
+bank-kit-plays-as = Its kit { $kit } plays as { $played } here.
+bank-sounds-may-differ = Its sounds may differ here.
+# A kit whose name is not known, by its General MIDI program number.
+bank-kit-program = kit { $program }

@@ -156,6 +156,9 @@
 //! with the same bank and program, the synthesizer plays the last one in the file, while
 //! [`drum_kits`] lists the first one's name.
 //!
+//! Every SoundFont has its own kits. [`resolve_kit`] picks the kit to play for one a project asks
+//! for, and [`kit_keys`] says which keys a kit has a sound for.
+//!
 //! # Drum note-off
 //!
 //! The synthesizer honors note-off on the percussion channel like on any other channel: the voice
@@ -359,6 +362,68 @@ pub fn drum_kits(soundfont: &SoundFont) -> Vec<Kit> {
     }
     kits.sort_by_key(|kit| kit.program);
     kits
+}
+
+/// The kit to play for a project that asks for kit `program`, named `name` where the file
+/// recorded it, from `kits` (as [`drum_kits`] lists them). In this order: the kit with the same
+/// program; else the kit with the same name, ignoring case and whitespace; else the first kit of
+/// the program's General Standard group of 8, which is program `program & !7` (a GS synthesizer
+/// falls back to that kit too); else Standard, program 0; else the first kit in the list.
+/// Returns `None` only if `kits` is empty.
+pub fn resolve_kit(kits: &[Kit], program: u8, name: Option<&str>) -> Option<u8> {
+    let with_program = |p: u8| kits.iter().find(|kit| kit.program == p);
+    if let Some(kit) = with_program(program) {
+        return Some(kit.program);
+    }
+    if let Some(wanted) = name.map(kit_name_key).filter(|key| !key.is_empty())
+        && let Some(kit) = kits.iter().find(|kit| kit_name_key(&kit.name) == wanted)
+    {
+        return Some(kit.program);
+    }
+    with_program(program & !7)
+        .or_else(|| with_program(0))
+        .or_else(|| kits.first())
+        .map(|kit| kit.program)
+}
+
+/// A kit name reduced for comparison: lower case, with every whitespace character removed.
+fn kit_name_key(name: &str) -> String {
+    name.chars()
+        .filter(|c| !c.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Which of the 128 MIDI keys the percussion preset 128:`program` has a sound for. A key counts
+/// when a preset region's key range and one of its instrument's region key ranges both include
+/// it, which is how the synthesizer picks the regions a note-on plays. Velocity ranges are not
+/// looked at: a key counts if any velocity sounds. A region that sets no key range covers every
+/// key. Where the bank holds two presets 128:`program`, the last one counts, as in the
+/// synthesizer. All false if the SoundFont has no such preset; this does not fall back to
+/// Standard as the synthesizer does.
+pub fn kit_keys(soundfont: &SoundFont, program: u8) -> [bool; 128] {
+    let mut keys = [false; 128];
+    let Some(preset) = soundfont.get_presets().iter().rev().find(|preset| {
+        preset.get_bank_number() == PERCUSSION_BANK
+            && preset.get_patch_number() == i32::from(program)
+    }) else {
+        return keys;
+    };
+    let instruments = soundfont.get_instruments();
+    for preset_region in preset.get_regions() {
+        let Some(instrument) = instruments.get(preset_region.get_instrument_id()) else {
+            continue;
+        };
+        let preset_range = preset_region.get_key_range_start()..=preset_region.get_key_range_end();
+        for region in instrument.get_regions() {
+            let start = region.get_key_range_start().max(*preset_range.start());
+            let end = region.get_key_range_end().min(*preset_range.end());
+            for key in start.max(0)..=end.min(127) {
+                keys[key as usize] = true;
+            }
+        }
+    }
+    keys
 }
 
 /// A position of the sequencer:which pattern and step sound, and in song mode which entry.
@@ -3592,6 +3657,114 @@ mod tests {
         println!("{} kits from {presets} presets in bank 128:", kits.len());
         for kit in &kits {
             println!("{:3} {}", kit.program, kit.name);
+        }
+    }
+
+    /// A kit list made by hand, one kit per `(program, name)`.
+    fn kit_list(kits: &[(u8, &str)]) -> Vec<Kit> {
+        kits.iter()
+            .map(|&(program, name)| Kit {
+                program,
+                name: name.to_string(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn resolve_kit_prefers_the_same_program() {
+        let kits = kit_list(&[(0, "Standard"), (25, "TR-808"), (26, "Swirls")]);
+        // The program wins over a name that matches another kit.
+        assert_eq!(resolve_kit(&kits, 25, Some("Swirls")), Some(25));
+        assert_eq!(resolve_kit(&kits, 26, None), Some(26));
+    }
+
+    #[test]
+    fn resolve_kit_then_matches_the_name() {
+        let kits = kit_list(&[(0, "Standard"), (24, "Electronic"), (40, "Brush  Kit")]);
+        assert_eq!(resolve_kit(&kits, 25, Some("Electronic")), Some(24));
+        // Case and whitespace, inside and around the name, do not matter.
+        assert_eq!(resolve_kit(&kits, 41, Some(" brush kit ")), Some(40));
+        assert_eq!(resolve_kit(&kits, 41, Some("BRUSHKIT")), Some(40));
+        // Other characters do.
+        assert_eq!(resolve_kit(&kits, 41, Some("Brush-Kit")), Some(40));
+        let kits = kit_list(&[(0, "Standard"), (50, "Brush Kit")]);
+        assert_eq!(resolve_kit(&kits, 41, Some("Brush-Kit")), Some(0));
+    }
+
+    #[test]
+    fn resolve_kit_ignores_an_empty_name() {
+        let kits = kit_list(&[(0, "Standard"), (9, "")]);
+        assert_eq!(resolve_kit(&kits, 30, Some("  ")), Some(0));
+    }
+
+    #[test]
+    fn resolve_kit_then_takes_the_first_kit_of_the_group() {
+        let kits = kit_list(&[(0, "Standard"), (24, "Electronic"), (27, "Dance")]);
+        // 25 and 31 are in the group 24 to 31.
+        assert_eq!(resolve_kit(&kits, 25, Some("TR-808")), Some(24));
+        assert_eq!(resolve_kit(&kits, 31, None), Some(24));
+        // The group's first program must be present itself; another kit of the group is not
+        // enough.
+        let kits = kit_list(&[(0, "Standard"), (27, "Dance")]);
+        assert_eq!(resolve_kit(&kits, 25, None), Some(0));
+    }
+
+    #[test]
+    fn resolve_kit_then_takes_standard() {
+        let kits = kit_list(&[(0, "Standard"), (8, "Room"), (16, "Power")]);
+        assert_eq!(resolve_kit(&kits, 25, Some("TR-808")), Some(0));
+        assert_eq!(resolve_kit(&kits, 127, None), Some(0));
+    }
+
+    #[test]
+    fn resolve_kit_then_takes_the_first_kit() {
+        let kits = kit_list(&[(8, "Room"), (16, "Power")]);
+        assert_eq!(resolve_kit(&kits, 25, Some("TR-808")), Some(8));
+        assert_eq!(resolve_kit(&kits, 0, None), Some(8));
+    }
+
+    #[test]
+    fn resolve_kit_of_no_kits_is_none() {
+        assert_eq!(resolve_kit(&[], 0, Some("Standard")), None);
+    }
+
+    #[test]
+    fn kit_keys_of_the_standard_kit() {
+        let font = soundfont_or_skip!();
+        let keys = kit_keys(&font, 0);
+        // The General MIDI drums, kick 36 to open triangle 81, all have a sound.
+        assert!((35..=81).all(|key| keys[key]), "{keys:?}");
+        let listed: Vec<usize> = (0..128).filter(|&key| keys[key]).collect();
+        println!("128:0 has {} keys: {listed:?}", listed.len());
+    }
+
+    #[test]
+    fn kit_keys_of_a_missing_kit_is_empty() {
+        let font = soundfont_or_skip!();
+        let kits = drum_kits(&font);
+        let missing = (0..=127_u8)
+            .find(|&p| kits.iter().all(|k| k.program != p))
+            .expect("the bank has a free program in bank 128");
+        assert!(kit_keys(&font, missing).iter().all(|&key| !key));
+    }
+
+    #[test]
+    fn kit_keys_match_what_sounds() {
+        let font = soundfont_or_skip!();
+        let keys = kit_keys(&font, 0);
+        // A key with a sound renders some, and one without renders silence.
+        let render = |key: u8| {
+            let (mut commands, mut renderer) = Renderer::new(&font, RATE).unwrap();
+            commands.set_kit(0);
+            commands.hit(key, 100);
+            let mut out = vec![0.0_f32; 2 * 4_800];
+            renderer.render(&mut out, 2);
+            energy(&out)
+        };
+        let with = (0..128).find(|&k| keys[k as usize]).unwrap() as u8;
+        assert!(render(with) > 0.0, "key {with}");
+        if let Some(without) = (0..128).find(|&k| !keys[k as usize]) {
+            assert_eq!(render(without as u8), 0.0, "key {without}");
         }
     }
 

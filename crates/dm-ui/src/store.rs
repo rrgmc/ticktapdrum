@@ -37,6 +37,8 @@ const MIDI_INPUT: &str = "midi.input";
 /// Holds the name of the chosen MIDI input. Missing while it is the output's own device, the
 /// default.
 const MIDI_INPUT_DEVICE: &str = "midi.input.device";
+/// Holds the file name of the added SoundFont that plays. Missing while ColomboGMGS2 does.
+const SOUNDFONT: &str = "soundfont";
 /// Holds how row names show, when not as names.
 const ROW_LABELS: &str = "row.labels";
 /// Holds "on" or "off" for the bar strip under the buttons. Missing until the person chooses,
@@ -258,6 +260,26 @@ impl Store {
 
     pub(crate) fn set_midi_output(&self, name: Option<&str>) -> Result<(), String> {
         let path = self.dir.join(MIDI_OUTPUT);
+        match name {
+            Some(name) if !name.is_empty() => {
+                fs::create_dir_all(&self.dir).map_err(folder_error)?;
+                fs::write(path, name).map_err(write_error)
+            }
+            _ => match fs::remove_file(path) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(delete_error(e)),
+                _ => Ok(()),
+            },
+        }
+    }
+
+    /// The added SoundFont chosen to play, by its file name. `None` for ColomboGMGS2.
+    pub(crate) fn soundfont(&self) -> Option<String> {
+        let name = fs::read_to_string(self.dir.join(SOUNDFONT)).ok()?;
+        (!name.is_empty()).then_some(name)
+    }
+
+    pub(crate) fn set_soundfont(&self, name: Option<&str>) -> Result<(), String> {
+        let path = self.dir.join(SOUNDFONT);
         match name {
             Some(name) if !name.is_empty() => {
                 fs::create_dir_all(&self.dir).map_err(folder_error)?;

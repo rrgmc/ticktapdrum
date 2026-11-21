@@ -23,6 +23,7 @@ dm-tab = { workspace = true }
 egui = { workspace = true }
 fluent-bundle = { workspace = true }
 log = { workspace = true }
+png = "0.18.1"
 unic-langid = { workspace = true }
 
 # The system's open and save dialogs. Desktops only: phones keep projects in the app's folder.

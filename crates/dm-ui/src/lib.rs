@@ -30,6 +30,7 @@ mod icons;
 mod incoming;
 mod keyboard;
 mod link;
+mod logo;
 mod menu;
 mod midi;
 mod offered;
@@ -41,6 +42,7 @@ mod projects;
 mod record;
 mod rows;
 mod song;
+mod soundbank;
 mod sounds;
 mod store;
 mod strip;
@@ -194,6 +196,19 @@ pub struct DrumApp {
     groove_note: Option<String>,
     /// The groove playing on its own, as its pack's key and its place in the pack.
     preview: Option<(String, usize)>,
+    /// The engine the project was last given, by [`BankState::generation`]. 0 before the first.
+    bank_generation: u64,
+    /// The kits of the SoundFont playing, kept for saving while the engine is out of reach.
+    bank_kits: Vec<dm_audio::Kit>,
+    /// The added SoundFont the setting names, as last written. `None` for ColomboGMGS2.
+    bank_choice: Option<String>,
+    /// The SoundFonts the person added, read when the Sound bank dialog opens.
+    bank_added: Vec<dm_bank::UserSoundfont>,
+    /// Files the host's picker answered with, waiting for the editor.
+    picked: Vec<(PickKind, picker::PickedFile)>,
+    /// The keys the kit playing has a sound for, with the kit and engine they were worked out
+    /// for.
+    sounding: Option<(u8, u64, [bool; 128])>,
 }
 
 impl DrumApp {
@@ -213,9 +228,10 @@ impl DrumApp {
             store.midi_input(),
             store.midi_input_device(),
         );
+        let bank_choice = store.soundfont();
         // Only the names: reading the packs waits until the list opens.
         let app = Self {
-            bank: BankState::new(data_dir),
+            bank: BankState::new(data_dir, bank_choice.clone()),
             project,
             current: 0,
             mode: Mode::Pattern,
@@ -276,6 +292,12 @@ impl DrumApp {
             groove_packs: Vec::new(),
             groove_note: None,
             preview: None,
+            bank_generation: 0,
+            bank_kits: Vec::new(),
+            bank_choice,
+            bank_added: Vec::new(),
+            picked: Vec::new(),
+            sounding: None,
         };
         app.apply_language();
         app
@@ -423,14 +445,41 @@ impl DrumApp {
         }
         if !self.fonts_installed {
             icons::install(&ctx);
+            // Dark on every platform, whatever the system's setting, so the app looks the same
+            // everywhere.
+            ctx.set_theme(egui::Theme::Dark);
+            // The window's own title bar too, where the system draws one.
+            ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(egui::SystemTheme::Dark));
             self.fonts_installed = true;
         }
         self.bank.poll(&ctx);
+        self.keep_bank_choice();
         self.picks.set_context(&ctx);
         self.incoming.set_context(&ctx);
         self.ctx = ctx.clone();
+        // Answers from the host's picker. A SoundFont goes to the bank at once, even before
+        // there is an engine; the rest wait for the editor. Backing out, and answers to nothing
+        // asked, do nothing.
+        while let Some((id, file)) = self.picks.take() {
+            if let Some((kind, file)) = self.pending.collect(id, file) {
+                if kind == PickKind::OpenSoundfont {
+                    self.add_soundfont(files::Target::Picked(file));
+                } else {
+                    self.picked.push((kind, file));
+                }
+            }
+        }
         while let Some(incoming) = self.incoming.take() {
             match incoming {
+                incoming::Incoming::File { name, bytes } if is_soundfont(&name) => {
+                    let total = bytes.len() as u64;
+                    self.bank.add(
+                        &ctx,
+                        name,
+                        Some(total),
+                        Box::new(std::io::Cursor::new(bytes)),
+                    );
+                }
                 incoming::Incoming::File { name, bytes } => self.import_grooves(&name, bytes),
                 incoming::Incoming::Text(text) => self.incoming_text(&text),
             }
@@ -447,6 +496,10 @@ impl DrumApp {
                 return;
             }
             let mut engine = self.bank.take_engine();
+            self.new_engine(&engine);
+            for note in self.bank.take_notes() {
+                self.show_notice_text(note);
+            }
             self.editor(ui, &mut engine);
             // After the editor, so a new engine has the project, and its kit, before MIDI out
             // turns on and sends the kit.
@@ -578,11 +631,9 @@ impl DrumApp {
         self.skip_record = false;
         self.ctx = ui.ctx().clone();
         self.shortcuts(ui, engine);
-        // Answers from the host's picker. Backing out, and answers to nothing asked, do nothing.
-        while let Some((id, file)) = self.picks.take() {
-            if let Some((kind, file)) = self.pending.collect(id, file) {
-                self.carry_out(engine, kind, files::Target::Picked(file));
-            }
+        // Files the host's picker answered with.
+        for (kind, file) in std::mem::take(&mut self.picked) {
+            self.carry_out(engine, kind, files::Target::Picked(file));
         }
         if let Some(result) = self.wav_job.as_ref().and_then(export::WavJob::poll) {
             self.wav_job = None;
@@ -613,7 +664,7 @@ impl DrumApp {
         let focused = ui.input(|i| i.focused);
         if let Some(since) = self.unsaved_since {
             if now - since >= AUTOSAVE_DELAY || !focused {
-                if let Err(e) = self.store.autosave(&self.project, self.name.as_deref()) {
+                if let Err(e) = self.store.autosave(&self.stamped(), self.name.as_deref()) {
                     log::warn!("autosave failed: {e}");
                 }
                 self.unsaved_since = None;
@@ -679,6 +730,7 @@ impl DrumApp {
         engine.set_song_loop(self.project.song_loop);
         engine.set_loop_bar(self.loop_bar);
         apply(engine, self.project.full_sync());
+        self.sync_kit(engine);
         self.current = self.current.min(self.project.patterns().len() - 1);
         let bars = self.project.patterns()[self.current].bars();
         self.view_bar = self.view_bar.min(bars - 1);
@@ -689,6 +741,7 @@ impl DrumApp {
             engine.set_tempo(self.project.tempo);
             engine.set_song_loop(self.project.song_loop);
             apply(engine, self.project.full_sync());
+            self.sync_kit(engine);
             self.synced = true;
         }
 
@@ -926,6 +979,16 @@ impl DrumApp {
                 note: self.groove_note.as_deref(),
             },
             downloading: self.link_job.as_ref().map(link::LinkJob::progress),
+            bank: soundbank::BankView {
+                playing: match self.bank.source() {
+                    bank::Source::Added(added) => Some(added.name.as_str()),
+                    _ => None,
+                },
+                colombo_installed: self.bank.colombo_installed(),
+                added: &self.bank_added,
+                adding: self.bank.adding().map(|a| (a.name, a.fraction)),
+                can_add: self.can_pick(),
+            },
         };
         let mut menu_events =
             widgets::popup(&strip.menu, |ui| self.menu.contents(ui, &view)).unwrap_or_default();
@@ -936,9 +999,10 @@ impl DrumApp {
         match self.sounds_open {
             Some(sounds::SoundsDialog::Kits) => {
                 let kits = engine.kits().to_vec();
+                let played = self.kit_played(&kits);
                 let dialog =
                     widgets::dialog(ui.ctx(), "sound-kits", &tr!("menu-sound-kits"), |ui| {
-                        self.sounds.kits_contents(ui, &self.project, &kits)
+                        self.sounds.kits_contents(ui, &self.project, &kits, played)
                     });
                 sound_events = dialog.inner;
                 if dialog.closed {
@@ -984,6 +1048,8 @@ impl DrumApp {
         self.grid.set_step_levels(self.project.step_levels());
         self.grid
             .set_show_keys(self.key_names && self.midi.input_connected());
+        let sounding = self.sounding_keys(engine);
+        self.grid.set_sounding(sounding);
         let grid_playhead = playhead.filter(|_| heard).map(|p| p.step);
         // The grid takes the rest of the screen but a thin line at the bottom, the bar
         // indicator, which is inside the safe area so a phone's gesture bar does not hide it.
@@ -1152,6 +1218,10 @@ impl DrumApp {
                 menu::MenuEvent::Grooves(event) => {
                     self.handle_grooves(engine, event);
                     // This frame drew the list as it was.
+                    ui.ctx().request_repaint();
+                }
+                menu::MenuEvent::Bank(event) => {
+                    self.handle_bank(event);
                     ui.ctx().request_repaint();
                 }
             }
@@ -1626,7 +1696,7 @@ impl DrumApp {
                 }
             },
             PickKind::SaveProject => {
-                self.message = Some(match store::write_file(&target, &self.project) {
+                self.message = Some(match store::write_file(&target, &self.stamped()) {
                     Ok(()) => tr!("projects-saved-file", path = target.name()),
                     Err(e) => tr!("projects-not-saved", reason = e),
                 });
@@ -1663,6 +1733,7 @@ impl DrumApp {
                     )),
                 }
             }
+            PickKind::OpenSoundfont => self.add_soundfont(target),
             PickKind::ExportWav => {
                 let Some(soundfont) = self.bank.soundfont() else {
                     return;
@@ -1681,7 +1752,7 @@ impl DrumApp {
     }
 
     fn save_as(&mut self, name: &str) {
-        match self.store.save(name, &self.project) {
+        match self.store.save(name, &self.stamped()) {
             Ok(()) => {
                 self.name = Some(name.to_owned());
                 self.saved = Some(self.project.clone());
@@ -1710,6 +1781,192 @@ impl DrumApp {
         self.half = 0;
         self.resync(engine);
         self.unsaved_since = Some(f64::NEG_INFINITY);
+        self.kit_notice(engine.kits(), false);
+    }
+
+    /// Carries out a choice from the Sound bank dialog.
+    fn handle_bank(&mut self, event: soundbank::BankEvent) {
+        use soundbank::BankEvent;
+        match event {
+            BankEvent::List => self.bank_added = self.bank.added(),
+            BankEvent::Use(None) => self.bank.switch(bank::Source::Colombo),
+            BankEvent::Use(Some(name)) => {
+                if let Some(added) = self.bank_added.iter().find(|a| a.name == name) {
+                    self.bank.switch(bank::Source::Added(added.clone()));
+                }
+            }
+            BankEvent::Add => self.pick_soundfont(),
+            BankEvent::CancelAdd => self.bank.cancel_adding(),
+            BankEvent::Delete(name) => {
+                self.bank.delete(&name);
+                self.bank_added = self.bank.added();
+            }
+        }
+    }
+
+    /// Whether this platform can pick a file: a desktop's dialog or the host's picker.
+    fn can_pick(&self) -> bool {
+        files::DIALOGS || self.picker.is_some()
+    }
+
+    /// Asks for a SoundFont file to add: through the host's picker, whose answer arrives on a
+    /// later frame, or the desktop's dialog.
+    fn pick_soundfont(&mut self) {
+        let kind = PickKind::OpenSoundfont;
+        if let Some(picker) = &self.picker {
+            picker(files::request(self.pending.ask(kind), kind, ""));
+        } else if let Some(path) = files::dialog(kind, "") {
+            self.add_soundfont(files::Target::Path(path));
+        }
+    }
+
+    /// Starts adding a SoundFont from a file chosen with the dialog or the picker.
+    fn add_soundfont(&mut self, target: files::Target) {
+        let name = target.file_name();
+        let opened: std::io::Result<(std::fs::File, Option<u64>)> = match target {
+            files::Target::Path(path) => std::fs::File::open(&path).map(|file| {
+                let total = file.metadata().ok().map(|m| m.len());
+                (file, total)
+            }),
+            files::Target::Picked(picked) => {
+                let total = picked.file.metadata().ok().map(|m| m.len());
+                Ok((picked.file, total))
+            }
+        };
+        match opened {
+            Ok((file, total)) => {
+                let reader = std::io::BufReader::new(file);
+                self.bank.add(&self.ctx, name, total, Box::new(reader));
+            }
+            Err(e) => self.show_notice_text(tr!(
+                "bank-add-failed",
+                name = bank::stem(&name),
+                reason = e.to_string()
+            )),
+        }
+    }
+
+    /// Writes the SoundFont setting when the one playing changes, so the next start plays it.
+    fn keep_bank_choice(&mut self) {
+        if !self.bank.settled() {
+            return;
+        }
+        let choice = match self.bank.source() {
+            bank::Source::Added(added) => Some(added.name.clone()),
+            bank::Source::Colombo | bank::Source::Path(_) => None,
+        };
+        // The development shortcut is not a choice to keep.
+        if matches!(self.bank.source(), bank::Source::Path(_)) || choice == self.bank_choice {
+            return;
+        }
+        if let Err(e) = self.store.set_soundfont(choice.as_deref()) {
+            log::warn!("could not keep the sound bank setting: {e}");
+        }
+        self.bank_choice = choice;
+    }
+
+    /// Gives a newly started engine the project, once per engine. After a switch of SoundFont,
+    /// a notice says which plays now and how the project's kit plays in it.
+    fn new_engine(&mut self, engine: &Engine) {
+        let generation = self.bank.generation();
+        if generation == self.bank_generation {
+            return;
+        }
+        let first = self.bank_generation == 0;
+        self.bank_generation = generation;
+        self.bank_kits = engine.kits().to_vec();
+        // One just added shows in the Sound bank dialog.
+        self.bank_added = self.bank.added();
+        self.playing = false;
+        // The editor gives it the project at the start of its frame.
+        self.synced = false;
+        self.kit_notice(engine.kits(), !first);
+    }
+
+    /// The kit to play for the project's kit, from these kits: see [`dm_audio::resolve_kit`].
+    fn kit_played(&self, kits: &[dm_audio::Kit]) -> Option<u8> {
+        let name = self.project.kit_origin().and_then(|o| o.name.as_deref());
+        dm_audio::resolve_kit(kits, self.project.kit(), name)
+    }
+
+    /// Which keys the kit playing has a sound for. Worked out again only when the kit or the
+    /// SoundFont changes.
+    fn sounding_keys(&mut self, engine: &Engine) -> Option<[bool; 128]> {
+        let program = self.kit_played(engine.kits())?;
+        let generation = self.bank.generation();
+        if let Some((p, g, keys)) = self.sounding
+            && p == program
+            && g == generation
+        {
+            return Some(keys);
+        }
+        let soundfont = self.bank.soundfont()?;
+        let keys = dm_audio::kit_keys(&soundfont, program);
+        self.sounding = Some((program, generation, keys));
+        Some(keys)
+    }
+
+    /// Plays the project's kit, or the nearest the SoundFont has.
+    fn sync_kit(&self, engine: &mut Engine) {
+        if let Some(program) = self.kit_played(engine.kits()) {
+            engine.set_kit(program);
+        }
+    }
+
+    /// The project as it is written to a file: with the SoundFont and name of its kit filled in,
+    /// when the project has none recorded and the SoundFont playing has its kit.
+    fn stamped(&self) -> Project {
+        let mut project = self.project.clone();
+        if project.kit_origin().is_none()
+            && let Some(kit) = self.bank_kits.iter().find(|k| k.program == project.kit())
+        {
+            project.set_kit_origin(Some(dm_project::KitOrigin {
+                soundfont: self.bank.source().reference(),
+                name: Some(kit.name.clone()),
+            }));
+        }
+        project
+    }
+
+    /// Tells how the project's kit plays here. After a switch (`switched`), it names the
+    /// SoundFont now playing. Otherwise it speaks only when the project was made with another
+    /// SoundFont, or when its kit is not in this one.
+    fn kit_notice(&mut self, kits: &[dm_audio::Kit], switched: bool) {
+        let program = self.project.kit();
+        let origin = self.project.kit_origin();
+        let here = self.bank.source().reference();
+        let played = self.kit_played(kits);
+        let played_name = played
+            .and_then(|p| kits.iter().find(|k| k.program == p))
+            .map(|k| k.name.clone());
+        let asked_name = origin
+            .and_then(|o| o.name.clone())
+            .unwrap_or_else(|| tr!("bank-kit-program", program = program));
+        let other = origin.filter(|o| !bank::same_soundfont(&o.soundfont, &here));
+        let mut parts = Vec::new();
+        if switched {
+            parts.push(tr!("bank-now-playing", bank = bank::display_name(&here)));
+        } else if let Some(origin) = other {
+            parts.push(tr!(
+                "bank-made-with",
+                bank = bank::display_name(&origin.soundfont)
+            ));
+        }
+        // The kit plays as another when this SoundFont lacks its program.
+        if let Some(played_name) = &played_name
+            && played != Some(program)
+        {
+            parts.push(tr!(
+                "bank-kit-plays-as",
+                kit = asked_name,
+                played = played_name.as_str()
+            ));
+        } else if other.is_some() && !switched {
+            parts.push(tr!("bank-sounds-may-differ"));
+        }
+        if !parts.is_empty() {
+            self.show_notice_text(parts.join(" "));
+        }
     }
 
     /// Plays a row's drum once at the row's volume. Mute and solo do not apply: the user asked
@@ -1988,12 +2245,17 @@ impl DrumApp {
         self.ctx.request_repaint();
     }
 
-    /// Imports the files dropped on a desktop's window. Each file is read from its path.
+    /// Imports the files dropped on a desktop's window. Each file is read from its path. A SoundFont
+    /// is added as one.
     fn dropped_files(&mut self, ctx: &egui::Context) {
         let dropped = ctx.input(|i| i.raw.dropped_files.clone());
         for file in dropped {
             let target = files::Target::Path(file.path().to_path_buf());
             let name = target.file_name();
+            if is_soundfont(&name) {
+                self.add_soundfont(target);
+                continue;
+            }
             match target.read_limited(grooves::MAX_FILE) {
                 Ok(bytes) => self.import_grooves(&name, bytes),
                 Err(e) => self.import_failed(tr!(
@@ -2175,10 +2437,22 @@ fn apply(engine: &mut Engine, changes: Vec<Change>) {
                 engine.set_row_gain(row, f32::from(percent) / 100.0)
             }
             Change::ClearSlot { slot } => engine.clear_pattern(slot),
-            Change::Kit(program) => engine.set_kit(program),
+            Change::Kit(program) => {
+                // A kit the SoundFont lacks plays as its nearest. A project opened with a kit
+                // name gets a closer match from `sync_kit`.
+                let played = dm_audio::resolve_kit(engine.kits(), program, None);
+                engine.set_kit(played.unwrap_or(program));
+            }
             Change::Swing(thousandths) => engine.set_swing(f32::from(thousandths) / 1000.0),
         }
     }
+}
+
+/// Whether a file handed in is a SoundFont to add, by its name.
+fn is_soundfont(name: &str) -> bool {
+    std::path::Path::new(name)
+        .extension()
+        .is_some_and(|x| x.eq_ignore_ascii_case("sf2"))
 }
 
 /// Plays a drum once at a volume in percent; nothing at 0.

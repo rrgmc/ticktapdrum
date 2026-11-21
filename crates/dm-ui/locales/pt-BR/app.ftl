@@ -3,6 +3,7 @@
 # O nome do app, como aparece no título da janela.
 app-name = TickTapDrum
 app-title-named = { $name } - TickTapDrum
+app-tagline = Uma bateria eletrônica para todo mundo
 
 # Onde ficam as exportações, como o app Arquivos mostra a pasta do app num iPhone ou iPad.
 app-export-place-iphone = o app Arquivos, em No Meu iPhone, { app-name }, exports

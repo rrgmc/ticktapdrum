@@ -415,9 +415,6 @@ fn the_written_file_has_a_fixed_layout() {
   "tempo_bpm": 100.0,
   "swing": 0.25,
   "step_levels": "loud_and_soft",
-  "soundfont": {
-    "kind": "colombogmgs2-17.11"
-  },
   "kit_program": 0,
   "rows": [
     {
@@ -459,4 +456,165 @@ fn the_written_file_has_a_fixed_layout() {
 }
 "#;
     assert_eq!(to_json(&p), expected);
+}
+
+fn colombo() -> SoundfontRef {
+    SoundfontRef::Bank("colombogmgs2-17.11".into())
+}
+
+fn general_user() -> SoundfontRef {
+    SoundfontRef::File {
+        name: "GeneralUser-GS.sf2".into(),
+        sha256: "0123456789abcdef".into(),
+    }
+}
+
+#[test]
+fn a_kit_origin_of_either_kind_round_trips_with_or_without_a_name() {
+    for soundfont in [colombo(), general_user()] {
+        for name in [None, Some("TR-808".to_owned())] {
+            let mut p = Project::new();
+            p.set_kit(25);
+            p.set_kit_origin(Some(KitOrigin {
+                soundfont: soundfont.clone(),
+                name: name.clone(),
+            }));
+            round_trip(&p);
+            assert_eq!(
+                from_json(&to_json(&p)).unwrap().kit_origin(),
+                Some(&KitOrigin {
+                    soundfont: soundfont.clone(),
+                    name
+                })
+            );
+        }
+    }
+}
+
+#[test]
+fn the_kit_origin_is_written_around_the_kit_program() {
+    let mut p = Project::new();
+    p.set_kit(25);
+    p.set_kit_origin(Some(KitOrigin {
+        soundfont: general_user(),
+        name: Some("TR-808".into()),
+    }));
+    let text = to_json(&p);
+    assert!(
+        text.contains(
+            r#"  "step_levels": "on_off",
+  "soundfont": {
+    "kind": "file",
+    "name": "GeneralUser-GS.sf2",
+    "sha256": "0123456789abcdef"
+  },
+  "kit_program": 25,
+  "kit_name": "TR-808",
+  "rows": ["#
+        ),
+        "{text}"
+    );
+
+    // A bank is written by its id alone, and an unknown name is left out.
+    p.set_kit_origin(Some(KitOrigin {
+        soundfont: colombo(),
+        name: None,
+    }));
+    let text = to_json(&p);
+    assert!(
+        text.contains(
+            r#"  "soundfont": {
+    "kind": "colombogmgs2-17.11"
+  },
+  "kit_program": 25,
+  "rows": ["#
+        ),
+        "{text}"
+    );
+
+    // Without an origin, neither field is written.
+    p.set_kit_origin(None);
+    let text = to_json(&p);
+    assert!(
+        !text.contains("soundfont") && !text.contains("kit_name"),
+        "{text}"
+    );
+}
+
+#[test]
+fn an_older_file_reads_as_made_with_colombo_and_no_kit_name() {
+    let p = from_json(DESIGN_EXAMPLE).unwrap();
+    assert_eq!(
+        p.kit_origin(),
+        Some(&KitOrigin {
+            soundfont: colombo(),
+            name: None,
+        })
+    );
+}
+
+#[test]
+fn the_kit_name_is_trimmed_and_an_empty_one_is_unknown() {
+    let p = from_json(&example_with("kit_name", "  Jazz  ".into())).unwrap();
+    assert_eq!(p.kit_origin().unwrap().name.as_deref(), Some("Jazz"));
+    for name in [Value::from("   "), Value::from(7), Value::Null] {
+        let p = from_json(&example_with("kit_name", name.clone())).unwrap();
+        assert_eq!(p.kit_origin().unwrap().name, None, "{name}");
+    }
+
+    // The same rules apply when the interface sets it.
+    let mut p = Project::new();
+    p.set_kit_origin(Some(KitOrigin {
+        soundfont: colombo(),
+        name: Some(" ".into()),
+    }));
+    assert_eq!(p.kit_origin().unwrap().name, None);
+}
+
+#[test]
+fn a_malformed_soundfont_is_ignored_and_takes_the_kit_name_with_it() {
+    for soundfont in [
+        serde_json::json!("colombogmgs2-17.11"),
+        serde_json::json!(null),
+        serde_json::json!([1, 2]),
+        serde_json::json!({}),
+        serde_json::json!({ "kind": 3 }),
+        serde_json::json!({ "kind": "file" }),
+        serde_json::json!({ "kind": "file", "name": "mine.sf2" }),
+        serde_json::json!({ "kind": "file", "sha256": "abc" }),
+        serde_json::json!({ "kind": "file", "name": 1, "sha256": "abc" }),
+    ] {
+        let mut file: Value =
+            serde_json::from_str(&example_with("soundfont", soundfont.clone())).unwrap();
+        file["kit_name"] = "TR-808".into();
+        let p = from_json(&file.to_string()).unwrap_or_else(|e| panic!("{soundfont}: {e}"));
+        assert_eq!(p.kit_origin(), None, "{soundfont}");
+        assert_eq!(p.kit(), 0);
+    }
+
+    // A kit name with no soundfont at all is dropped too.
+    let mut file: Value = serde_json::from_str(DESIGN_EXAMPLE).unwrap();
+    file.as_object_mut().unwrap().remove("soundfont");
+    file["kit_name"] = "TR-808".into();
+    assert_eq!(from_json(&file.to_string()).unwrap().kit_origin(), None);
+}
+
+#[test]
+fn an_unknown_bank_id_and_extra_fields_are_kept_as_read() {
+    let soundfont = serde_json::json!({ "kind": "some-bank-2.0", "extra": 1 });
+    let p = from_json(&example_with("soundfont", soundfont)).unwrap();
+    assert_eq!(
+        p.kit_origin().unwrap().soundfont,
+        SoundfontRef::Bank("some-bank-2.0".into())
+    );
+    let soundfont =
+        serde_json::json!({ "kind": "file", "name": "a.sf2", "sha256": "ff", "size": 10 });
+    let p = from_json(&example_with("soundfont", soundfont)).unwrap();
+    assert_eq!(
+        p.kit_origin().unwrap().soundfont,
+        SoundfontRef::File {
+            name: "a.sf2".into(),
+            sha256: "ff".into()
+        }
+    );
 }

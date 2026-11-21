@@ -7,6 +7,11 @@
 //! Loading is forgiving where nothing is lost: numbers out of range are clamped, steps for rows
 //! or positions that do not exist are skipped, and unknown fields are ignored. It refuses a file
 //! where accepting it would lose or invent data, such as two patterns with the same letter.
+//!
+//! The `soundfont` and `kit_name` fields record the kit's origin ([`crate::KitOrigin`]). Both are
+//! optional, and a malformed one is ignored rather than refused, because it only describes the
+//! kit and never changes what plays. Versions of the app from before these fields ignore them as
+//! unknown fields, so adding them did not change [`FILE_FORMAT`].
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -18,8 +23,8 @@ use serde_json::Value;
 use serde_json::ser::Formatter;
 
 use crate::{
-    DEFAULT_KIT, DEFAULT_TEMPO, DEFAULT_VOLUME, MAX_BARS, MAX_PATTERNS, MAX_ROWS, MAX_SONG,
-    MAX_STEPS, MAX_SWING, Pattern, Project, Row, StepLevels, drum_name,
+    DEFAULT_KIT, DEFAULT_TEMPO, DEFAULT_VOLUME, KitOrigin, MAX_BARS, MAX_PATTERNS, MAX_ROWS,
+    MAX_SONG, MAX_STEPS, MAX_SWING, Pattern, Project, Row, SoundfontRef, StepLevels, drum_name,
 };
 
 /// The file format this version writes. Files with a higher number are refused.
@@ -33,8 +38,8 @@ const MIN_TEMPO: f64 = 40.0;
 const MAX_TEMPO: f64 = 240.0;
 /// The highest MIDI velocity.
 const MAX_VELOCITY: i64 = 127;
-/// The sound bank every project uses for now.
-const SOUNDFONT_KIND: &str = "colombogmgs2-17.11";
+/// The `soundfont` kind of a file the person added. Any other kind is a bank's id.
+const FILE_KIND: &str = "file";
 
 /// Why a file could not be loaded.
 ///
@@ -154,10 +159,26 @@ pub fn to_json(project: &Project) -> String {
             StepLevels::Soft => "soft",
             StepLevels::LoudAndSoft => "loud_and_soft",
         },
-        soundfont: SoundfontOut {
-            kind: SOUNDFONT_KIND,
-        },
+        soundfont: project
+            .kit_origin
+            .as_ref()
+            .map(|origin| match &origin.soundfont {
+                SoundfontRef::Bank(id) => SoundfontOut {
+                    kind: id,
+                    name: None,
+                    sha256: None,
+                },
+                SoundfontRef::File { name, sha256 } => SoundfontOut {
+                    kind: FILE_KIND,
+                    name: Some(name),
+                    sha256: Some(sha256),
+                },
+            }),
         kit_program: project.kit,
+        kit_name: project
+            .kit_origin
+            .as_ref()
+            .and_then(|origin| origin.name.as_deref()),
         rows: project
             .rows
             .iter()
@@ -306,6 +327,21 @@ fn build(file: FileIn) -> Result<Project, LoadError> {
         });
     }
 
+    let kit_origin = file
+        .soundfont
+        .as_ref()
+        .and_then(soundfont_in)
+        .map(|soundfont| {
+            let name = file
+                .kit_name
+                .as_ref()
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned);
+            KitOrigin { soundfont, name }
+        });
+
     let song = file
         .song
         .order
@@ -333,7 +369,23 @@ fn build(file: FileIn) -> Result<Project, LoadError> {
             // Missing, or a choice from a newer app that this one does not know.
             _ => StepLevels::OnOff,
         },
+        kit_origin,
     })
+}
+
+/// Reads a `soundfont` object. Anything malformed gives `None`.
+fn soundfont_in(value: &Value) -> Option<SoundfontRef> {
+    let kind = value.get("kind")?.as_str()?;
+    if kind == FILE_KIND {
+        let name = value.get("name")?.as_str()?;
+        let sha256 = value.get("sha256")?.as_str()?;
+        Some(SoundfontRef::File {
+            name: name.to_owned(),
+            sha256: sha256.to_owned(),
+        })
+    } else {
+        Some(SoundfontRef::Bank(kind.to_owned()))
+    }
 }
 
 fn pattern_out(pattern: &Pattern) -> PatternOut {
@@ -366,16 +418,23 @@ struct FileOut<'a> {
     tempo_bpm: f32,
     swing: f32,
     step_levels: &'static str,
-    soundfont: SoundfontOut,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    soundfont: Option<SoundfontOut<'a>>,
     kit_program: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kit_name: Option<&'a str>,
     rows: Vec<RowOut<'a>>,
     patterns: Vec<PatternOut>,
     song: SongOut,
 }
 
 #[derive(Serialize)]
-struct SoundfontOut {
-    kind: &'static str,
+struct SoundfontOut<'a> {
+    kind: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sha256: Option<&'a str>,
 }
 
 #[derive(Serialize)]
@@ -416,8 +475,10 @@ struct SongOut {
     looping: bool,
 }
 
-// What is read. Fields not listed here, such as `soundfont`, are ignored. Numbers that get
-// clamped are read as wide types, so an out-of-range value is clamped instead of refused.
+// What is read. Fields not listed here are ignored, because serde skips unknown fields unless a
+// struct says `deny_unknown_fields`, and none here does. Numbers that get clamped are read as
+// wide types, so an out-of-range value is clamped instead of refused. `soundfont` and `kit_name`
+// are read as plain JSON values, so a malformed one is ignored instead of refused.
 
 #[derive(Deserialize)]
 struct FileIn {
@@ -427,8 +488,12 @@ struct FileIn {
     swing: f64,
     #[serde(default)]
     step_levels: Option<String>,
+    #[serde(default)]
+    soundfont: Option<Value>,
     #[serde(default = "default_kit")]
     kit_program: u8,
+    #[serde(default)]
+    kit_name: Option<Value>,
     rows: Vec<RowIn>,
     patterns: Vec<PatternIn>,
     #[serde(default)]

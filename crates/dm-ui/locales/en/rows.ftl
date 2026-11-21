@@ -27,6 +27,8 @@ rows-back = Back
 # One letter beside a row's name in the grid, for a muted row and a soloed row.
 rows-badge-mute = M
 rows-badge-solo = S
+# The hint on the mark beside a row whose drum the kit playing has no sound for.
+rows-no-sound = This kit has no sound for this drum.
 
 # Hover text on an inactive row: a drum played on the MIDI keyboard that has no row yet.
 rows-add-offered = Add this drum

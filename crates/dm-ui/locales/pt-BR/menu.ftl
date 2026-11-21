@@ -35,6 +35,8 @@ menu-key-names = Notas do teclado
 menu-key-names-tip = Com a entrada MIDI ligada, mostra ao lado de cada peça a nota do teclado que a toca.
 menu-bar-line = Mostrar compassos abaixo dos botões
 menu-language = Idioma
+menu-sound-bank = Banco de sons
+menu-sound-bank-choice = Banco de sons: { $bank }
 # A primeira escolha da janela Idioma: seguir o idioma do sistema. $language é o nome desse
 # idioma nele mesmo, como "English".
 menu-language-system = Sistema ({ $language })

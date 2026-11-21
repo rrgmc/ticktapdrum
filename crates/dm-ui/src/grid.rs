@@ -178,6 +178,9 @@ pub(crate) struct Grid {
     flashes: Vec<(u8, f64)>,
     /// Whether each name box shows the keyboard key that plays its drum.
     show_keys: bool,
+    /// Which keys the kit playing has a sound for, once known. A row whose key has none is
+    /// marked.
+    sounding: Option<[bool; 128]>,
 }
 
 struct Layout {
@@ -249,6 +252,12 @@ impl Grid {
     /// is on.
     pub(crate) fn set_show_keys(&mut self, show: bool) {
         self.show_keys = show;
+    }
+
+    /// Sets which keys the kit playing has a sound for, or `None` while not known. The caller
+    /// sets it every frame before [`Grid::ui`].
+    pub(crate) fn set_sounding(&mut self, keys: Option<[bool; 128]>) {
+        self.sounding = keys;
     }
 
     /// Lights the name of the row whose settings are open, or none.
@@ -479,6 +488,21 @@ impl Grid {
                     FontId::proportional(13.0),
                     ui.visuals().warn_fg_color,
                 );
+            }
+            // A drum the kit has no sound for: a struck-through speaker in the top right corner,
+            // out of the way of the name, the key and the badge.
+            let silent = self
+                .sounding
+                .is_some_and(|keys| !keys[usize::from(info.key.min(127))]);
+            if silent {
+                ui.painter().text(
+                    rect.right_top() + Vec2::new(-4.0, 2.0),
+                    Align2::RIGHT_TOP,
+                    crate::icons::SPEAKER_SLASH,
+                    FontId::proportional(12.0),
+                    ui.visuals().warn_fg_color,
+                );
+                response.on_hover_text(tr!("rows-no-sound"));
             }
         }
         // While a name is dragged, a bar marks where the row would go: above the row it would

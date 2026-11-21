@@ -509,3 +509,21 @@ fn renamed_letters_survive_saving_and_loading() {
     // Loading puts each pattern in its letter's slot.
     assert_eq!(loaded.pattern(1).unwrap().slot(), 25);
 }
+
+#[test]
+fn choosing_a_kit_clears_its_origin_and_setting_one_changes_nothing_else() {
+    let mut p = Project::new();
+    assert_eq!(p.kit_origin(), None);
+    let origin = KitOrigin {
+        soundfont: SoundfontRef::Bank("colombogmgs2-17.11".into()),
+        name: Some("Standard".into()),
+    };
+    let before = p.full_sync();
+    p.set_kit_origin(Some(origin.clone()));
+    assert_eq!(p.kit_origin(), Some(&origin));
+    assert_eq!(p.full_sync(), before);
+
+    // Choosing a kit, even the same one, clears the record of the old choice.
+    assert_eq!(p.set_kit(0), vec![Change::Kit(0)]);
+    assert_eq!(p.kit_origin(), None);
+}
