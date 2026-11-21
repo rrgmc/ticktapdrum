@@ -30,6 +30,7 @@ mod icons;
 mod incoming;
 mod keyboard;
 mod link;
+mod logo;
 mod menu;
 mod midi;
 mod offered;

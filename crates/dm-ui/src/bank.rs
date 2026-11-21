@@ -220,79 +220,170 @@ impl BankState {
         self.phase = Phase::Loading { done };
     }
 
-    /// Draws everything before the grid: the offer, progress, loading and errors.
+    /// Draws everything before the grid: the offer, progress, loading and errors, under the app's
+    /// logo and name.
     pub(crate) fn ui(&mut self, ui: &mut egui::Ui) {
+        if matches!(self.phase, Phase::Ready(_)) {
+            return;
+        }
         let ctx = ui.ctx().clone();
         let mut start = false;
         // A column of at most 520 points, centred, with text wrapping inside it. A centred layout
         // alone does not wrap long labels on a narrow screen: they ran off both edges in portrait.
+        // It scrolls, so a phone held sideways still reaches the button.
         let area = ui.available_rect_before_wrap();
-        let width = area.width().min(520.0);
-        let top = area.min.y + area.height() * 0.12;
-        let column = egui::Rect::from_min_size(
-            egui::pos2(area.center().x - width / 2.0, top),
-            egui::vec2(width, area.max.y - top),
-        );
-        let builder = egui::UiBuilder::new()
-            .max_rect(column)
-            .layout(egui::Layout::top_down(egui::Align::Center));
+        let width = (area.width() - 2.0 * GUTTER).clamp(0.0, 520.0);
+        let builder = egui::UiBuilder::new().max_rect(area);
         ui.scope_builder(builder, |ui| {
-            ui.set_max_width(width);
-            match &self.phase {
-                Phase::Offer => {
-                    ui.heading(tr!("bank-offer-title"));
-                    ui.add_space(12.0);
-                    wrapped(ui, tr!("bank-offer", bank = BANK.name));
-                    ui.add_space(8.0);
-                    wrapped(
-                        ui,
-                        tr!(
-                            "bank-offer-sizes",
-                            download = mib(BANK.archive_bytes),
-                            space = mib(BANK.member_bytes)
-                        ),
-                    );
-                    wrapped(ui, license());
-                    ui.add_space(16.0);
-                    if big_button(ui, &tr!("bank-download")).clicked() {
-                        start = true;
-                    }
-                }
-                Phase::Installing {
-                    progress, cancel, ..
-                } => {
-                    let current = progress.lock().ok().and_then(|p| *p);
-                    let (text, fraction) = describe(current);
-                    ui.heading(tr!("bank-installing-title"));
-                    ui.add_space(12.0);
-                    wrapped(ui, text);
-                    ui.add(egui::ProgressBar::new(fraction).show_percentage());
-                    ui.add_space(16.0);
-                    if big_button(ui, &tr!("bank-cancel")).clicked() {
-                        cancel.store(true, Ordering::Relaxed);
-                    }
-                }
-                Phase::Loading { .. } => {
-                    ui.heading(tr!("bank-loading-title"));
-                    ui.add_space(12.0);
-                    ui.spinner();
-                }
-                Phase::Failed(failure) => {
-                    ui.heading(tr!("bank-failed-title"));
-                    ui.add_space(12.0);
-                    wrapped(ui, failure.message());
-                    ui.add_space(16.0);
-                    if big_button(ui, &tr!("bank-try-again")).clicked() {
-                        start = true;
-                    }
-                }
-                Phase::Ready(_) => {}
-            }
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let top = (area.height() * 0.08).clamp(GUTTER, 64.0);
+                    ui.add_space(top);
+                    ui.vertical_centered(|ui| {
+                        ui.set_max_width(width);
+                        header(ui);
+                        ui.add_space(24.0);
+                        card(ui, |ui| {
+                            start = self.phase_ui(ui);
+                        });
+                        ui.add_space(GUTTER);
+                    });
+                });
         });
         if start {
             self.start_install(&ctx, None);
         }
     }
+
+    /// The card's contents for the current phase. Returns whether to start the download.
+    fn phase_ui(&self, ui: &mut egui::Ui) -> bool {
+        let mut start = false;
+        match &self.phase {
+            Phase::Offer => {
+                title(ui, tr!("bank-offer-title"));
+                wrapped(ui, tr!("bank-offer", bank = BANK.name));
+                ui.add_space(20.0);
+                if primary_button(ui, &tr!("bank-download")).clicked() {
+                    start = true;
+                }
+                ui.add_space(16.0);
+                note(
+                    ui,
+                    tr!(
+                        "bank-offer-sizes",
+                        download = mib(BANK.archive_bytes),
+                        space = mib(BANK.member_bytes)
+                    ),
+                );
+                ui.add_space(4.0);
+                note(ui, license());
+            }
+            Phase::Installing {
+                progress, cancel, ..
+            } => {
+                let current = progress.lock().ok().and_then(|p| *p);
+                let (text, fraction) = describe(current);
+                title(ui, tr!("bank-installing-title"));
+                wrapped(ui, text);
+                ui.add_space(12.0);
+                ui.add(
+                    egui::ProgressBar::new(fraction)
+                        .show_percentage()
+                        .fill(ORANGE)
+                        .corner_radius(8.0)
+                        .desired_height(20.0),
+                );
+                ui.add_space(20.0);
+                if big_button(ui, &tr!("bank-cancel")).clicked() {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+            }
+            Phase::Loading { .. } => {
+                title(ui, tr!("bank-loading-title"));
+                ui.add(egui::Spinner::new().size(32.0).color(ORANGE));
+            }
+            Phase::Failed(failure) => {
+                title(ui, tr!("bank-failed-title"));
+                wrapped(ui, failure.message());
+                ui.add_space(20.0);
+                if primary_button(ui, &tr!("bank-try-again")).clicked() {
+                    start = true;
+                }
+            }
+            Phase::Ready(_) => {}
+        }
+        start
+    }
+}
+
+/// The logo's orange, from `docs/icon/ticktapdrum.svg`.
+const ORANGE: egui::Color32 = egui::Color32::from_rgb(0xFF, 0x6A, 0x3D);
+
+/// The space kept clear at the screen's edges.
+const GUTTER: f32 = 16.0;
+
+/// The logo, the app's name and its tagline.
+fn header(ui: &mut egui::Ui) {
+    if let Some(texture) = crate::logo::texture(ui.ctx()) {
+        let side = 96.0;
+        ui.add(egui::Image::from_texture((
+            texture.id(),
+            egui::vec2(side, side),
+        )));
+        ui.add_space(12.0);
+    }
+    ui.label(
+        egui::RichText::new(tr!("app-name"))
+            .size(34.0)
+            .strong()
+            .color(ui.visuals().strong_text_color()),
+    );
+    ui.add_space(2.0);
+    wrapped(
+        ui,
+        egui::RichText::new(tr!("app-tagline")).size(16.0).weak(),
+    );
+}
+
+/// A rounded panel, slightly apart from the background, around one phase's contents.
+fn card(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    let visuals = ui.visuals();
+    egui::Frame::new()
+        .fill(visuals.faint_bg_color)
+        .stroke(visuals.widgets.noninteractive.bg_stroke)
+        .corner_radius(16.0)
+        .inner_margin(24.0)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.vertical_centered(add);
+        });
+}
+
+/// A phase's title, at the top of the card.
+fn title(ui: &mut egui::Ui, text: String) {
+    ui.label(egui::RichText::new(text).size(22.0).strong());
+    ui.add_space(12.0);
+}
+
+/// Small, quiet text for details: sizes and the licence.
+fn note(ui: &mut egui::Ui, text: String) {
+    wrapped(ui, egui::RichText::new(text).size(12.5).weak());
+}
+
+/// The page's main action: a large button in the logo's orange.
+fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new(
+            egui::RichText::new(text)
+                .size(20.0)
+                .strong()
+                .color(egui::Color32::WHITE),
+        )
+        .fill(ORANGE)
+        .corner_radius(12.0)
+        .min_size(egui::vec2(200.0, 52.0)),
+    )
 }
 
 fn describe(progress: Option<Progress>) -> (String, f32) {

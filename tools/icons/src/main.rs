@@ -3,6 +3,8 @@
 //! - iOS: `AppIcon.appiconset/icon-1024.png`, opaque, square (iOS rounds the corners itself).
 //! - Desktop: `apps/dm-desktop/assets/icon-256.png` (window and Linux icon), `icon.ico` (Windows
 //!   program and installer) and `icon-1024.png` (the macOS `.icns`), with rounded corners.
+//! - The interface: `crates/dm-ui/assets/logo-256.png`, the logo on the bank's download page,
+//!   the same as the desktop icon.
 //! - Android: the adaptive icon's foreground and monochrome layers in each `mipmap-<density>`
 //!   folder, and its background colour in `values/ic_launcher_background.xml`.
 //!
@@ -70,6 +72,12 @@ fn main() -> Result<()> {
         ico_images.push((size, rounded(render_crop(&colour, size)?)?.encode_png()?));
     }
     write(&assets.join("icon.ico"), &ico(&ico_images))?;
+
+    // The logo the interface shows, as the desktop icon.
+    write_png(
+        &rounded(render_crop(&colour, 256)?)?,
+        &root.join("crates/dm-ui/assets/logo-256.png"),
+    )?;
 
     // Android: the background colour goes in its own layer, so the foreground leaves it out.
     let (background, foreground_svg) = split_background(&colour_svg)?;
