@@ -1940,6 +1940,25 @@ Three independent pieces, then the interface:
 - `.sf3` files: rustysynth reads only `.sf2`.
 - Matching drums by name when a SoundFont puts them on other keys than General MIDI's.
 
+### What milestone 15 found (2026-11-21)
+
+- A file dropped on the desktop window, or shared to the app, is added when its name ends in
+  `.sf2`. Where there is no picker (iOS), sharing is the only way to add one, and the dialog says
+  so.
+- Adding runs while the engine plays on; the switch comes once the copy is loaded and found to
+  have drum kits. A file already added is never deleted by a failed second add.
+- In GeneralUser GS 2.0.3, Standard (128:0) has a sound for keys 27 to 87. ColomboGMGS2's Swirls
+  (program 30) is not there; its GS group's first kit, Electronic (24), plays instead.
+- The app is dark on every platform now, title bar included. Windows used to follow the system's
+  light theme.
+
+Checked on Windows with GeneralUser GS added and chosen: the app starts on it from the setting; an
+autosave made with ColomboGMGS2 on kit Swirls opens with the notice "Made with ColomboGMGS2
+Vanilla 17.11. Its kit Swirls plays as Electronic here."; a row on key 88 shows the no-sound mark;
+the download page shows the logo, the new wording and "Use your own SoundFont file". Not checked:
+the Sound bank dialog, adding through the dialog or by dropping a file, deleting, and switching
+while running (no one has clicked through them yet); Android's picker; listening to any of it.
+
 ## Open questions
 
 None at present. The three earlier ones were researched in
