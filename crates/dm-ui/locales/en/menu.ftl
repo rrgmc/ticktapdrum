@@ -25,7 +25,10 @@ menu-presets = Load default style
 # A drum tab is drums written as text,
 # one row per drum, such as "SD |----o-------o---|".
 menu-paste-tab = Paste a drum tab
-menu-sounds = Sounds
+# Chooses the drum kit: the set of drum sounds the project plays.
+menu-sound-kits = Sound kits
+# Adds a row to the grid for one more drum.
+menu-add-instrument = Add instrument
 menu-song = Song
 menu-export = Export
 # Locks the screen in landscape orientation.

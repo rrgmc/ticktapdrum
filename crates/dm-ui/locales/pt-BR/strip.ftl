@@ -19,6 +19,7 @@ strip-midi-in-off-tip = Gravar de { $device } enquanto um padrão toca.
 strip-midi-in-on-tip = Gravando de { $device } enquanto um padrão toca. Toque para parar.
 strip-patterns = Padrões
 strip-tempo-tip = Andamento e swing
+strip-sound-kits = Kits de sons
 strip-undo = Desfazer
 strip-redo = Refazer
 strip-menu = Menu

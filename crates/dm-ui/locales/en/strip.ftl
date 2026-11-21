@@ -19,6 +19,8 @@ strip-midi-in-off-tip = Record from { $device } while a pattern plays.
 strip-midi-in-on-tip = Recording from { $device } while a pattern plays. Tap to stop.
 strip-patterns = Patterns
 strip-tempo-tip = Tempo and swing
+# Opens the dialog that chooses the drum kit. Same as menu-sound-kits.
+strip-sound-kits = Sound kits
 strip-undo = Undo
 strip-redo = Redo
 strip-menu = Menu

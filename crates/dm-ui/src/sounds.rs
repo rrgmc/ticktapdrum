@@ -1,5 +1,6 @@
-//! The Sounds dialog: the drum kit, loud and soft steps, and adding a row. A row's own settings
-//! open from its name in the grid (`rows.rs`); swing is in the tempo pop-up.
+//! The Sound kits dialog, which chooses the drum kit, and the Add instrument dialog, which adds a
+//! row. A row's own settings open from its name in the grid (`rows.rs`); swing is in the tempo
+//! pop-up.
 
 use crate::pictures::RowLabels;
 use dm_audio::Kit;
@@ -26,37 +27,36 @@ pub(crate) enum SoundEvent {
     Preview(u8, u8),
 }
 
+/// The dialog a Sounds button or menu item opened.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum SoundsDialog {
+    /// Sound kits: the drum kit.
+    Kits,
+    /// Add instrument: a drum for a new row.
+    Add,
+}
+
 #[derive(Default)]
 pub(crate) struct SoundsScreen {
     /// Whether the full kit list is open.
     all_kits: bool,
-    /// Whether the list of drums for a new row is open.
-    adding: bool,
-    /// Whether that list shows every drum, not only the common ones.
+    /// Whether the Add instrument list shows every drum, not only the common ones.
     more_drums: bool,
 }
 
 impl SoundsScreen {
-    /// The Sounds dialog's contents: the drum kit, loud and soft steps, and adding a row. The
-    /// caller puts them in a `widgets::dialog`, which adds the title and the close button.
-    /// A row's own settings are in its pop-up (`rows.rs`); swing is in the tempo pop-up.
-    pub(crate) fn dialog_contents(
+    /// The Sound kits dialog's contents: a short list of kits, one per line, and the bank's
+    /// other kits on request. The caller puts them in a `widgets::dialog`, which adds the title
+    /// and the close button.
+    pub(crate) fn kits_contents(
         &mut self,
         ui: &mut egui::Ui,
         project: &Project,
         kits: &[Kit],
-        labels: RowLabels,
     ) -> Vec<SoundEvent> {
         use crate::icons;
-        use crate::widgets::{TEXT_SIZE, toggle_button};
 
         let mut events = Vec::new();
-        let heading = |ui: &mut egui::Ui, text: String| {
-            ui.label(egui::RichText::new(text).size(TEXT_SIZE).strong());
-        };
-
-        // The kit: a short list first, one per line, and the bank's other kits on request.
-        heading(ui, tr!("sounds-kit"));
         let current = project.kit();
         let short: Vec<&Kit> = SHORT_LIST
             .iter()
@@ -92,32 +92,29 @@ impl SoundsScreen {
                 }
             }
         }
-        ui.add_space(12.0);
-
-        // Adding a row: a list of drums opens in the dialog, which scrolls.
-        let rows = project.rows().len();
-        if ui
-            .add_enabled(
-                rows < MAX_ROWS,
-                toggle_button(self.adding, icons::PLUS, &tr!("sounds-add-row")),
-            )
-            .clicked()
-        {
-            self.adding = !self.adding;
-        }
-        if rows >= MAX_ROWS {
-            self.adding = false;
-            ui.label(tr!("sounds-max-rows", count = MAX_ROWS));
-        }
-        if self.adding
-            && let Some(key) = drum_picker(ui, None, &mut self.more_drums, labels)
-        {
-            events.push(SoundEvent::Add(key));
-            events.push(SoundEvent::Preview(key, dm_project::DEFAULT_VOLUME));
-            self.adding = false;
-            self.more_drums = false;
-        }
         events
+    }
+
+    /// The Add instrument dialog's contents: the drums to choose from for a new row at the
+    /// bottom. Returns the events and whether a drum was chosen, which closes the dialog.
+    pub(crate) fn add_contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project: &Project,
+        labels: RowLabels,
+    ) -> (Vec<SoundEvent>, bool) {
+        let mut events = Vec::new();
+        if project.rows().len() >= MAX_ROWS {
+            ui.label(tr!("sounds-max-rows", count = MAX_ROWS));
+            return (events, false);
+        }
+        let Some(key) = drum_picker(ui, None, &mut self.more_drums, labels) else {
+            return (events, false);
+        };
+        events.push(SoundEvent::Add(key));
+        events.push(SoundEvent::Preview(key, dm_project::DEFAULT_VOLUME));
+        self.more_drums = false;
+        (events, true)
     }
 }
 

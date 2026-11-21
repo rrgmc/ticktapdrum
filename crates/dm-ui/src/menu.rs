@@ -1,6 +1,7 @@
 //! The menu under ☰, and the dialogs its items open: Save as, Open, Load default style, Export
 //! with its keyboard style step, Language, MIDI output, Paste a drum tab, Add grooves from a
-//! link, Grooves, and the tempo when the strip has no room for it. Its Sounds item opens the Sounds dialog. See "One control strip" in `docs/DESIGN.md`.
+//! link, Grooves, and the tempo when the strip has no room for it. Its Sound kits and Add
+//! instrument items open the dialogs in `sounds.rs`. See "One control strip" in `docs/DESIGN.md`.
 //!
 //! It does everything the old Projects screen did. Starting a new project, opening one, opening
 //! a file or starting from a beat asks first when there are unsaved changes, and deleting always
@@ -26,8 +27,10 @@ pub(crate) enum MenuEvent {
     ListSaved,
     Undo,
     Redo,
-    /// Open the Sounds dialog.
-    Sounds,
+    /// Open the Sound kits dialog.
+    SoundKits,
+    /// Open the Add instrument dialog.
+    AddInstrument,
     Tempo(TempoEvent),
     /// Show text in this language, or in the system's if `None`.
     Language(Option<Language>),
@@ -422,10 +425,17 @@ impl Menu {
             ui.close();
         }
         if ui
-            .add(item(icons::SPEAKER_HIGH, &tr!("menu-sounds")))
+            .add(item(icons::SPEAKER_HIGH, &tr!("menu-sound-kits")))
             .clicked()
         {
-            events.push(MenuEvent::Sounds);
+            events.push(MenuEvent::SoundKits);
+            ui.close();
+        }
+        if ui
+            .add(item(icons::PLUS, &tr!("menu-add-instrument")))
+            .clicked()
+        {
+            events.push(MenuEvent::AddInstrument);
             ui.close();
         }
         if ui.add(item(icons::EXPORT, &tr!("menu-export"))).clicked() {

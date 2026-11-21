@@ -104,8 +104,8 @@ pub struct DrumApp {
     tabs: patterns::PatternTabs,
     song_row: song::SongRow,
     sounds: sounds::SoundsScreen,
-    /// Whether the Sounds dialog is open.
-    sounds_open: bool,
+    /// The Sound kits or Add instrument dialog, while one is open.
+    sounds_open: Option<sounds::SoundsDialog>,
     menu: menu::Menu,
     row_popup: rows::RowPopup,
     /// The saved projects, read when the Open or Save as dialog opens.
@@ -228,7 +228,7 @@ impl DrumApp {
             tabs: patterns::PatternTabs::default(),
             song_row: song::SongRow::default(),
             sounds: sounds::SoundsScreen::default(),
-            sounds_open: false,
+            sounds_open: None,
             menu: menu::Menu::default(),
             row_popup: rows::RowPopup::default(),
             saved_list: Vec::new(),
@@ -548,7 +548,7 @@ impl DrumApp {
             || ctx.memory(|m| m.top_modal_layer().is_some())
             || self.row_popup.is_open()
             || self.menu.dialog_open()
-            || self.sounds_open;
+            || self.sounds_open.is_some();
         if open {
             ctx.input_mut(|i| {
                 i.events.push(egui::Event::Key {
@@ -921,14 +921,32 @@ impl DrumApp {
 
         // The dialogs the strip and the menu open.
         let mut sound_events = Vec::new();
-        if self.sounds_open {
-            let kits = engine.kits().to_vec();
-            let dialog = widgets::dialog(ui.ctx(), "sounds", &tr!("menu-sounds"), |ui| {
-                self.sounds
-                    .dialog_contents(ui, &self.project, &kits, self.row_labels)
-            });
-            sound_events = dialog.inner;
-            self.sounds_open = !dialog.closed;
+        match self.sounds_open {
+            Some(sounds::SoundsDialog::Kits) => {
+                let kits = engine.kits().to_vec();
+                let dialog =
+                    widgets::dialog(ui.ctx(), "sound-kits", &tr!("menu-sound-kits"), |ui| {
+                        self.sounds.kits_contents(ui, &self.project, &kits)
+                    });
+                sound_events = dialog.inner;
+                if dialog.closed {
+                    self.sounds_open = None;
+                }
+            }
+            Some(sounds::SoundsDialog::Add) => {
+                let dialog = widgets::dialog(
+                    ui.ctx(),
+                    "add-instrument",
+                    &tr!("menu-add-instrument"),
+                    |ui| self.sounds.add_contents(ui, &self.project, self.row_labels),
+                );
+                let (events, added) = dialog.inner;
+                sound_events = events;
+                if dialog.closed || added {
+                    self.sounds_open = None;
+                }
+            }
+            None => {}
         }
 
         // The grid. While anything is open above it, a tap only closes that and changes no step.
@@ -944,8 +962,9 @@ impl DrumApp {
             }
         };
         // A row's own pop-up leaves the names live, so another name opens at the first tap.
-        let other_open =
-            egui::Popup::is_any_open(ui.ctx()) || self.menu.dialog_open() || self.sounds_open;
+        let other_open = egui::Popup::is_any_open(ui.ctx())
+            || self.menu.dialog_open()
+            || self.sounds_open.is_some();
         self.grid
             .set_blocked(other_open || self.row_popup.is_open(), other_open);
         self.grid.set_highlight(self.row_popup.row());
@@ -1052,6 +1071,9 @@ impl DrumApp {
                 }
                 strip::StripEvent::PrevPage => self.page(split, shown_bars, false),
                 strip::StripEvent::NextPage => self.page(split, shown_bars, true),
+                strip::StripEvent::SoundKits => {
+                    self.sounds_open = Some(sounds::SoundsDialog::Kits);
+                }
                 strip::StripEvent::Undo => self.undo(engine),
                 strip::StripEvent::Redo => self.redo(engine),
                 strip::StripEvent::StepLevels => {
@@ -1069,7 +1091,10 @@ impl DrumApp {
                 menu::MenuEvent::ListSaved => self.saved_list = self.store.list(),
                 menu::MenuEvent::Undo => self.undo(engine),
                 menu::MenuEvent::Redo => self.redo(engine),
-                menu::MenuEvent::Sounds => self.sounds_open = true,
+                menu::MenuEvent::SoundKits => self.sounds_open = Some(sounds::SoundsDialog::Kits),
+                menu::MenuEvent::AddInstrument => {
+                    self.sounds_open = Some(sounds::SoundsDialog::Add);
+                }
                 menu::MenuEvent::Tempo(event) => self.handle_tempo(engine, event),
                 menu::MenuEvent::ListMidiOutputs => {
                     self.midi.list();
