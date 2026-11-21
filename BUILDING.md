@@ -270,6 +270,81 @@ version sets the app's version and its build number (`1.2.3` gives `10203`). The
 unsigned unless `DM_IOS_TEAM` is set, and iOS installs no unsigned app: a sideloading tool must
 sign it first.
 
+### Install an IPA on a device
+
+An IPA (iOS app archive) is a zip file with the app in a `Payload` folder. A device installs it
+only when two things are true:
+
+- the app is signed with a development certificate from your team;
+- the app holds a provisioning profile that lists the device. A provisioning profile is a file
+  from Apple that ties the app, your certificate and your devices together.
+
+All the steps below run on a Mac with Xcode. Connect the device by USB, unlock it, and turn on
+developer mode (Settings > Privacy & Security > Developer Mode). Find the device's identifier
+with `xcrun devicectl list devices`.
+
+**An IPA built with `DM_IOS_TEAM` set** is already signed. Unpack it and install the app:
+
+```sh
+mkdir -p /tmp/ttd && cd /tmp/ttd
+ditto -x -k ticktapdrum-<v>-ios.ipa .
+xcrun devicectl device install app --device <device id> Payload/TickTapDrum.app
+```
+
+It installs only on devices registered to that team when it was built.
+
+**The IPA from GitHub Releases** is unsigned. The simplest way to install it is a sideloading
+tool such as [Sideloadly](https://sideloadly.io) or
+[Impactor](https://github.com/khcrysalis/impactor). Both run on Windows and macOS, and Impactor
+on Linux too. You give them the IPA and your Apple ID; they make the certificate and the
+provisioning profile, register the device, sign the app and install it. On Windows both need
+iTunes from Apple's website, not from the Microsoft Store. With a free Apple ID the app stops
+working after 7 days; with a paid developer account it lasts much longer.
+
+To sign it by hand on a Mac instead, with your own team:
+
+1. Get a provisioning profile. The simplest way is to run `tools/ios/build.sh` once with
+   `DM_IOS_TEAM` set and the device connected: Xcode registers the device and makes a profile
+   for `io.github.rrgmc.ticktapdrum`. Xcode 16 and newer keep profiles in
+   `~/Library/Developer/Xcode/UserData/Provisioning Profiles`; older versions keep them in
+   `~/Library/MobileDevice/Provisioning Profiles`. To find the right one, print each profile's
+   app identifier; it must end in `.io.github.rrgmc.ticktapdrum` or in `.*`:
+
+   ```sh
+   for p in ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/*.mobileprovision; do
+       echo "$p: $(security cms -D -i "$p" | plutil -extract Entitlements.application-identifier raw -)"
+   done
+   ```
+
+2. Find your signing identity, a name such as `Apple Development: Name (ABCDE12345)`:
+
+   ```sh
+   security find-identity -v -p codesigning
+   ```
+
+3. Unpack the IPA, put the profile in the app, take the entitlements from the profile, and sign.
+   The app embeds no frameworks, so signing the app itself is enough:
+
+   ```sh
+   mkdir -p /tmp/ttd && cd /tmp/ttd
+   ditto -x -k ticktapdrum-<v>-ios.ipa .
+   cp <profile>.mobileprovision Payload/TickTapDrum.app/embedded.mobileprovision
+   security cms -D -i <profile>.mobileprovision > profile.plist
+   plutil -extract Entitlements xml1 -o entitlements.plist profile.plist
+   codesign --force --sign "<identity>" --entitlements entitlements.plist Payload/TickTapDrum.app
+   codesign --verify --verbose Payload/TickTapDrum.app
+   ```
+
+4. Install it:
+
+   ```sh
+   xcrun devicectl device install app --device <device id> Payload/TickTapDrum.app
+   ```
+
+An app with the same bundle identifier but a different signature must be uninstalled from the
+device first. On its first start, a development app may need the network to verify its
+certificate.
+
 ## Continuous integration and releases
 
 Two GitHub Actions workflows live in `.github/workflows`.
