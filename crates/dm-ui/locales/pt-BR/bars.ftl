@@ -9,3 +9,5 @@ bars-remove-question = Remover o compasso { $number }? As notas dele também vã
 bars-remove = Remover
 bars-keep = Cancelar
 bars-play-from = Tocar a partir do compasso { $bar }
+bars-thumb-tip = Clique duas vezes para tocar a partir deste compasso. Clique com o botão direito para tocar só este compasso.
+bars-thumb-looped-tip = Só este compasso toca. Clique com o botão direito para tocar o padrão inteiro.

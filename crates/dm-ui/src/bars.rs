@@ -33,6 +33,9 @@ pub(crate) enum BarEvent {
     ToggleFollow,
     /// Play the pattern from the first step of this bar.
     PlayFrom(usize),
+    /// Play only this bar, over and over; or, if it is already the only bar playing, the whole
+    /// pattern again.
+    ToggleLoop(usize),
 }
 
 #[derive(Default)]
@@ -43,6 +46,9 @@ pub(crate) struct BarStrip {
     /// The first bar the grid showed last frame, so the line of thumbnails scrolls to it only
     /// when it changes and leaves a sideways scroll by hand alone otherwise.
     last_shown: Option<usize>,
+    /// The only bar that plays, if one is chosen. The caller sets it every frame before drawing;
+    /// its thumbnail carries a repeat mark.
+    pub(crate) looped: Option<usize>,
 }
 
 impl BarStrip {
@@ -68,7 +74,8 @@ impl BarStrip {
         // The pop-up stays open, so several bars can be looked at in turn.
         if with_thumbnails {
             ui.horizontal_wrapped(|ui| {
-                thumbnails(ui, pattern, &shown, playing_bar, None, &mut events);
+                let looping = (self.looped, can_play_from);
+                thumbnails(ui, pattern, &shown, playing_bar, looping, None, &mut events);
             });
             ui.separator();
         }
@@ -181,7 +188,16 @@ impl BarStrip {
                 .show(ui, |ui| {
                     ui.horizontal_top(|ui| {
                         let scroll_to = moved.then_some(shown.start);
-                        thumbnails(ui, pattern, &shown, playing_bar, scroll_to, &mut events);
+                        let looping = (self.looped, can_play_from);
+                        thumbnails(
+                            ui,
+                            pattern,
+                            &shown,
+                            playing_bar,
+                            looping,
+                            scroll_to,
+                            &mut events,
+                        );
                     });
                 });
         });
@@ -221,6 +237,7 @@ fn thumbnails(
     pattern: &Pattern,
     shown: &std::ops::Range<usize>,
     playing_bar: Option<usize>,
+    (looped, can_play): (Option<usize>, bool),
     scroll_to: Option<usize>,
     events: &mut Vec<BarEvent>,
 ) {
@@ -232,12 +249,29 @@ fn thumbnails(
             POPUP_THUMB,
             shown.contains(&bar),
             playing_bar == Some(bar),
+            looped == Some(bar),
         );
         if scroll_to == Some(bar) {
             response.scroll_to_me(None);
         }
-        if response.clicked() {
+        // A double click plays from the bar; a right click, or a long press, plays only it.
+        // Only a pattern plays from a bar, so the song offers neither.
+        if can_play && response.double_clicked() {
+            events.push(BarEvent::PlayFrom(bar));
+        } else if can_play && (response.secondary_clicked() || response.long_touched()) {
+            events.push(BarEvent::ToggleLoop(bar));
+        } else if response.clicked() {
             events.push(BarEvent::Select(bar));
+        }
+        let tip = if !can_play {
+            None
+        } else if looped == Some(bar) {
+            Some(tr!("bars-thumb-looped-tip"))
+        } else {
+            Some(tr!("bars-thumb-tip"))
+        };
+        if let Some(tip) = tip {
+            response.on_hover_text(tip);
         }
     }
 }
@@ -250,6 +284,7 @@ fn thumbnail(
     size: Vec2,
     selected: bool,
     playing: bool,
+    looped: bool,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let visuals = ui.visuals();
@@ -296,6 +331,22 @@ fn thumbnail(
         egui::FontId::proportional(11.0),
         visuals.text_color(),
     );
+    if looped {
+        // The only bar that plays: a repeat mark in the corner, in the accent colour.
+        painter.text(
+            Pos2::new(rect.max.x - 3.0, rect.max.y - 1.0),
+            egui::Align2::RIGHT_BOTTOM,
+            icons::REPEAT,
+            egui::FontId::proportional(13.0),
+            visuals.selection.stroke.color,
+        );
+        painter.rect_stroke(
+            rect,
+            CornerRadius::same(4),
+            Stroke::new(1.5, visuals.selection.bg_fill),
+            StrokeKind::Inside,
+        );
+    }
     response
 }
 

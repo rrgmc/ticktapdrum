@@ -1424,8 +1424,13 @@ for the grid.
 - **While the line shows, the bar pop-up leaves its thumbnails out,** and with them "Play from
   bar N", which the line offers instead.
 - **Otherwise the bar pop-up offers "Play from bar N",** N being the first bar the grid shows.
-  It plays the pattern from that bar's first step, loops the whole pattern after, and follows
-  it. A song plays from its start, so it is offered only for a pattern.
+  It plays the pattern from that bar's first step and loops the whole pattern after. It leaves
+  Follow as it was. A song plays from its start, so it is offered only for a pattern.
+- **A double click on a thumbnail plays from that bar,** as "Play from bar N" does. A right
+  click, or a long press, plays only that bar, over and over; its thumbnail carries a repeat
+  mark. A right click on it again plays the whole pattern. Play then starts at that bar too.
+  Choosing another pattern, switching to the song, or removing the bar plays whole patterns
+  again. Both work in the line and in the bar pop-up, for a pattern only.
 - **The window's title names the project** once it has one: "Name - TickTapDrum".
 
 ## Export as a keyboard style
