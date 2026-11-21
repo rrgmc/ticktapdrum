@@ -51,7 +51,9 @@ fn main() -> eframe::Result {
         viewport: eframe::egui::ViewportBuilder::default()
             // Shown only until the first frame, when DrumApp sets the title in its language.
             .with_title("TickTapDrum")
-            .with_inner_size([1080.0, 640.0])
+            // Room for the strip, the bar line and about 14 rows. eframe shrinks it to fit a
+            // smaller screen.
+            .with_inner_size([1280.0, 820.0])
             // Matches the Linux desktop file's name, so the dock shows the window under its icon.
             .with_app_id("ticktapdrum")
             // Groove files and packs can be dropped on the window to add them.
