@@ -18,6 +18,9 @@ use dm_project::{
 };
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
+/// Whether this build runs on a desktop, where a mouse has a right button. There a left click on
+/// a row's name only plays the drum, and a right click opens the row's settings.
+const DESKTOP: bool = !cfg!(any(target_os = "android", target_os = "ios"));
 /// The least width of the column of row names, with names showing.
 const LABEL_WIDTH: f32 = 96.0;
 /// The size of a name with names showing.
@@ -339,7 +342,8 @@ impl Grid {
         events
     }
 
-    /// Row names. Tapping one plays its drum and opens its settings.
+    /// Row names. Tapping one plays its drum and opens its settings. On a desktop, a left click
+    /// only plays the drum and a right click opens the settings.
     fn labels(
         &mut self,
         ui: &mut egui::Ui,
@@ -355,8 +359,27 @@ impl Grid {
             let id = egui::Id::unique(("dm-grid-label", row));
             let response = ui.interact(rect, id, Sense::click());
             let down = !self.names_blocked && response.is_pointer_button_down_on();
-            if down && ui.input(|i| i.pointer.any_pressed()) {
-                events.push(GridEvent::Preview { row });
+            if down {
+                let (left, right) = ui.input(|i| {
+                    (
+                        i.pointer.button_pressed(egui::PointerButton::Primary),
+                        i.pointer.button_pressed(egui::PointerButton::Secondary),
+                    )
+                });
+                if DESKTOP {
+                    // A left click only plays the drum, so trying sounds is quick; a right
+                    // click, or a long press on a touch screen, opens the row's settings.
+                    if left {
+                        events.push(GridEvent::Preview { row });
+                    } else if right {
+                        events.push(GridEvent::OpenRow { row, rect });
+                    }
+                } else if left || right {
+                    events.push(GridEvent::Preview { row });
+                    events.push(GridEvent::OpenRow { row, rect });
+                }
+            }
+            if DESKTOP && !self.names_blocked && response.long_touched() {
                 events.push(GridEvent::OpenRow { row, rect });
             }
             let lit = self.highlight == Some(row);

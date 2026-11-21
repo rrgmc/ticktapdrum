@@ -331,7 +331,9 @@ the beat.
   steps in every bar of the pattern being edited, and is one undo step. The fills replace the
   long press planned earlier. The Sounds dialog no longer lists the rows. A drum is chosen from a
   list that replaces the pop-up's contents, because a drop-down list inside a pop-up closes the
-  pop-up when an item is tapped.
+  pop-up when an item is tapped. On desktops, a left click on the name only plays the drum and a
+  right click opens the pop-up, so trying sounds does not open the pop-up each time. A long press
+  opens it on a desktop touch screen.
 - **The pop-up's ▶ button plays the drum again** at the row's volume, once per tap, and leaves
   the pop-up open. Checked on the Android phone by screenshot: three taps kept the pop-up open
   and changed no step. Nobody has listened to it yet.
