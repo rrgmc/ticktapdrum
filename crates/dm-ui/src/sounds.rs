@@ -108,13 +108,20 @@ impl SoundsScreen {
             ui.label(tr!("sounds-max-rows", count = MAX_ROWS));
             return (events, false);
         }
-        let Some(key) = drum_picker(ui, None, &mut self.more_drums, labels) else {
-            return (events, false);
-        };
-        events.push(SoundEvent::Add(key));
-        events.push(SoundEvent::Preview(key, dm_project::DEFAULT_VOLUME));
-        self.more_drums = false;
-        (events, true)
+        let added: Vec<u8> = project.rows().iter().map(|row| row.key).collect();
+        match drum_picker(ui, None, &added, &mut self.more_drums, labels) {
+            Some(Pick::Chosen(key)) => {
+                events.push(SoundEvent::Add(key));
+                events.push(SoundEvent::Preview(key, dm_project::DEFAULT_VOLUME));
+                self.more_drums = false;
+                (events, true)
+            }
+            Some(Pick::Heard(key)) => {
+                events.push(SoundEvent::Preview(key, dm_project::DEFAULT_VOLUME));
+                (events, false)
+            }
+            None => (events, false),
+        }
     }
 }
 
@@ -192,16 +199,27 @@ fn kit_description(kit: &Kit) -> Option<String> {
         .then(|| crate::i18n::tr(id))
 }
 
+/// What a drum picker's button was used for.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Pick {
+    /// A tap or left click chose this drum.
+    Chosen(u8),
+    /// A right click or long press asked to hear this drum without choosing it.
+    Heard(u8),
+}
+
 /// Buttons for choosing a drum: the common ones, then "More drums" for the rest. `current` is
-/// shown as chosen. `more` keeps whether the rest is open; it opens by itself when the current
-/// drum is not a common one. Returns the drum tapped, if any.
+/// shown as chosen. The drums in `added` already have a row: they show faint and cannot be
+/// chosen, but can still be heard. `more` keeps whether the rest is open; it opens by itself
+/// when the current drum is not a common one. Returns what a button was used for, if anything.
 /// With `labels` showing pictures, each drum shows its picture beside its name.
 pub(crate) fn drum_picker(
     ui: &mut egui::Ui,
     current: Option<u8>,
+    added: &[u8],
     more: &mut bool,
     labels: RowLabels,
-) -> Option<u8> {
+) -> Option<Pick> {
     use crate::icons;
     use crate::widgets::toggle_button;
 
@@ -213,6 +231,11 @@ pub(crate) fn drum_picker(
     let mut button = |ui: &mut egui::Ui, key: u8, name: &str| {
         // The spaces leave room for the stripe or the picture.
         let room = if pictures { "         " } else { "  " };
+        let taken = added.contains(&key);
+        let opacity = ui.opacity();
+        if taken {
+            ui.multiply_opacity(0.4);
+        }
         let response = ui.add(toggle_button(
             current == Some(key),
             "",
@@ -235,8 +258,14 @@ pub(crate) fn drum_picker(
             ui.painter()
                 .rect_filled(stripe, egui::CornerRadius::same(2), colour);
         }
-        if response.clicked() {
-            picked = Some(key);
+        ui.set_opacity(opacity);
+        if response.secondary_clicked() || response.long_touched() {
+            picked = Some(Pick::Heard(key));
+        } else if response.clicked() && !taken {
+            picked = Some(Pick::Chosen(key));
+        }
+        if taken {
+            response.on_hover_text(tr!("sounds-already-added"));
         }
     };
     ui.horizontal_wrapped(|ui| {
