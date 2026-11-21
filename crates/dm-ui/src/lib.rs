@@ -1206,7 +1206,11 @@ impl DrumApp {
                         self.set_loop_bar(engine, None);
                     } else {
                         self.set_loop_bar(engine, Some(bar));
-                        if !self.playing {
+                        if self.playing {
+                            // The grid shows the bar that now plays.
+                            self.view_bar = bar;
+                            self.half = 0;
+                        } else {
                             self.play_from_bar(engine, bar);
                         }
                     }
