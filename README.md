@@ -44,7 +44,7 @@ Download the file for your system from the
 | Linux (x86_64) | `ticktapdrum_<version>_amd64.deb` | `sudo apt install ./ticktapdrum_<version>_amd64.deb` on Debian, or Ubuntu 22.04 and later. |
 | Linux (x86_64) | `ticktapdrum-<version>-linux-x86_64.tar.gz` | Unpack it and run `ticktapdrum`. |
 | Android | `ticktapdrum-<version>-android.apk` | Open it on the phone and allow installing apps from that source. |
-| iPhone and iPad | `ticktapdrum-<version>-ios.ipa` | The file is not signed. A sideloading tool must sign it before iOS installs it. |
+| iPhone and iPad | `ticktapdrum-<version>-ios.ipa` | The file is not signed. A sideloading tool such as [Sideloadly](https://sideloadly.io) or [Impactor](https://github.com/khcrysalis/impactor) signs it with your Apple ID and installs it, from Windows or macOS. |
 
 The first time you start it, your system may warn you about an unknown app:
 

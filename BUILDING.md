@@ -293,7 +293,15 @@ xcrun devicectl device install app --device <device id> Payload/TickTapDrum.app
 
 It installs only on devices registered to that team when it was built.
 
-**The IPA from GitHub Releases** is unsigned, so sign it with your own team first:
+**The IPA from GitHub Releases** is unsigned. The simplest way to install it is a sideloading
+tool such as [Sideloadly](https://sideloadly.io) or
+[Impactor](https://github.com/khcrysalis/impactor). Both run on Windows and macOS, and Impactor
+on Linux too. You give them the IPA and your Apple ID; they make the certificate and the
+provisioning profile, register the device, sign the app and install it. On Windows both need
+iTunes from Apple's website, not from the Microsoft Store. With a free Apple ID the app stops
+working after 7 days; with a paid developer account it lasts much longer.
+
+To sign it by hand on a Mac instead, with your own team:
 
 1. Get a provisioning profile. The simplest way is to run `tools/ios/build.sh` once with
    `DM_IOS_TEAM` set and the device connected: Xcode registers the device and makes a profile
