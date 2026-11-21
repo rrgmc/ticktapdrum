@@ -1012,6 +1012,11 @@ impl DrumApp {
             match event {
                 grid::GridEvent::Preview { row } => self.preview_row(engine, row),
                 grid::GridEvent::OpenRow { .. } => {}
+                grid::GridEvent::MoveRow { from, to } => {
+                    self.row_popup.close();
+                    let result = self.project.move_row(from, to);
+                    self.finish(engine, result);
+                }
                 grid::GridEvent::AddOffered { key } => {
                     let now = ui.input(|i| i.time);
                     self.add_offered(engine, key, now);

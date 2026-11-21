@@ -333,7 +333,8 @@ the beat.
   list that replaces the pop-up's contents, because a drop-down list inside a pop-up closes the
   pop-up when an item is tapped. On desktops, a left click on the name only plays the drum and a
   right click opens the pop-up, so trying sounds does not open the pop-up each time. A long press
-  opens it on a desktop touch screen.
+  opens it on a desktop touch screen. Dragging a name up or down on a desktop moves the row; a bar
+  shows where it will go.
 - **The pop-up's ▶ button plays the drum again** at the row's volume, once per tap, and leaves
   the pop-up open. Checked on the Android phone by screenshot: three taps kept the pop-up open
   and changed no step. Nobody has listened to it yet.

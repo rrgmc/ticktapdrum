@@ -134,6 +134,8 @@ pub(crate) enum GridEvent {
     /// Open the settings of a row beside its name. Comes with `Preview` when a name is tapped.
     /// `rect` is the name's place on the screen, for the pop-up to sit beside.
     OpenRow { row: usize, rect: Rect },
+    /// Move a row to another position: its name was dragged there, on a desktop.
+    MoveRow { from: usize, to: usize },
     /// Add the drum on offer with this key as a row.
     AddOffered { key: u8 },
     /// Take the drum on offer with this key away, with the notes recorded on it.
@@ -169,6 +171,8 @@ pub(crate) struct Grid {
     highlight: Option<usize>,
     /// Where each row's name was drawn on the last frame.
     label_rects: Vec<Rect>,
+    /// While a row's name is dragged on a desktop: that row, and where it would go if dropped now.
+    dragging: Option<(usize, usize)>,
     /// The keys played on the MIDI keyboard lately, each with when (egui's clock, in seconds).
     /// Their rows' names light up for [`FLASH_SECONDS`].
     flashes: Vec<(u8, f64)>,
@@ -342,8 +346,41 @@ impl Grid {
         events
     }
 
+    /// Follows a drag of a row's name on a desktop. While it lasts, a bar shows where the row
+    /// would go; dropping it there moves the row.
+    fn drag(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        row: usize,
+        rows: usize,
+        layout: &Layout,
+        events: &mut Vec<GridEvent>,
+    ) {
+        if response.drag_started_by(egui::PointerButton::Primary) {
+            self.dragging = Some((row, row));
+        }
+        let Some((from, _)) = self.dragging.filter(|(from, _)| *from == row) else {
+            return;
+        };
+        // The row whose place the pointer is over now.
+        let y = ui
+            .input(|i| i.pointer.latest_pos())
+            .map_or(0.0, |pos| pos.y - layout.labels.min.y);
+        let to = ((y / layout.cell.y).floor().max(0.0) as usize).min(rows.saturating_sub(1));
+        if response.drag_stopped() {
+            self.dragging = None;
+            if to != from {
+                events.push(GridEvent::MoveRow { from, to });
+            }
+        } else if response.dragged() {
+            self.dragging = Some((from, to));
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        }
+    }
+
     /// Row names. Tapping one plays its drum and opens its settings. On a desktop, a left click
-    /// only plays the drum and a right click opens the settings.
+    /// only plays the drum, a right click opens the settings, and a drag moves the row.
     fn labels(
         &mut self,
         ui: &mut egui::Ui,
@@ -357,7 +394,15 @@ impl Grid {
             let rect = layout.label_rect(row);
             self.label_rects.push(rect);
             let id = egui::Id::unique(("dm-grid-label", row));
-            let response = ui.interact(rect, id, Sense::click());
+            let sense = if DESKTOP {
+                Sense::click_and_drag()
+            } else {
+                Sense::click()
+            };
+            let response = ui.interact(rect, id, sense);
+            if DESKTOP && !self.names_blocked {
+                self.drag(ui, &response, row, project.rows().len(), layout, events);
+            }
             let down = !self.names_blocked && response.is_pointer_button_down_on();
             if down {
                 let (left, right) = ui.input(|i| {
@@ -435,6 +480,21 @@ impl Grid {
                     ui.visuals().warn_fg_color,
                 );
             }
+        }
+        // While a name is dragged, a bar marks where the row would go: above the row it would
+        // take the place of when moving up, below it when moving down.
+        if let Some((from, to)) = self.dragging.filter(|(from, to)| from != to) {
+            let target = layout.label_rect(to);
+            let y = if to < from {
+                target.top() - GAP / 2.0
+            } else {
+                target.bottom() + GAP / 2.0
+            };
+            let colour = ui.visuals().selection.stroke.color;
+            ui.painter().line_segment(
+                [Pos2::new(target.left(), y), Pos2::new(target.right(), y)],
+                Stroke::new(3.0, colour),
+            );
         }
     }
 
