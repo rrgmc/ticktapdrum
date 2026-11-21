@@ -2008,7 +2008,10 @@ impl DrumApp {
                 self.playing = false;
                 self.preview = Some((pack, groove));
             }
-            GrooveEvent::Stop => self.stop_preview(engine),
+            GrooveEvent::Stop => {
+                self.stop_preview(engine);
+                engine.silence();
+            }
             GrooveEvent::Add { pack, groove } => {
                 let Some(groove) = self.groove(&pack, groove).cloned() else {
                     return;

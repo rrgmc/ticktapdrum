@@ -159,6 +159,13 @@
 //! the hit came from [`Engine::hit`] or from a pattern. A new hit on the same key moves that
 //! deadline, so a note-off never cuts a fresh hit.
 //!
+//! Some kits have sounds whose release lasts many seconds after that note-off. So
+//! [`Engine::stop`] also silences: the renderer fades the whole output to nothing over
+//! [`SILENCE_SECONDS`], then resets the synthesizer, which ends every voice and the reverb and
+//! chorus tails, and selects the kit again. A hit or a play that comes during the fade ends it at
+//! once, so the new sound is heard whole. [`Engine::silence`] does the same without stopping.
+//! The end of a song that does not loop does not silence: its last hits ring out.
+//!
 //! # Offline rendering
 //!
 //! [`OfflineRender`] runs the same renderer, sequencer and synthesizer without an audio device,
@@ -202,6 +209,10 @@ pub const RING_SECONDS: f32 = 4.0;
 /// note-offs for a few seconds went silent while the beat played; see "Milestone 9: MIDI out" in
 /// `docs/DESIGN.md`.
 pub const MIDI_NOTE_SECONDS: f32 = 0.1;
+
+/// How long [`Engine::stop`] takes to fade out the sounds still ringing. Short enough to feel
+/// instant, long enough not to click.
+pub const SILENCE_SECONDS: f32 = 0.02;
 
 /// The most drum rows a project can have. All patterns share the rows.
 pub const MAX_ROWS: usize = 32;
@@ -480,6 +491,9 @@ enum Command {
     },
     /// Stops the preview if it plays. Leaves the project's play alone.
     StopPreview,
+    /// Fades out every sound still ringing over [`SILENCE_SECONDS`], and ends the notes MIDI
+    /// out still holds. Leaves play alone.
+    Silence,
 }
 
 impl Command {
@@ -1094,7 +1108,8 @@ impl Sequencer {
             Command::NoteOn { .. }
             | Command::ProgramChange { .. }
             | Command::SetMidiOut { .. }
-            | Command::SetMidiVolume { .. } => {
+            | Command::SetMidiVolume { .. }
+            | Command::Silence => {
                 // The renderer applies these; they do not touch the sequencer.
             }
         }
@@ -1278,6 +1293,10 @@ pub(crate) struct Renderer {
     /// For each key, the frame at which the synthesizer's note-off is due, or `NO_NOTE_OFF`.
     note_off_at: [u64; 128],
     ring_frames: u64,
+    /// The frames left of a fade started by [`Command::Silence`], or 0 when none runs.
+    fade_left: u64,
+    /// The length of a whole fade in frames, at least 1.
+    fade_frames: u64,
     /// For each key, the frame at which MIDI out's note-off is due, or `NO_NOTE_OFF`. Kept apart
     /// from `note_off_at` because MIDI notes end much sooner; see [`MIDI_NOTE_SECONDS`].
     midi_off_at: [u64; 128],
@@ -1349,6 +1368,8 @@ impl Renderer {
             clock: 0,
             note_off_at: [NO_NOTE_OFF; 128],
             ring_frames: (RING_SECONDS * sample_rate as f32) as u64,
+            fade_left: 0,
+            fade_frames: ((SILENCE_SECONDS * sample_rate as f32) as u64).max(1),
             midi_off_at: [NO_NOTE_OFF; 128],
             midi_note_frames: (MIDI_NOTE_SECONDS * sample_rate as f32) as u64,
             sample_rate: f64::from(sample_rate),
@@ -1459,6 +1480,10 @@ impl Renderer {
             self.apply(command);
         }
         self.play_live_hits();
+        if self.fade_left > 0 && self.sequencer.clock.playing {
+            // Play started again during the fade: end it now, so the new hits are not faded.
+            self.cut();
+        }
         let block = self.left.len() as u64;
         let at = self.midi_out.then(|| self.block_time());
         let Renderer {
@@ -1505,6 +1530,9 @@ impl Renderer {
             }
         }
         self.synth.render(&mut self.left, &mut self.right);
+        if self.fade_left > 0 {
+            self.fade_block();
+        }
         if self.midi_out {
             // The synthesizer keeps running so its state stays the same as with sound, but the
             // MIDI device plays the notes instead.
@@ -1609,6 +1637,7 @@ impl Renderer {
                 self.send_midi([MIDI_PROGRAM_CHANGE, self.program, 0], 2);
             }
             Command::SetMidiOut { on } => self.set_midi_out(on),
+            Command::Silence => self.silence(),
             Command::SetMidiVolume { volume } => {
                 // The synthesizer does not hear it: the volume is the MIDI device's alone.
                 self.midi_volume = volume.min(127);
@@ -1621,8 +1650,55 @@ impl Renderer {
         }
     }
 
-    /// Starts a drum hit now and moves its key's note-off deadlines.
+    /// Starts a fade of every sound still ringing, unless one already runs, and sends MIDI out's
+    /// pending note-offs now.
+    fn silence(&mut self) {
+        if self.fade_left == 0 {
+            self.fade_left = self.fade_frames;
+        }
+        if self.midi_out {
+            for key in 0..=127_u8 {
+                if self.midi_off_at[usize::from(key)] != NO_NOTE_OFF {
+                    self.midi_off_at[usize::from(key)] = NO_NOTE_OFF;
+                    self.send_midi([MIDI_NOTE_OFF, key, 0], 3);
+                }
+            }
+        }
+    }
+
+    /// Scales the block just rendered by the fade, which falls linearly from where it is to 0,
+    /// and cuts every sound when the fade ends.
+    fn fade_block(&mut self) {
+        let total = self.fade_frames as f32;
+        let mut left = self.fade_left;
+        for (l, r) in self.left.iter_mut().zip(self.right.iter_mut()) {
+            left = left.saturating_sub(1);
+            let gain = left as f32 / total;
+            *l *= gain;
+            *r *= gain;
+        }
+        self.fade_left = left;
+        if left == 0 {
+            self.cut();
+        }
+    }
+
+    /// Ends every sound at once, reverb and chorus tails included, and forgets their note-offs.
+    /// Keeps the kit.
+    fn cut(&mut self) {
+        self.synth.reset();
+        self.synth
+            .process_midi_message(DRUM_CHANNEL, 0xC0, i32::from(self.program), 0);
+        self.note_off_at.fill(NO_NOTE_OFF);
+        self.fade_left = 0;
+    }
+
+    /// Starts a drum hit now and moves its key's note-off deadlines. A fade still running is
+    /// ended first, so the hit is heard whole.
     fn note_on(&mut self, key: u8, velocity: u8) {
+        if self.fade_left > 0 {
+            self.cut();
+        }
         self.synth
             .note_on(DRUM_CHANNEL, i32::from(key), i32::from(velocity));
         self.note_off_at[usize::from(key.min(127))] = self.clock + self.ring_frames;
@@ -1886,8 +1962,8 @@ impl Engine {
     /// 0 are ignored. A velocity above 127 plays at 127. The keys play directly, without row
     /// gain. Of two hits on the same step and key, the louder one plays.
     ///
-    /// Stops the song or pattern that plays, as [`Engine::stop`] does. Calling it again replaces
-    /// the preview and starts it again from step 0. Sounds already started ring out.
+    /// Stops the song or pattern that plays. Calling it again replaces the preview and starts it
+    /// again from step 0. Sounds already started ring out.
     pub fn preview(&mut self, hits: Vec<PreviewHit>, steps: usize) {
         for command in Command::preview(&hits, steps) {
             if command.is_transport() {
@@ -1961,11 +2037,20 @@ impl Engine {
         }
     }
 
-    /// Stops play, also of the preview. Sounds already started ring out.
+    /// Stops play, also of the preview, and silences every sound still ringing, as
+    /// [`Engine::silence`] does.
     pub fn stop(&mut self) {
         self.send_transport(Command::Stop);
+        self.silence();
         self.expect_playing = false;
         self.expect_previewing = false;
+    }
+
+    /// Fades out every sound still ringing over [`SILENCE_SECONDS`], also hits played with
+    /// [`Engine::hit`], and sends MIDI out's pending note-offs now. Leaves play alone: hits
+    /// played after it sound as usual.
+    pub fn silence(&mut self) {
+        self.commands.send(Command::Silence);
     }
 
     fn send_transport(&mut self, command: Command) {
@@ -3308,6 +3393,87 @@ mod tests {
             renderer.render(&mut out, 2);
         }
         assert_eq!(renderer.note_off_at[42], NO_NOTE_OFF);
+    }
+
+    #[test]
+    fn silence_fades_every_sound_to_nothing() {
+        let font = soundfont_or_skip!();
+        let (mut commands, mut renderer) = Renderer::new(&font, RATE).unwrap();
+        // A crash cymbal rings for seconds.
+        commands.hit(49, 127);
+        let mut out = vec![0.0_f32; 2 * (RATE as usize / 10)];
+        renderer.render(&mut out, 2);
+        assert!(energy(&out) > 1e-3);
+
+        commands.send(Command::Silence);
+        let fade = renderer.fade_frames as usize;
+        let mut faded = vec![0.0_f32; 2 * fade];
+        renderer.render(&mut faded, 2);
+        // The fade starts from the sound and falls to nothing, without a jump.
+        assert!(energy(&faded[..fade / 2]) > 1e-4);
+        let peak_end = faded[2 * fade - 2 * 64..]
+            .iter()
+            .fold(0.0_f32, |m, s| m.max(s.abs()));
+        let peak_start = faded[..2 * 64].iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+        assert!(peak_end < peak_start / 4.0, "{peak_end} vs {peak_start}");
+
+        // After the fade, nothing is left: no voice, no reverb tail, no pending note-off.
+        renderer.render(&mut out, 2);
+        assert!(out.iter().all(|s| *s == 0.0));
+        assert_eq!(renderer.synth.get_active_voice_count(), 0);
+        assert_eq!(renderer.note_off_at[49], NO_NOTE_OFF);
+        assert_eq!(renderer.fade_left, 0);
+    }
+
+    #[test]
+    fn a_hit_during_the_fade_is_heard_whole() {
+        let font = soundfont_or_skip!();
+        let (mut commands, mut renderer) = Renderer::new(&font, RATE).unwrap();
+        let mut fresh = vec![0.0_f32; 2 * (RATE as usize / 10)];
+        commands.hit(38, 100);
+        renderer.render(&mut fresh, 2);
+
+        let (mut commands, mut renderer) = Renderer::new(&font, RATE).unwrap();
+        commands.hit(49, 127);
+        let mut out = vec![0.0_f32; 2 * (RATE as usize / 10)];
+        renderer.render(&mut out, 2);
+        commands.send(Command::Silence);
+        let mut block = vec![0.0_f32; 2 * 64];
+        renderer.render(&mut block, 2);
+        assert!(renderer.fade_left > 0);
+        commands.hit(38, 100);
+        renderer.render(&mut out, 2);
+        assert_eq!(renderer.fade_left, 0);
+        // The snare sounds as it does on a fresh synthesizer: the cymbal and the fade are gone.
+        assert_eq!(out, fresh);
+    }
+
+    #[test]
+    fn silence_keeps_the_kit() {
+        let font = soundfont_or_skip!();
+        // A kit whose snare differs from the standard kit's, which a reset would fall back to.
+        let standard = snare(&font, 0, false);
+        let Some(other) = drum_kits(&font)
+            .iter()
+            .map(|k| k.program)
+            .find(|&p| p != 0 && snare(&font, p, false) != standard)
+        else {
+            panic!("every kit of the bank has the standard snare");
+        };
+        let played = |silence: bool| {
+            let (mut commands, mut renderer) = Renderer::new(&font, RATE).unwrap();
+            commands.send(Command::ProgramChange { program: other });
+            if silence {
+                commands.send(Command::Silence);
+                let mut fade = vec![0.0_f32; 2 * RATE as usize / 10];
+                renderer.render(&mut fade, 2);
+            }
+            commands.hit(38, 100);
+            let mut out = vec![0.0_f32; 2 * RATE as usize / 10];
+            renderer.render(&mut out, 2);
+            out
+        };
+        assert_eq!(played(true), played(false));
     }
 
     #[test]
