@@ -445,6 +445,11 @@ impl DrumApp {
         }
         if !self.fonts_installed {
             icons::install(&ctx);
+            // Dark on every platform, whatever the system's setting, so the app looks the same
+            // everywhere.
+            ctx.set_theme(egui::Theme::Dark);
+            // The window's own title bar too, where the system draws one.
+            ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(egui::SystemTheme::Dark));
             self.fonts_installed = true;
         }
         self.bank.poll(&ctx);
