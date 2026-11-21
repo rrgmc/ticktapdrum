@@ -84,10 +84,17 @@ fn render(
     cancel: &AtomicBool,
     ctx: &egui::Context,
 ) -> Result<(), String> {
+    // The kit plays as it does live: the nearest one when the SoundFont lacks it.
+    let kits = dm_audio::drum_kits(&soundfont);
+    let name = project.kit_origin().and_then(|o| o.name.as_deref());
+    let kit = dm_audio::resolve_kit(&kits, project.kit(), name);
     let mut offline = OfflineRender::new(soundfont, WAV_RATE).map_err(reason)?;
     offline.set_tempo(project.tempo);
     for change in project.full_sync() {
         apply_offline(&mut offline, change);
+    }
+    if let Some(kit) = kit {
+        offline.set_kit(kit);
     }
     let mut report = |fraction: f32| {
         if let Ok(mut p) = progress.lock() {

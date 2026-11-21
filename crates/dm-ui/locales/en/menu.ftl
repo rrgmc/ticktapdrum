@@ -39,6 +39,9 @@ menu-key-names-tip = With MIDI in on, show beside each drum the keyboard note th
 # Shows the bars as small pictures under the buttons all the time.
 menu-bar-line = Show bars under the buttons
 menu-language = Language
+# The Sound bank setting: which SoundFont plays. $bank is its name, which is not translated.
+menu-sound-bank = Sound bank
+menu-sound-bank-choice = Sound bank: { $bank }
 # The first choice in the Language dialog: follow the system's language. $language is that
 # language's own name, such as "English".
 menu-language-system = System ({ $language })

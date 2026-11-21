@@ -1,6 +1,6 @@
 //! The menu under ☰, and the dialogs its items open: Save as, Open, Load default style, Export
 //! with its keyboard style step, Language, MIDI output, Paste a drum tab, Add grooves from a
-//! link, Grooves, and the tempo when the strip has no room for it. Its Sound kits and Add
+//! link, Grooves, Sound bank (in `soundbank.rs`), and the tempo when the strip has no room for it. Its Sound kits and Add
 //! instrument items open the dialogs in `sounds.rs`. See "One control strip" in `docs/DESIGN.md`.
 //!
 //! It does everything the old Projects screen did. Starting a new project, opening one, opening
@@ -16,6 +16,7 @@ use crate::keyboard::{self, Goal, StyleStep};
 use crate::link;
 use crate::pictures::RowLabels;
 use crate::projects::{ProjectEvent, ProjectsView};
+use crate::soundbank::{self, BankEvent, BankView};
 use crate::strip::Hidden;
 use crate::tempo::{self, TempoEvent};
 use crate::widgets::{self, TAP, TEXT_SIZE};
@@ -50,6 +51,8 @@ pub(crate) enum MenuEvent {
     MidiInput(Option<String>),
     /// Import grooves, or use the groove list.
     Grooves(GrooveEvent),
+    /// Choose, add or delete a SoundFont.
+    Bank(BankEvent),
 }
 
 /// What the MIDI output item and its dialog show.
@@ -89,6 +92,8 @@ pub(crate) struct MenuView<'a> {
     pub(crate) grooves: GroovesView<'a>,
     /// How far a download from a link has got, while one runs.
     pub(crate) downloading: Option<link::Progress>,
+    /// The Sound bank setting.
+    pub(crate) bank: BankView<'a>,
 }
 
 /// The dialog a menu item opened.
@@ -104,6 +109,7 @@ enum Shown {
     Language,
     MidiOutput,
     MidiInput,
+    SoundBank,
     /// The tab being pasted, and why the last try was refused, if it was.
     PasteTab {
         text: String,
@@ -136,6 +142,8 @@ enum Ask {
     /// Starting a new project from a groove that comes with the app: its place and name.
     Magenta(usize, String),
     Groove(grooves::Ask),
+    /// Deleting an added SoundFont, by file name.
+    DeleteSoundfont(String),
 }
 
 #[derive(Default)]
@@ -564,6 +572,12 @@ fn settings_items(
         open(Shown::Language);
         ui.close();
     }
+    let bank = tr!("menu-sound-bank-choice", bank = view.bank.playing_name());
+    if ui.add(item(icons::WAVEFORM, &bank)).clicked() {
+        open(Shown::SoundBank);
+        events.push(MenuEvent::Bank(BankEvent::List));
+        ui.close();
+    }
     // The item names the output chosen, shortened to fit.
     if let Some(midi) = &view.midi {
         let device = midi.choice.map_or_else(
@@ -703,6 +717,20 @@ impl Menu {
                 })
                 .closed
             }
+            Shown::SoundBank => {
+                let mut delete = None;
+                let closed = widgets::dialog(ctx, "sound-bank", &tr!("menu-sound-bank"), |ui| {
+                    let chosen = soundbank::contents(ui, &view.bank, &mut delete);
+                    // Choosing one is all the dialog is for.
+                    done = chosen.iter().any(|e| matches!(e, BankEvent::Use(_)));
+                    events.extend(chosen.into_iter().map(MenuEvent::Bank));
+                })
+                .closed;
+                if let Some(name) = delete {
+                    self.ask = Some(Ask::DeleteSoundfont(name));
+                }
+                closed
+            }
             Shown::PasteTab { text, refusal } => {
                 let options = &mut self.tab_options;
                 widgets::dialog_at_top(ctx, "paste-tab", &tr!("menu-paste-tab"), |ui| {
@@ -803,6 +831,11 @@ impl Menu {
                     tr!("menu-keep-this"),
                 ),
                 Ask::Groove(ask) => ask.words(),
+                Ask::DeleteSoundfont(name) => (
+                    tr!("soundbank-delete-question", name = crate::bank::stem(name)),
+                    tr!("menu-delete"),
+                    tr!("menu-keep"),
+                ),
             };
             match widgets::confirm(ctx, "menu-question", &question, &yes, &no) {
                 Some(true) => {
@@ -830,6 +863,10 @@ impl Menu {
                         }
                         // The list stays open, to play, add or delete another.
                         Ask::Groove(ask) => events.push(MenuEvent::Grooves(ask.event())),
+                        // The list stays open, to choose another.
+                        Ask::DeleteSoundfont(name) => {
+                            events.push(MenuEvent::Bank(BankEvent::Delete(name)));
+                        }
                     }
                 }
                 Some(false) => self.ask = None,

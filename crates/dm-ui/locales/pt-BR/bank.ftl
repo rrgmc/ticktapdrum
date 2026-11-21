@@ -1,8 +1,8 @@
 # Obter o banco de sons: a oferta de download, o download, o carregamento e os erros.
 # Os ids começam com "bank-". $bank é o nome do banco, que não se traduz.
 
-bank-offer-title = Faltam os sons de bateria
-bank-offer = O TickTapDrum toca os sons de um banco de instrumentos, o { $bank }. Ele é baixado uma vez e fica guardado neste aparelho.
+bank-offer-title = Baixe os sons de bateria
+bank-offer = Para tocar as suas batidas, o TickTapDrum precisa de um conjunto de sons de bateria gravados, chamado { $bank }. Baixe uma vez e ele fica guardado neste aparelho.
 bank-offer-sizes = Download: { $download } MiB. Espaço ocupado: { $space } MiB.
 bank-license-colombo = Licença: CC-BY-SA 4.0, segundo o próprio arquivo; os créditos dele citam outros bancos entre as fontes das amostras.
 bank-license = Licença: { $license }.
@@ -33,3 +33,20 @@ bank-error-nothing = Não há nada para tocar.
 bank-error-render-cancelled = A renderização foi cancelada.
 bank-error-installer-stopped = O download parou inesperadamente.
 bank-error-loading-stopped = O carregamento dos sons de bateria parou inesperadamente.
+
+bank-use-own = Usar um arquivo SoundFont seu
+bank-use-added = Usar { $name }
+bank-adding-title = Adicionando um SoundFont
+bank-add-cancelled = A adição do SoundFont foi cancelada.
+bank-add-failed = Não foi possível adicionar { $name }. { $reason }
+bank-add-no-kits = { $name } não tem kits de bateria, então não foi adicionado.
+bank-add-busy = Já há um SoundFont sendo adicionado. Espere terminar.
+bank-chosen-missing = O SoundFont { $name } não está mais neste aparelho, então o app voltou aos sons de bateria dele.
+bank-load-failed = { $name } não carregou, então o app voltou aos sons de bateria dele. { $reason }
+bank-delete-failed = Não foi possível apagar { $name }. { $reason }
+
+bank-now-playing = Tocando agora: { $bank }.
+bank-made-with = Feito com { $bank }.
+bank-kit-plays-as = O kit { $kit } toca como { $played } aqui.
+bank-sounds-may-differ = Os sons podem soar diferentes aqui.
+bank-kit-program = kit { $program }

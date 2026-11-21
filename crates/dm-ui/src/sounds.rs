@@ -46,18 +46,42 @@ pub(crate) struct SoundsScreen {
 
 impl SoundsScreen {
     /// The Sound kits dialog's contents: a short list of kits, one per line, and the bank's
-    /// other kits on request. The caller puts them in a `widgets::dialog`, which adds the title
-    /// and the close button.
+    /// other kits on request. `played` is the kit that plays for the project's kit; when the
+    /// SoundFont lacks the project's kit, a line at the top says so and the kit played is the one
+    /// marked. The caller puts them in a `widgets::dialog`, which adds the title and the close
+    /// button.
     pub(crate) fn kits_contents(
         &mut self,
         ui: &mut egui::Ui,
         project: &Project,
         kits: &[Kit],
+        played: Option<u8>,
     ) -> Vec<SoundEvent> {
         use crate::icons;
 
         let mut events = Vec::new();
-        let current = project.kit();
+        let asked = project.kit();
+        if let Some(played) = played.filter(|&p| p != asked)
+            && let Some(kit) = kits.iter().find(|k| k.program == played)
+        {
+            let name = project
+                .kit_origin()
+                .and_then(|o| o.name.clone())
+                .unwrap_or_else(|| tr!("bank-kit-program", program = asked));
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(tr!(
+                        "sounds-kit-missing",
+                        kit = name,
+                        played = kit.name.as_str()
+                    ))
+                    .color(ui.visuals().warn_fg_color),
+                )
+                .wrap(),
+            );
+            ui.add_space(6.0);
+        }
+        let current = played.unwrap_or(asked);
         let short: Vec<&Kit> = SHORT_LIST
             .iter()
             .filter_map(|program| kits.iter().find(|k| k.program == *program))

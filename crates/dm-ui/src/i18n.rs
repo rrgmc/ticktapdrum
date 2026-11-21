@@ -131,6 +131,7 @@ locale_files!(
     "tempo.ftl",
     "sounds.ftl",
     "bank.ftl",
+    "soundbank.ftl",
     "errors.ftl",
     "keyboard.ftl",
 );

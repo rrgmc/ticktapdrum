@@ -1,6 +1,7 @@
 # As janelas Kits de sons e Adicionar instrumento. Os ids começam com "sounds-".
 # Os nomes dos kits vêm do banco de sons e não são traduzidos.
 
+sounds-kit-missing = Esta batida pede o { $kit }, que este SoundFont não tem. O { $played } toca no lugar.
 sounds-more-kits = Mais kits
 sounds-fewer-kits = Menos kits
 sounds-kit-standard = A bateria comum, boa para quase tudo

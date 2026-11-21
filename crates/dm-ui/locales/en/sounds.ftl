@@ -1,6 +1,9 @@
 # The Sound kits and Add instrument dialogs. Ids start with "sounds-".
 # Kit names come from the sound bank and are not translated.
 
+# At the top of the list, when the SoundFont playing lacks the beat's kit. $kit is the kit the
+# beat asks for; $played is the kit that plays instead.
+sounds-kit-missing = This beat asks for { $kit }, which this SoundFont does not have. { $played } plays instead.
 # Shows the bank's kits that are not in the short list, below it.
 sounds-more-kits = More kits
 # Hides them again.
