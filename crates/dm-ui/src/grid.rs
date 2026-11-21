@@ -13,7 +13,8 @@
 use crate::offered::Offered;
 use crate::pictures::RowLabels;
 use dm_project::{
-    ACCENT_VELOCITY, Pattern, Project, SOFT_VELOCITY, STEPS_PER_BAR, StepLevels, next_level,
+    ACCENT_VELOCITY, DEFAULT_VELOCITY, Pattern, Project, SOFT_VELOCITY, STEPS_PER_BAR, StepLevels,
+    next_level,
 };
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
@@ -151,6 +152,9 @@ pub(crate) struct Grid {
     gesture: u64,
     /// Which loudness levels a tap on a step goes through.
     step_levels: StepLevels,
+    /// The level the last left click put on a step. A right click puts this level on a step, or
+    /// clears a step that already has it. `None` means the normal level.
+    last_level: Option<u8>,
     /// How the row names show: names, pictures and names, or pictures.
     row_labels: RowLabels,
     /// While set, the steps ignore presses. A pop-up is open, and a tap outside it only closes it.
@@ -216,6 +220,10 @@ impl Grid {
     /// Sets which loudness levels a tap on a step goes through. The caller sets it every frame
     /// before [`Grid::ui`]: the project's choice.
     pub(crate) fn set_step_levels(&mut self, levels: StepLevels) {
+        if levels != self.step_levels {
+            // The level a right click repeats may not exist in the new choice.
+            self.last_level = None;
+        }
         self.step_levels = levels;
     }
 
@@ -582,9 +590,10 @@ impl Grid {
     ) {
         let id = egui::Id::unique("dm-grid-cells");
         let response = ui.interact(layout.cells, id, Sense::click_and_drag());
-        let (pressed, down, pos) = ui.input(|i| {
+        let (pressed, secondary, down, pos) = ui.input(|i| {
             (
                 i.pointer.any_pressed(),
+                i.pointer.button_pressed(egui::PointerButton::Secondary),
                 i.pointer.any_down(),
                 i.pointer.interact_pos(),
             )
@@ -600,8 +609,20 @@ impl Grid {
         let step = layout.view.first_step + column;
         let velocity = pattern.velocity(row, step);
         if pressed && response.is_pointer_button_down_on() {
-            // The first step touched decides what the whole drag writes: its next level.
-            self.paint = Some(next_level(velocity, levels));
+            // The first step touched decides what the whole drag writes. A left click gives it
+            // its next level and remembers that level. A right click gives it the remembered
+            // level, or clears it when it already has that level.
+            let value = if secondary {
+                let last = self.last_level.unwrap_or(DEFAULT_VELOCITY);
+                if velocity == last { 0 } else { last }
+            } else {
+                let next = next_level(velocity, levels);
+                if next > 0 {
+                    self.last_level = Some(next);
+                }
+                next
+            };
+            self.paint = Some(value);
             self.gesture += 1;
         }
         if let Some(value) = self.paint

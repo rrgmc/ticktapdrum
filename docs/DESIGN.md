@@ -107,6 +107,11 @@ Deleting a pattern is a separate, explicit command.
 - A soft step fills the lower half of its cell and is fainter; a loud one fills the cell and
   carries a light top edge, so the level reads by shape as well as colour. A drag paints the
   level the first step touched received.
+- **A right click repeats the last level.** The grid remembers the level the last left click
+  gave a step. A right click gives a step that level, or turns the step off if it already has
+  it, so a run of soft steps needs one left click to reach soft and then a right click each.
+  A right-button drag paints the same. Before any left click, and after the step levels button
+  changes the choice, the level is normal. It is a mouse shortcut only; taps do everything.
 - Steps keep their loudness whichever choice is made, so changing it loses nothing.
 - A beat to start from picks the fewest levels that reach its notes.
 
