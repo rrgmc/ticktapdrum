@@ -327,6 +327,228 @@ fn install_discards_a_bad_stored_archive() {
     assert!(names_in(&dst.0).is_empty());
 }
 
+fn add(dir: &Path, name: &str, data: &[u8]) -> UserSoundfont {
+    add_soundfont(dir, name, &mut &data[..], &|_| {}, &AtomicBool::new(false)).unwrap()
+}
+
+#[test]
+fn add_soundfont_copies_and_records_the_digest() {
+    let dir = TempDir::new("sf-add");
+    let data = member_bytes(1 << 20);
+    let seen = RefCell::new(Vec::new());
+
+    let added = add_soundfont(
+        &dir.0,
+        "GeneralUser-GS.sf2",
+        &mut &data[..],
+        &|n| seen.borrow_mut().push(n),
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    let folder = dir.0.join(SOUNDFONTS_DIR);
+    assert_eq!(added.name, "GeneralUser-GS.sf2");
+    assert_eq!(added.path, folder.join("GeneralUser-GS.sf2"));
+    assert_eq!(added.bytes, data.len() as u64);
+    assert_eq!(added.sha256, sha256_hex(&data));
+    assert_eq!(fs::read(&added.path).unwrap(), data);
+    assert_eq!(
+        names_in(&folder),
+        vec![
+            "GeneralUser-GS.sf2".to_owned(),
+            "GeneralUser-GS.sf2.sha256".to_owned()
+        ]
+    );
+    let seen = seen.into_inner();
+    assert_eq!(seen.first(), Some(&0));
+    assert_eq!(seen.last(), Some(&(data.len() as u64)));
+    assert!(seen.windows(2).all(|w| w[0] <= w[1]));
+    assert_eq!(soundfonts(&dir.0), vec![added]);
+}
+
+#[test]
+fn same_name_and_digest_is_not_copied_again() {
+    let dir = TempDir::new("sf-dedupe");
+    let data = member_bytes(4096);
+
+    let first = add(&dir.0, "Kit.sf2", &data);
+    let second = add(&dir.0, "kit", &data);
+
+    assert_eq!(first, second);
+    assert_eq!(
+        names_in(&dir.0.join(SOUNDFONTS_DIR)),
+        vec!["Kit.sf2".to_owned(), "Kit.sf2.sha256".to_owned()]
+    );
+}
+
+#[test]
+fn same_name_other_digest_is_numbered() {
+    let dir = TempDir::new("sf-numbered");
+    let a = member_bytes(4096);
+    let b = member_bytes(5000);
+    let c = member_bytes(6000);
+
+    let first = add(&dir.0, "Kit.sf2", &a);
+    let second = add(&dir.0, "Kit.sf2", &b);
+    let third = add(&dir.0, "Kit.sf2", &c);
+    // The same file again finds its numbered copy instead of making a fourth.
+    let again = add(&dir.0, "Kit.sf2", &b);
+
+    assert_eq!(first.name, "Kit.sf2");
+    assert_eq!(second.name, "Kit (2).sf2");
+    assert_eq!(third.name, "Kit (3).sf2");
+    assert_eq!(again, second);
+    assert_eq!(fs::read(&second.path).unwrap(), b);
+    assert_eq!(soundfonts(&dir.0).len(), 3);
+}
+
+#[test]
+fn names_are_cleaned() {
+    let cases = [
+        ("GeneralUser-GS.sf2", "GeneralUser-GS.sf2"),
+        ("GeneralUser-GS", "GeneralUser-GS.sf2"),
+        ("Loud.SF2", "Loud.sf2"),
+        ("C:\\Users\\x\\Music\\Drums.sf2", "Drums.sf2"),
+        ("/storage/emulated/0/Drums.sf2", "Drums.sf2"),
+        ("folder/", "folder.sf2"),
+        ("  my <kit>: \"best\"? *|.sf2  ", "my kit best.sf2"),
+        ("tab\there\n.sf2", "tabhere.sf2"),
+        ("...hidden.sf2...", "hidden.sf2"),
+        ("name. .sf2", "name.sf2"),
+        ("", "SoundFont.sf2"),
+        ("   ", "SoundFont.sf2"),
+        ("???.sf2", "SoundFont.sf2"),
+        (".sf2", "SoundFont.sf2"),
+        ("con", "con_.sf2"),
+        ("NUL.txt", "NUL_.txt.sf2"),
+        ("Ça và Ελληνικά.sf2", "Ça và Ελληνικά.sf2"),
+    ];
+    for (given, expected) in cases {
+        assert_eq!(soundfont_file_name(given), expected, "for {given:?}");
+    }
+    let long = soundfont_file_name(&"é".repeat(300));
+    assert_eq!(long, format!("{}.sf2", "é".repeat(100)));
+}
+
+#[test]
+fn add_uses_the_cleaned_name() {
+    let dir = TempDir::new("sf-clean");
+    let added = add(&dir.0, "C:\\Music\\Big: kit", &member_bytes(100));
+    assert_eq!(added.name, "Big kit.sf2");
+    assert_eq!(added.path, dir.0.join(SOUNDFONTS_DIR).join("Big kit.sf2"));
+}
+
+#[test]
+fn cancelled_add_leaves_nothing() {
+    let dir = TempDir::new("sf-cancel");
+    let data = member_bytes(1 << 20);
+    let cancel = AtomicBool::new(false);
+    let saw_partial = std::cell::Cell::new(false);
+    let folder = dir.0.join(SOUNDFONTS_DIR);
+
+    let progress = |done: u64| {
+        if done > 0 {
+            saw_partial.set(!names_in(&folder).is_empty());
+            cancel.store(true, Ordering::Relaxed);
+        }
+    };
+    let err = add_soundfont(&dir.0, "Kit.sf2", &mut &data[..], &progress, &cancel).unwrap_err();
+
+    assert!(matches!(err, BankError::Cancelled), "{err:?}");
+    assert!(saw_partial.get(), "the cancel came before any copy existed");
+    assert!(names_in(&folder).is_empty());
+    assert!(soundfonts(&dir.0).is_empty());
+}
+
+#[test]
+fn failed_read_leaves_nothing() {
+    struct Failing(usize);
+    impl Read for Failing {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.0 == 0 {
+                return Err(io::Error::other("the picked file went away"));
+            }
+            self.0 -= 1;
+            buf[0] = 1;
+            Ok(1)
+        }
+    }
+    let dir = TempDir::new("sf-fail");
+
+    let err = add_soundfont(
+        &dir.0,
+        "Kit.sf2",
+        &mut Failing(10),
+        &|_| {},
+        &AtomicBool::new(false),
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, BankError::Io(_)), "{err:?}");
+    assert!(names_in(&dir.0.join(SOUNDFONTS_DIR)).is_empty());
+}
+
+#[test]
+fn listing_is_sorted_and_skips_unrecorded_files() {
+    let dir = TempDir::new("sf-list");
+    assert!(soundfonts(&dir.0).is_empty(), "no folder yet");
+    add(&dir.0, "beta", &member_bytes(10));
+    add(&dir.0, "Alpha", &member_bytes(20));
+    add(&dir.0, "gamma", &member_bytes(30));
+    let folder = dir.0.join(SOUNDFONTS_DIR);
+    // Files that were never completely added.
+    fs::write(folder.join("NoDigest.sf2"), b"x").unwrap();
+    fs::write(folder.join(".adding-1-1.part"), b"x").unwrap();
+    fs::write(folder.join("Bad.sf2"), b"x").unwrap();
+    fs::write(folder.join("Bad.sf2.sha256"), "not a digest\n1\n").unwrap();
+    fs::write(folder.join("readme.txt"), b"x").unwrap();
+    // A SoundFont whose size no longer matches its record.
+    let delta = add(&dir.0, "Delta", &member_bytes(40));
+    fs::write(&delta.path, b"shorter").unwrap();
+
+    let names: Vec<String> = soundfonts(&dir.0).into_iter().map(|s| s.name).collect();
+    assert_eq!(names, vec!["Alpha.sf2", "beta.sf2", "gamma.sf2"]);
+}
+
+#[test]
+fn an_unrecorded_file_is_replaced_by_an_add() {
+    let dir = TempDir::new("sf-replace");
+    let folder = dir.0.join(SOUNDFONTS_DIR);
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(folder.join("Kit.sf2"), b"left by a crash").unwrap();
+
+    let data = member_bytes(500);
+    let added = add(&dir.0, "Kit", &data);
+
+    assert_eq!(added.name, "Kit.sf2");
+    assert_eq!(fs::read(&added.path).unwrap(), data);
+}
+
+#[test]
+fn find_and_remove() {
+    let dir = TempDir::new("sf-find");
+    let kit = add(&dir.0, "Kit", &member_bytes(100));
+    let other = add(&dir.0, "Other", &member_bytes(200));
+
+    assert_eq!(find_soundfont(&dir.0, "Kit.sf2"), Some(kit.clone()));
+    assert_eq!(find_soundfont(&dir.0, "kit.SF2"), Some(kit.clone()));
+    assert_eq!(find_soundfont(&dir.0, "Missing.sf2"), None);
+
+    remove_soundfont(&dir.0, "Kit.sf2").unwrap();
+    assert_eq!(find_soundfont(&dir.0, "Kit.sf2"), None);
+    assert_eq!(soundfonts(&dir.0), vec![other]);
+    assert_eq!(
+        names_in(&dir.0.join(SOUNDFONTS_DIR)),
+        vec!["Other.sf2".to_owned(), "Other.sf2.sha256".to_owned()]
+    );
+
+    // Removing one that is not there succeeds; a name that is not a plain file name does not.
+    remove_soundfont(&dir.0, "Kit.sf2").unwrap();
+    assert!(remove_soundfont(&dir.0, "../Other.sf2").is_err());
+    assert!(remove_soundfont(&dir.0, "Other.sf2.sha256").is_err());
+    assert_eq!(soundfonts(&dir.0).len(), 1);
+}
+
 /// Installs the real bank from a local copy of its archive, named by `DM_TEST_BANK_ZIP`.
 /// Run with `cargo test -p dm-bank --release -- --ignored`.
 #[test]

@@ -1,4 +1,4 @@
-//! Downloads, verifies and installs the instrument bank.
+//! Downloads, verifies and installs the instrument bank, and keeps the SoundFonts a person adds.
 //!
 //! The bank is never bundled. See "How the bank is downloaded" in `docs/DESIGN.md`.
 //!
@@ -10,6 +10,16 @@
 //! - `<id>.sf2.part`: the member while it is extracted.
 //! - the member's own name, such as `ColomboGMGS2_Vanilla.sf2`: the installed bank.
 //! - `<id>.installed`: the marker, written only after the member's size and digest matched.
+//!
+//! It also keeps the SoundFonts a person added, in the `soundfonts` folder under the same
+//! folder: see [`add_soundfont`] and `src/soundfonts.rs`.
+
+mod soundfonts;
+
+pub use soundfonts::{
+    SOUNDFONTS_DIR, UserSoundfont, add_soundfont, find_soundfont, remove_soundfont,
+    soundfont_file_name, soundfonts, soundfonts_dir,
+};
 
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
