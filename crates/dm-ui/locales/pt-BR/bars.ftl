@@ -2,7 +2,7 @@
 
 bars-header = Compasso { $number }
 bars-add = Novo compasso
-bars-remove-last = Remover o último
+bars-remove-bar = Remover compasso
 bars-copy = Copiar compasso
 bars-follow = Seguir
 bars-remove-question = Remover o compasso { $number }? As notas dele também vão embora.

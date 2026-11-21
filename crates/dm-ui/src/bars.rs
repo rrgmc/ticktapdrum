@@ -5,8 +5,8 @@
 //! more lines. A setting can also show the thumbnails all the time, under the strip, on one line
 //! that scrolls sideways.
 //!
-//! "Remove last bar" asks first, in a window of its own, and then deletes the bar with its
-//! notes. Nothing is kept hidden for later: a bar that is gone is gone, which is easier to
+//! "Remove bar" removes the first bar the grid shows. It asks first, in a window of its own,
+//! and then deletes the bar with its notes; later bars move back one. Nothing is kept hidden for later: a bar that is gone is gone, which is easier to
 //! understand than bars that disappear and come back.
 
 use dm_project::{MAX_BARS, Pattern, STEPS_PER_BAR};
@@ -26,8 +26,8 @@ pub(crate) enum BarEvent {
     /// Show this bar in the grid.
     Select(usize),
     AddBar,
-    /// Delete the last bar and its notes. Sent once the user has said yes.
-    RemoveBar,
+    /// Delete this bar and its notes. Sent once the user has said yes.
+    RemoveBar(usize),
     /// Copy the first bar shown in the grid.
     CopyBar,
     ToggleFollow,
@@ -37,9 +37,9 @@ pub(crate) enum BarEvent {
 
 #[derive(Default)]
 pub(crate) struct BarStrip {
-    /// "Remove last bar" asks first, in a window of its own (see [`BarStrip::confirm`]). Holds
-    /// the number of the bar asked about, counting from 1.
-    asking_remove: Option<usize>,
+    /// "Remove bar" asks first, in a window of its own (see [`BarStrip::confirm`]). Holds the
+    /// bar asked about, counting from 0, and the pattern's bar count when it was asked.
+    asking_remove: Option<(usize, usize)>,
     /// The first bar the grid showed last frame, so the line of thumbnails scrolls to it only
     /// when it changes and leaves a sideways scroll by hand alone otherwise.
     last_shown: Option<usize>,
@@ -101,12 +101,12 @@ impl BarStrip {
             if ui
                 .add_enabled(
                     pattern.bars() > 1,
-                    widgets::button(icons::TRASH, &tr!("bars-remove-last")),
+                    widgets::button(icons::TRASH, &tr!("bars-remove-bar")),
                 )
                 .clicked()
             {
                 // Asked in a window of its own, so the pop-up closes.
-                self.asking_remove = Some(pattern.bars());
+                self.asking_remove = Some((shown.start, pattern.bars()));
                 ui.close();
             }
             if ui
@@ -189,23 +189,26 @@ impl BarStrip {
     }
 
     /// The "Remove bar?" question, in a window of its own. Call it every frame; it shows only
-    /// while the question is asked, and only while `bars`, the pattern's bar count, still matches
-    /// the bar asked about.
+    /// while the question is asked, and only while `bars`, the pattern's bar count, is still what
+    /// it was when asked.
     pub(crate) fn confirm(&mut self, ctx: &egui::Context, bars: usize) -> Vec<BarEvent> {
         let mut events = Vec::new();
-        let Some(number) = self.asking_remove.filter(|&n| n == bars && n > 1) else {
+        let Some((bar, _)) = self
+            .asking_remove
+            .filter(|&(b, n)| n == bars && n > 1 && b < n)
+        else {
             self.asking_remove = None;
             return events;
         };
         match widgets::confirm(
             ctx,
             "remove-bar",
-            &tr!("bars-remove-question", number = number),
+            &tr!("bars-remove-question", number = bar + 1),
             &tr!("bars-remove"),
             &tr!("bars-keep"),
         ) {
             Some(true) => {
-                events.push(BarEvent::RemoveBar);
+                events.push(BarEvent::RemoveBar(bar));
                 self.asking_remove = None;
             }
             Some(false) => self.asking_remove = None,
