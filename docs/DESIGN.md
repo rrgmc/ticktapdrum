@@ -80,11 +80,12 @@ The app uses these words. Each is defined once here.
 
 A pattern has a bar count. Adding a bar is one click.
 
-**Removing the last bar deletes it with its notes**, after asking ("Remove bar 2? Its notes go
-too."). Nothing is kept hidden for later: bars that vanished and came back with their notes when
-a bar was added again confused people, so the interface no longer hides bars. The file format
-still holds steps beyond the bar count, so a file written that way loads unchanged, but the app
-no longer makes them.
+**Removing a bar deletes it with its notes**, after asking ("Remove bar 2? Its notes go
+too."). The bar removed is the first one the grid shows, and later bars move back one. Nothing
+is kept hidden for later: bars that vanished and came back with their notes when a bar was added
+again confused people, so the interface no longer hides bars. The file format still holds steps
+beyond the bar count, so a file written that way loads unchanged, but the app no longer makes
+them.
 
 The same rule applies to patterns. Removing a pattern from the song does not delete the pattern.
 Deleting a pattern is a separate, explicit command.
@@ -300,7 +301,7 @@ the beat.
 |---|---|
 | **Play** | Starts and stops. In song mode it reads "Play song". |
 | **A ▾** | Opens the pattern pop-up, which edits the patterns and the song: the switch between playing the pattern and playing the song; one large tile per pattern, "New", "Copy", "Rename" and "Delete"; then the song's play order, "Add A" and Repeat. Choosing a pattern leaves it open. |
-| **◀ Bar 1 of 4 ▶** | The arrows move one screen of steps back or forward. The label opens the bar pop-up: the bar thumbnails, add a bar, remove the last bar (it asks first), copy the bar, and Follow. |
+| **◀ Bar 1 of 4 ▶** | The arrows move one screen of steps back or forward. The label opens the bar pop-up: the bar thumbnails, add a bar, remove the bar shown (it asks first), copy the bar, and Follow. |
 | **♩ 120** | Opens the tempo pop-up: large − and + buttons, a slider, and Swing. |
 | **▂▄▆** | Step levels: moves to the next choice of what a tap on a step does (see "Steps and loudness"). |
 | **🔊 Sound kits** | Opens the Sound kits dialog, which chooses the drum kit. |
@@ -365,7 +366,7 @@ the beat.
   the question, then a button for each answer: the action, such as "Load", "New", "Delete" or
   "Remove", and "Cancel", the same word wherever nothing is to change. A tap outside
   it or Back counts as the answer that changes nothing. This covers Open, Open a file, Delete a
-  saved beat, Load default style, New, Remove row, Delete pattern and Remove last bar. A question
+  saved beat, Load default style, New, Remove row, Delete pattern and Remove bar. A question
   from a dialog leaves the dialog open behind it; one from a pop-up closes the pop-up first,
   because a tap on the window would otherwise count as a tap outside the pop-up. Checked on
   the Android phone: Load default style and Remove row, answered with Keep and with Back;

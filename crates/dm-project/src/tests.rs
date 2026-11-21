@@ -88,6 +88,43 @@ fn copying_a_bar_inserts_it_after_and_moves_later_bars_without_loss() {
 }
 
 #[test]
+fn deleting_a_bar_removes_its_notes_and_moves_later_bars_back() {
+    let mut p = Project::new();
+    p.add_bar(0).unwrap();
+    p.add_bar(0).unwrap();
+    on(&mut p, 0, 0, 2); // bar 0
+    on(&mut p, 0, 1, 18); // bar 1
+    on(&mut p, 0, 2, 35); // bar 2
+    on(&mut p, 0, 3, MAX_STEPS - 1); // last possible bar, hidden
+    p.delete_bar(0, 1).unwrap();
+    let pat = &p.patterns()[0];
+    assert_eq!(pat.bars(), 2);
+    assert_eq!(pat.velocity(0, 2), DEFAULT_VELOCITY, "bar 0 untouched");
+    assert_eq!(pat.velocity(1, 18), 0, "bar 1 gone");
+    assert_eq!(
+        pat.velocity(2, 19),
+        DEFAULT_VELOCITY,
+        "bar 2 moved to bar 1"
+    );
+    assert_eq!(pat.velocity(2, 35), 0);
+    assert_eq!(
+        pat.velocity(3, MAX_STEPS - 1 - STEPS_PER_BAR),
+        DEFAULT_VELOCITY,
+        "hidden bars move too"
+    );
+    assert_eq!(pat.velocity(3, MAX_STEPS - 1), 0);
+}
+
+#[test]
+fn deleting_a_bar_is_refused_for_the_only_bar_or_one_out_of_range() {
+    let mut p = Project::new();
+    assert_eq!(p.delete_bar(0, 0), Err(Refused::LastBar));
+    p.add_bar(0).unwrap();
+    assert_eq!(p.delete_bar(0, 2), Err(Refused::OutOfRange));
+    assert_eq!(p.patterns()[0].bars(), 2);
+}
+
+#[test]
 fn copying_is_refused_when_the_last_possible_bar_holds_notes() {
     let mut p = Project::new();
     on(&mut p, 0, 0, MAX_STEPS - 1);

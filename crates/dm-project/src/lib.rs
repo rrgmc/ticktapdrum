@@ -725,6 +725,26 @@ impl Project {
         }])
     }
 
+    /// Deletes `bar` with its notes. Every later bar, hidden ones included, moves one bar
+    /// earlier, so the pattern is one bar shorter.
+    pub fn delete_bar(&mut self, index: usize, bar: usize) -> Result<Vec<Change>, Refused> {
+        let pattern = self.patterns.get_mut(index).ok_or(Refused::OutOfRange)?;
+        if bar >= pattern.bars {
+            return Err(Refused::OutOfRange);
+        }
+        if pattern.bars <= 1 {
+            return Err(Refused::LastBar);
+        }
+        let before = pattern.clone();
+        let start = bar * STEPS_PER_BAR;
+        for row in pattern.steps.iter_mut() {
+            row.copy_within(start + STEPS_PER_BAR..MAX_STEPS, start);
+            row[MAX_STEPS - STEPS_PER_BAR..].fill(0);
+        }
+        pattern.bars -= 1;
+        Ok(diff(&before, pattern))
+    }
+
     /// Inserts a copy of `bar` right after it. Every later bar, hidden ones included, moves one
     /// bar later, so no note is overwritten. Refused if the last possible bar holds notes, because
     /// they would have nowhere to go.

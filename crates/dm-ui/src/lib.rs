@@ -1178,13 +1178,19 @@ impl DrumApp {
                     result
                 }
                 // The bar goes with its notes: nothing is kept hidden for later.
-                bars::BarEvent::RemoveBar => {
-                    self.project
-                        .remove_bar(self.current)
-                        .and_then(|mut changes| {
-                            changes.extend(self.project.clear_hidden_bars(self.current)?);
-                            Ok(changes)
-                        })
+                bars::BarEvent::RemoveBar(bar) => {
+                    let result =
+                        self.project
+                            .delete_bar(self.current, bar)
+                            .and_then(|mut changes| {
+                                changes.extend(self.project.clear_hidden_bars(self.current)?);
+                                Ok(changes)
+                            });
+                    if result.is_ok() {
+                        let bars = self.project.patterns()[self.current].bars();
+                        self.view_bar = self.view_bar.min(bars - 1);
+                    }
+                    result
                 }
                 bars::BarEvent::CopyBar => {
                     let result = self.project.copy_bar(self.current, self.view_bar);
