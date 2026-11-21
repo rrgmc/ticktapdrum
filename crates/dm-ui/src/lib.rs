@@ -780,7 +780,7 @@ impl DrumApp {
             can_undo: self.history.can_undo(),
             can_redo,
             step_levels: self.project.step_levels(),
-            midi_device: self.midi.choice().filter(|_| self.midi.connected()),
+            midi_device: self.midi.choice().map(|name| (name, self.midi.connected())),
             recording_from: self
                 .midi
                 .input_name()

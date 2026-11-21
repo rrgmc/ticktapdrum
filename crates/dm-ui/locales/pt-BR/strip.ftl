@@ -9,6 +9,7 @@ strip-stop = Parar
 # Dica no botão Tocar quando a bateria vai para uma saída MIDI em vez dos alto-falantes deste
 # aparelho. $device é o nome da saída, como o sistema informa.
 strip-midi-tip = A bateria toca em { $device }.
+strip-midi-missing-tip = { $device } não está conectado. A bateria toca aqui até ele voltar.
 # Dica no botão Tocar enquanto a entrada MIDI está ligada e conectada: tocar um padrão grava as
 # batidas dela. $device é o nome da entrada, como o sistema informa.
 strip-record-tip = Tocar grava o que vem de { $device }.
