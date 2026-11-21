@@ -12,7 +12,7 @@ use egui::{Id, LayerId, Popup, PopupCloseBehavior, Rect, RectAlign, RichText, Ve
 use crate::drums::{drum_name, row_name};
 use crate::grid::Grid;
 use crate::icons;
-use crate::sounds::SoundEvent;
+use crate::sounds::{Pick, SoundEvent};
 use crate::widgets::{TAP, TEXT_SIZE, button, toggle_button};
 
 /// The gap between the pop-up and the screen's edges, and room for its frame.
@@ -401,14 +401,18 @@ impl RowPopup {
             self.page = Page::Settings;
             return;
         }
-        if let Some(key) =
-            crate::sounds::drum_picker(ui, Some(info.key), &mut self.more_drums, labels)
-        {
-            if info.key != key {
-                events.push(RowEvent::Sound(SoundEvent::SetDrum(row, key)));
+        match crate::sounds::drum_picker(ui, Some(info.key), &[], &mut self.more_drums, labels) {
+            Some(Pick::Chosen(key)) => {
+                if info.key != key {
+                    events.push(RowEvent::Sound(SoundEvent::SetDrum(row, key)));
+                }
+                events.push(RowEvent::Sound(SoundEvent::Preview(key, info.volume)));
+                self.page = Page::Settings;
             }
-            events.push(RowEvent::Sound(SoundEvent::Preview(key, info.volume)));
-            self.page = Page::Settings;
+            Some(Pick::Heard(key)) => {
+                events.push(RowEvent::Sound(SoundEvent::Preview(key, info.volume)));
+            }
+            None => {}
         }
     }
 

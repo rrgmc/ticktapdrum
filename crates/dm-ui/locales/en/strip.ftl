@@ -9,6 +9,9 @@ strip-stop = Stop
 # Hover text on Play while the drums go to a MIDI output instead of this device's speakers.
 # $device is the output's name, as the system reports it.
 strip-midi-tip = The drums play on { $device }.
+# Hover text on Play while a MIDI output is chosen but not connected, so the drums play on this
+# device. $device is the output's name, as the system reports it.
+strip-midi-missing-tip = { $device } is not connected. The drums play here until it is.
 # Hover text on Play while the MIDI input is on and connected: playing a pattern records the
 # hits from it. $device is the input's name, as the system reports it.
 strip-record-tip = Playing records from { $device }.

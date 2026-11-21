@@ -33,6 +33,13 @@
 //!   to another pattern at the next bar boundary (a bar is 16 steps, and the end of the pattern
 //!   is a boundary too). Play goes on in the new pattern at the bar after the current one, wrapped
 //!   to the new pattern's bar count, so the change is heard within a bar and stays in time.
+//!   [`Engine::set_loop_bar`] limits play to one bar of the pattern: the step after the bar's
+//!   last step is the bar's first step. If play is outside the bar when it is set, play moves
+//!   into the bar at the next step, at the same step within a bar. A play call that starts
+//!   outside the bar starts inside it the same way. A cued pattern starts at the first step of
+//!   its own copy of the bar. A bar the pattern does not have, for example after the pattern got
+//!   shorter, counts as no loop bar. The loop bar stays set across play, cue and stop until it
+//!   is cleared; playing the song clears it.
 //! - Song mode ([`Engine::play_song`]) plays each entry's pattern once through its own length,
 //!   then the next entry. After the last entry it starts again at entry 0 if the song loops, and
 //!   otherwise stops at the end of the last step; sounds already started ring out.
@@ -41,7 +48,7 @@
 //! last and the settings at that moment. So every change counts from the next step on:
 //!
 //! - A shorter length in pattern mode wraps the position: the step after step `s` is
-//!   `(s + 1) % length`. In song mode a length at or below the current position ends the entry.
+//!   `(s + 1) % length`, moved into the loop bar if one is set. In song mode a length at or below the current position ends the entry.
 //! - A new song order keeps the current entry playing to its end. Then play goes on at the next
 //!   index of the new order. If that index is past the end of the new order, play wraps to
 //!   entry 0 when the song loops and stops otherwise. The same holds for turning the loop off.
@@ -463,6 +470,10 @@ enum Command {
     },
     CuePattern {
         pattern: u8,
+    },
+    /// The bar that pattern mode loops over, or `None` for the whole pattern.
+    SetLoopBar {
+        bar: Option<u8>,
     },
     PlaySong {
         from: u8,
@@ -893,6 +904,9 @@ struct Sequencer {
     last: Option<Playhead>,
     /// In pattern mode, the pattern to switch to at the next bar boundary.
     cue: Option<usize>,
+    /// The bar that pattern mode loops over, or `None` for the whole pattern. A bar at or past
+    /// the playing pattern's bar count counts as `None`.
+    loop_bar: Option<usize>,
     history: StepHistory,
     /// The preview track: the velocity of each key at each of `MAX_STEPS` steps, 0 for none.
     /// Allocated once in `new`.
@@ -916,6 +930,7 @@ impl Sequencer {
             first: None,
             last: None,
             cue: None,
+            loop_bar: None,
             history: StepHistory::new(),
             preview: vec![[0; KEYS]; MAX_STEPS].into_boxed_slice(),
             preview_len: BAR,
@@ -925,6 +940,25 @@ impl Sequencer {
     /// Whether a project pattern or the song plays, as opposed to the preview or nothing.
     fn plays_project(&self) -> bool {
         self.clock.playing && self.mode != Mode::Preview
+    }
+
+    /// The steps of `pattern` that the loop bar covers, as `start..end`, or `None` if no loop bar
+    /// is set or the pattern is too short to have that bar. The end is the pattern's length if
+    /// the pattern ends inside the bar. Applies to pattern mode only; the caller checks the mode.
+    fn loop_span(&self, pattern: usize) -> Option<std::ops::Range<usize>> {
+        let length = *self.lengths.get(pattern)?;
+        let start = self.loop_bar? * BAR;
+        (start < length).then(|| start..(start + BAR).min(length))
+    }
+
+    /// `step` of `pattern` moved into the loop bar, keeping its offset within its bar, wrapped
+    /// to the loop bar's length. A step already inside the loop bar, or any step when no loop
+    /// bar applies, stays as it is.
+    fn moved_into_loop(&self, pattern: usize, step: usize) -> usize {
+        match self.loop_span(pattern) {
+            Some(span) if !span.contains(&step) => span.start + step % BAR % span.len(),
+            _ => step,
+        }
     }
 
     /// Whether the preview plays.
@@ -963,7 +997,15 @@ impl Sequencer {
         };
         let length = *self.lengths.get(position.pattern)? as f64;
         let mut step = position.step as f64 + steps;
-        if step >= length {
+        let span = self
+            .loop_span(position.pattern)
+            .filter(|span| self.mode == Mode::Pattern && span.contains(&position.step));
+        if let Some(span) = span {
+            let (start, end) = (span.start as f64, span.end as f64);
+            if step >= end {
+                step = start + (step - start) % (end - start);
+            }
+        } else if step >= length {
             step %= length;
         }
         Some(HeardPosition {
@@ -1026,15 +1068,16 @@ impl Sequencer {
                 let pattern = usize::from(pattern);
                 if pattern < MAX_PATTERNS {
                     let from = usize::from(from);
+                    let from = if from < self.lengths[pattern] {
+                        from
+                    } else {
+                        0
+                    };
                     self.start(
                         Mode::Pattern,
                         Playhead {
                             pattern,
-                            step: if from < self.lengths[pattern] {
-                                from
-                            } else {
-                                0
-                            },
+                            step: self.moved_into_loop(pattern, from),
                             song_index: None,
                         },
                         now,
@@ -1048,9 +1091,19 @@ impl Sequencer {
                     self.cue = (current != Some(pattern)).then_some(pattern);
                 }
             }
+            Command::SetLoopBar { bar } => {
+                self.loop_bar = bar.map(usize::from);
+                if let Some(first) = self.first.filter(|_| self.mode == Mode::Pattern) {
+                    self.first = Some(Playhead {
+                        step: self.moved_into_loop(first.pattern, first.step),
+                        ..first
+                    });
+                }
+            }
             Command::PlaySong { from } => {
                 let index = usize::from(from);
                 if index < self.song_len {
+                    self.loop_bar = None;
                     self.start(
                         Mode::Song,
                         Playhead {
@@ -1156,18 +1209,24 @@ impl Sequencer {
             Mode::Pattern => {
                 let boundary = next % BAR == 0 || next >= length;
                 if let Some(cue) = self.cue.filter(|&cue| boundary && cue != last.pattern) {
-                    let bars = self.lengths[cue].div_ceil(BAR);
-                    let bar = (last.step / BAR + 1) % bars;
+                    let step = match self.loop_span(cue) {
+                        Some(span) => span.start,
+                        None => {
+                            let bars = self.lengths[cue].div_ceil(BAR);
+                            (last.step / BAR + 1) % bars * BAR
+                        }
+                    };
                     return Some(Playhead {
                         pattern: cue,
-                        step: bar * BAR,
+                        step,
                         song_index: None,
                     });
                 }
-                Some(Playhead {
-                    step: next % length,
-                    ..last
-                })
+                let step = match self.loop_span(last.pattern) {
+                    Some(span) if span.contains(&last.step) && next >= span.end => span.start,
+                    _ => self.moved_into_loop(last.pattern, next % length),
+                };
+                Some(Playhead { step, ..last })
             }
             Mode::Song => {
                 if next < length {
@@ -2025,8 +2084,26 @@ impl Engine {
         }
     }
 
-    /// Plays the song from entry `from_index`, step 0, starting now, and stops the preview. Does
-    /// nothing if the song has no entry at `from_index`, which includes an empty song.
+    /// While a pattern loops, plays only bar `bar` of it, over and over; `None` plays the whole
+    /// pattern again. Bars count from 0 and are 16 steps long; the last bar of a pattern may be
+    /// shorter.
+    ///
+    /// If play is outside that bar, it moves into the bar at the next step, at the same step
+    /// within a bar, so the change is heard at once and stays in time. A bar at or past the
+    /// playing pattern's bar count acts as `None`. A cued pattern ([`Engine::cue_pattern`])
+    /// starts at the first step of its own copy of the bar. The setting holds across
+    /// [`Engine::play_pattern_from`], cues and [`Engine::stop`]: a play call that starts outside
+    /// the bar starts inside it instead, at the same step within a bar. [`Engine::play_song`]
+    /// clears it. Song mode and the preview ignore it.
+    pub fn set_loop_bar(&mut self, bar: Option<usize>) {
+        self.commands.send(Command::SetLoopBar {
+            bar: bar.map(|bar| bar.min(usize::from(u8::MAX)) as u8),
+        });
+    }
+
+    /// Plays the song from entry `from_index`, step 0, starting now, and stops the preview. Clears
+    /// the loop bar ([`Engine::set_loop_bar`]). Does nothing if the song has no entry at
+    /// `from_index`, which includes an empty song.
     pub fn play_song(&mut self, from_index: usize) {
         if from_index < self.song_len {
             self.send_transport(Command::PlaySong {
@@ -2726,6 +2803,203 @@ mod tests {
         let fired = run(&mut sequencer, 0, 40 * 6000 - BLOCK);
         assert_eq!(fired.len(), 40);
         assert!(fired.iter().all(|(_, p)| p.pattern == 0));
+    }
+
+    /// A sequencer whose pattern 0 is `steps` long, at 120 bpm (6000 frames a step).
+    fn with_length(steps: u16) -> Sequencer {
+        let mut sequencer = Sequencer::new(RATE);
+        sequencer.apply(Command::SetLength { pattern: 0, steps }, 0);
+        sequencer
+    }
+
+    #[test]
+    fn the_loop_bar_wraps_within_the_bar_in_time() {
+        let mut sequencer = with_length(48);
+        sequencer.apply(Command::SetLoopBar { bar: Some(1) }, 0);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 16,
+            },
+            0,
+        );
+        let fired = run(&mut sequencer, 0, 40 * 6000 - BLOCK);
+        let expected: Vec<_> = (0..40)
+            .map(|k| (block_of(k as f64 * 6000.0), pat(0, 16 + k % 16)))
+            .collect();
+        assert_eq!(fired, expected);
+    }
+
+    #[test]
+    fn the_loop_bar_ends_with_a_pattern_that_ends_inside_it() {
+        let mut sequencer = with_length(20);
+        sequencer.apply(Command::SetLoopBar { bar: Some(1) }, 0);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 16,
+            },
+            0,
+        );
+        let fired = run(&mut sequencer, 0, 10 * 6000 - BLOCK);
+        assert_eq!(steps(&fired), [16, 17, 18, 19, 16, 17, 18, 19, 16, 17]);
+    }
+
+    #[test]
+    fn a_loop_bar_set_elsewhere_moves_play_into_it_at_the_next_step() {
+        let mut sequencer = with_length(32);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            0,
+        );
+        // Step 5 has fired; step 6 has not. Runs start and end on whole blocks.
+        let now = 562 * BLOCK;
+        let fired = run(&mut sequencer, 0, now);
+        assert_eq!(fired.last().unwrap().1, pat(0, 5));
+        sequencer.apply(Command::SetLoopBar { bar: Some(1) }, now);
+        let fired = run(&mut sequencer, now, 18 * 6000 - BLOCK);
+        // Step 6 of bar 0 becomes step 6 of bar 1, still on the same grid.
+        let expected: Vec<_> = (6..18)
+            .map(|k| (block_of(k as f64 * 6000.0), pat(0, 16 + k % 16)))
+            .collect();
+        assert_eq!(fired, expected);
+    }
+
+    #[test]
+    fn a_play_call_outside_the_loop_bar_starts_inside_it() {
+        let mut sequencer = with_length(32);
+        sequencer.apply(Command::SetLoopBar { bar: Some(1) }, 0);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 3,
+            },
+            0,
+        );
+        let fired = run(&mut sequencer, 0, 3 * 6000 - BLOCK);
+        assert_eq!(steps(&fired), [19, 20, 21]);
+
+        // The loop bar stays set across stop.
+        sequencer.apply(Command::Stop, 3 * 6000);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            3 * 6000,
+        );
+        let fired = run(&mut sequencer, 3 * 6000, 5 * 6000 - BLOCK);
+        assert_eq!(steps(&fired), [16, 17]);
+    }
+
+    #[test]
+    fn no_loop_bar_resumes_the_whole_pattern() {
+        let mut sequencer = with_length(32);
+        sequencer.apply(Command::SetLoopBar { bar: Some(0) }, 0);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            0,
+        );
+        let now = 20 * 6000 - BLOCK;
+        let fired = run(&mut sequencer, 0, now);
+        let expected: Vec<_> = (0..20).map(|k| k % 16).collect();
+        assert_eq!(steps(&fired), expected);
+        sequencer.apply(Command::SetLoopBar { bar: None }, now);
+        let fired = run(&mut sequencer, now, 50 * 6000 - BLOCK);
+        let expected: Vec<_> = (4..34).map(|k| k % 32).collect();
+        assert_eq!(steps(&fired), expected);
+    }
+
+    #[test]
+    fn a_loop_bar_past_the_pattern_end_acts_as_none() {
+        let mut sequencer = with_length(32);
+        sequencer.apply(Command::SetLoopBar { bar: Some(2) }, 0);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            0,
+        );
+        let now = 34 * 6000 - BLOCK;
+        let fired = run(&mut sequencer, 0, now);
+        let expected: Vec<_> = (0..34).map(|k| k % 32).collect();
+        assert_eq!(steps(&fired), expected);
+
+        // Bar 1 loops until the pattern gets too short to have it.
+        sequencer.apply(Command::SetLoopBar { bar: Some(1) }, now);
+        let later = 38 * 6000 - BLOCK;
+        let fired = run(&mut sequencer, now, later);
+        assert_eq!(steps(&fired), [18, 19, 20, 21]);
+        sequencer.apply(
+            Command::SetLength {
+                pattern: 0,
+                steps: 16,
+            },
+            later,
+        );
+        let fired = run(&mut sequencer, later, 58 * 6000 - BLOCK);
+        let expected: Vec<_> = (6..26).map(|k| k % 16).collect();
+        assert_eq!(steps(&fired), expected);
+    }
+
+    #[test]
+    fn a_cued_pattern_starts_at_its_own_loop_bar() {
+        let mut sequencer = with_length(32);
+        sequencer.apply(
+            Command::SetLength {
+                pattern: 1,
+                steps: 48,
+            },
+            0,
+        );
+        sequencer.apply(Command::SetLoopBar { bar: Some(1) }, 0);
+        sequencer.apply(
+            Command::PlayPattern {
+                pattern: 0,
+                from: 0,
+            },
+            0,
+        );
+        let now = 4 * 6000 - BLOCK;
+        run(&mut sequencer, 0, now);
+        sequencer.apply(Command::CuePattern { pattern: 1 }, now);
+        let fired = run(&mut sequencer, now, 30 * 6000 - BLOCK);
+        let expected: Vec<_> = (4..30)
+            .map(|k| if k < 16 { pat(0, 16 + k) } else { pat(1, k) })
+            .map(|p| Playhead {
+                step: if p.pattern == 1 {
+                    16 + p.step % 16
+                } else {
+                    p.step
+                },
+                ..p
+            })
+            .collect();
+        let positions: Vec<_> = fired.iter().map(|&(_, p)| p).collect();
+        assert_eq!(positions, expected);
+    }
+
+    #[test]
+    fn song_mode_ignores_the_loop_bar_and_play_song_clears_it() {
+        let mut sequencer = with_length(32);
+        sequencer.apply(Command::SetLoopBar { bar: Some(1) }, 0);
+        set_song(&mut sequencer, &[0], 0);
+        sequencer.apply(Command::SetSongLoop { looped: true }, 0);
+        sequencer.apply(Command::PlaySong { from: 0 }, 0);
+        assert_eq!(sequencer.loop_bar, None);
+        // Set during the song, it is kept but not used.
+        sequencer.apply(Command::SetLoopBar { bar: Some(1) }, 0);
+        let fired = run(&mut sequencer, 0, 40 * 6000 - BLOCK);
+        let expected: Vec<_> = (0..40).map(|k| entry(0, 0, k % 32)).collect();
+        let positions: Vec<_> = fired.iter().map(|&(_, p)| p).collect();
+        assert_eq!(positions, expected);
     }
 
     #[test]

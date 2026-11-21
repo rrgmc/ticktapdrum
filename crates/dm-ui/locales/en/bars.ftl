@@ -14,3 +14,7 @@ bars-remove = Remove
 bars-keep = Cancel
 # A button that starts playing the pattern from the first step of bar $bar.
 bars-play-from = Play from bar { $bar }
+# Hover text on a bar's thumbnail while a pattern can play from it.
+bars-thumb-tip = Double-click to play from this bar. Right-click to play only this bar.
+# Hover text on the thumbnail of the only bar that plays.
+bars-thumb-looped-tip = Only this bar plays. Right-click to play the whole pattern.

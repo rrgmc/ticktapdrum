@@ -91,6 +91,9 @@ pub struct DrumApp {
     half: usize,
     /// While playing, the grid shows what is being heard.
     follow: bool,
+    /// The only bar of the pattern being edited that plays, over and over, if one is chosen
+    /// with a right click on its thumbnail. Pattern mode only.
+    loop_bar: Option<usize>,
     /// How row names show: names, pictures and names, or pictures. A device setting.
     row_labels: pictures::RowLabels,
     /// Whether row names show the keyboard key that plays each drum while MIDI in is on. A
@@ -220,6 +223,7 @@ impl DrumApp {
             view_bar: 0,
             half: 0,
             follow: true,
+            loop_bar: None,
             row_labels,
             key_names: store.key_names(),
             bar_line,
@@ -673,6 +677,7 @@ impl DrumApp {
         }
         engine.set_tempo(self.project.tempo);
         engine.set_song_loop(self.project.song_loop);
+        engine.set_loop_bar(self.loop_bar);
         apply(engine, self.project.full_sync());
         self.current = self.current.min(self.project.patterns().len() - 1);
         let bars = self.project.patterns()[self.current].bars();
@@ -780,7 +785,7 @@ impl DrumApp {
             can_undo: self.history.can_undo(),
             can_redo,
             step_levels: self.project.step_levels(),
-            midi_device: self.midi.choice().filter(|_| self.midi.connected()),
+            midi_device: self.midi.choice().map(|name| (name, self.midi.connected())),
             recording_from: self
                 .midi
                 .input_name()
@@ -794,6 +799,13 @@ impl DrumApp {
         };
         let strip = strip::ui(ui, &state);
         ui.add_space(4.0);
+        // A bar that is gone, or the song, plays no bar alone.
+        if let Some(bar) = self.loop_bar
+            && (self.mode != Mode::Pattern || bar >= self.project.patterns()[self.current].bars())
+        {
+            self.set_loop_bar(engine, None);
+        }
+        self.bar_strip.looped = self.loop_bar;
         // The bar thumbnails, all the time, when the setting says so.
         let bar_line = self.bar_line.unwrap_or_else(|| bar_line_default(ui.ctx()));
         let line_shown = bar_line;
@@ -1012,6 +1024,11 @@ impl DrumApp {
             match event {
                 grid::GridEvent::Preview { row } => self.preview_row(engine, row),
                 grid::GridEvent::OpenRow { .. } => {}
+                grid::GridEvent::MoveRow { from, to } => {
+                    self.row_popup.close();
+                    let result = self.project.move_row(from, to);
+                    self.finish(engine, result);
+                }
                 grid::GridEvent::AddOffered { key } => {
                     let now = ui.input(|i| i.time);
                     self.add_offered(engine, key, now);
@@ -1182,6 +1199,21 @@ impl DrumApp {
                 }
                 bars::BarEvent::PlayFrom(bar) => {
                     self.play_from_bar(engine, bar);
+                    Ok(Vec::new())
+                }
+                bars::BarEvent::ToggleLoop(bar) => {
+                    if self.loop_bar == Some(bar) {
+                        self.set_loop_bar(engine, None);
+                    } else {
+                        self.set_loop_bar(engine, Some(bar));
+                        if self.playing {
+                            // The grid shows the bar that now plays.
+                            self.view_bar = bar;
+                            self.half = 0;
+                        } else {
+                            self.play_from_bar(engine, bar);
+                        }
+                    }
                     Ok(Vec::new())
                 }
             };
@@ -1690,7 +1722,9 @@ impl DrumApp {
         );
         match self.mode {
             Mode::Pattern => {
-                engine.play_pattern(self.project.patterns()[self.current].slot());
+                // With one bar chosen, Play plays that bar.
+                let from = self.loop_bar.map_or(0, |bar| bar * STEPS_PER_BAR);
+                engine.play_pattern_from(self.project.patterns()[self.current].slot(), from);
             }
             Mode::Song => {
                 if self.project.song().is_empty() {
@@ -1786,7 +1820,8 @@ impl DrumApp {
         }
     }
 
-    /// Plays the pattern being edited from the first step of `bar`, and follows it.
+    /// Plays the pattern being edited from the first step of `bar`, and shows that bar. Follow
+    /// stays as the person left it.
     fn play_from_bar(&mut self, engine: &mut Engine, bar: usize) {
         let pattern = &self.project.patterns()[self.current];
         if self.mode != Mode::Pattern || bar >= pattern.bars() {
@@ -1795,12 +1830,19 @@ impl DrumApp {
         engine.play_pattern_from(pattern.slot(), bar * STEPS_PER_BAR);
         self.preview = None;
         self.playing = true;
-        self.follow = true;
         self.view_bar = bar;
         self.half = 0;
     }
 
+    /// Chooses the only bar that plays, or `None` for the whole pattern, and tells the engine.
+    fn set_loop_bar(&mut self, engine: &mut Engine, bar: Option<usize>) {
+        self.loop_bar = bar;
+        engine.set_loop_bar(bar);
+    }
+
     fn select_pattern(&mut self, engine: &mut Engine, index: usize) {
+        // Another pattern plays whole.
+        self.set_loop_bar(engine, None);
         self.current = index;
         self.view_bar = 0;
         self.half = 0;

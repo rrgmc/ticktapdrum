@@ -16,3 +16,4 @@ sounds-kit-brush = Caixa tocada com vassourinha, para jazz e baladas
 sounds-kit-orchestral = Tímpanos e percussão de orquestra
 sounds-max-rows = Um projeto tem no máximo { $count } linhas.
 sounds-more-drums = Mais peças
+sounds-already-added = Já adicionada. Clique com o botão direito ou toque e segure para ouvir.

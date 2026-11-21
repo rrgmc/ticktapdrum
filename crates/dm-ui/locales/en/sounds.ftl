@@ -20,3 +20,6 @@ sounds-kit-orchestral = Timpani and orchestra percussion
 sounds-max-rows = A project holds at most { $count } rows.
 # Opens the drums that are not in the short list of common ones.
 sounds-more-drums = More drums
+# Hover text on a drum in Add instrument that already has a row. A right click or long press
+# still plays it.
+sounds-already-added = Already added. Right-click or long-press to hear it.

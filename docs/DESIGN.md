@@ -331,7 +331,10 @@ the beat.
   steps in every bar of the pattern being edited, and is one undo step. The fills replace the
   long press planned earlier. The Sounds dialog no longer lists the rows. A drum is chosen from a
   list that replaces the pop-up's contents, because a drop-down list inside a pop-up closes the
-  pop-up when an item is tapped.
+  pop-up when an item is tapped. On desktops, a left click on the name only plays the drum and a
+  right click opens the pop-up, so trying sounds does not open the pop-up each time. A long press
+  opens it on a desktop touch screen. Dragging a name up or down on a desktop moves the row; a bar
+  shows where it will go.
 - **The pop-up's ▶ button plays the drum again** at the row's volume, once per tap, and leaves
   the pop-up open. Checked on the Android phone by screenshot: three taps kept the pop-up open
   and changed no step. Nobody has listened to it yet.
@@ -1421,8 +1424,13 @@ for the grid.
 - **While the line shows, the bar pop-up leaves its thumbnails out,** and with them "Play from
   bar N", which the line offers instead.
 - **Otherwise the bar pop-up offers "Play from bar N",** N being the first bar the grid shows.
-  It plays the pattern from that bar's first step, loops the whole pattern after, and follows
-  it. A song plays from its start, so it is offered only for a pattern.
+  It plays the pattern from that bar's first step and loops the whole pattern after. It leaves
+  Follow as it was. A song plays from its start, so it is offered only for a pattern.
+- **A double click on a thumbnail plays from that bar,** as "Play from bar N" does. A right
+  click, or a long press, plays only that bar, over and over, and the grid shows it; its
+  thumbnail carries a repeat mark. A right click on it again plays the whole pattern. Play then starts at that bar too.
+  Choosing another pattern, switching to the song, or removing the bar plays whole patterns
+  again. Both work in the line and in the bar pop-up, for a pattern only.
 - **The window's title names the project** once it has one: "Name - TickTapDrum".
 
 ## Export as a keyboard style

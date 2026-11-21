@@ -14,7 +14,7 @@ use dm_project::StepLevels;
 use crate::icons;
 use crate::widgets::{self, ICON_SIZE, TAP, TEXT_SIZE};
 
-/// The size of the keyboard mark on Play while the drums go to a MIDI output.
+/// The size of the keyboard mark on Play while a MIDI output is chosen.
 const MIDI_MARK_SIZE: f32 = 13.0;
 /// The red of the dot on Play while playing a pattern records from the MIDI input.
 const RECORD_RED: egui::Color32 = egui::Color32::from_rgb(214, 40, 40);
@@ -82,8 +82,10 @@ pub(crate) struct StripState<'a> {
     pub(crate) can_redo: bool,
     /// Which loudness levels a tap on a step goes through.
     pub(crate) step_levels: StepLevels,
-    /// The MIDI output the drums go to now, if any. Play then carries a small keyboard mark.
-    pub(crate) midi_device: Option<&'a str>,
+    /// The chosen MIDI output, if any, and whether it is connected. Play then carries a small
+    /// keyboard mark: filled while the drums go to the output, struck through while they play on
+    /// this device because the output is not connected.
+    pub(crate) midi_device: Option<(&'a str, bool)>,
     /// The MIDI input playing a pattern records from, if one is on and connected. Play then
     /// carries a small red dot.
     pub(crate) recording_from: Option<&'a str>,
@@ -345,23 +347,39 @@ pub(crate) fn ui(ui: &mut egui::Ui, state: &StripState) -> StripOutput {
         } else {
             hover(play, &t.play_word)
         };
-        // While the drums go to a MIDI output, a small keyboard sits in Play's corner, so the
-        // silence of this device is not a surprise. It takes no room in the row.
+        // While a MIDI output is chosen, a small keyboard sits in Play's corner. It takes no room
+        // in the row. Connected, it is a filled badge, so the silence of this device is not a
+        // surprise. Not connected, it is struck through: the drums play here until it returns.
         let play = match state.midi_device {
-            Some(device) => {
-                // A filled badge, so it reads at a glance in light and dark themes.
+            Some((device, connected)) => {
                 let centre = play.rect.right_top() + Vec2::new(-10.0, 10.0);
-                let selection = ui.visuals().selection;
-                ui.painter()
-                    .circle_filled(centre, MIDI_MARK_SIZE / 2.0 + 1.5, selection.bg_fill);
-                ui.painter().text(
+                let radius = MIDI_MARK_SIZE / 2.0 + 1.5;
+                let visuals = ui.visuals();
+                let (fill, ink) = if connected {
+                    // A filled badge, so it reads at a glance in light and dark themes.
+                    (visuals.selection.bg_fill, visuals.selection.stroke.color)
+                } else {
+                    (visuals.widgets.inactive.bg_fill, visuals.weak_text_color())
+                };
+                let painter = ui.painter();
+                painter.circle_filled(centre, radius, fill);
+                painter.text(
                     centre,
                     egui::Align2::CENTER_CENTER,
                     icons::PIANO_KEYS,
                     egui::FontId::proportional(MIDI_MARK_SIZE),
-                    selection.stroke.color,
+                    ink,
                 );
-                play.on_hover_text(tr!("strip-midi-tip", device = device))
+                if connected {
+                    play.on_hover_text(tr!("strip-midi-tip", device = device))
+                } else {
+                    let slash = Vec2::splat(radius * std::f32::consts::FRAC_1_SQRT_2);
+                    painter.line_segment(
+                        [centre - slash, centre + slash],
+                        egui::Stroke::new(1.5, visuals.text_color()),
+                    );
+                    play.on_hover_text(tr!("strip-midi-missing-tip", device = device))
+                }
             }
             None => play,
         };

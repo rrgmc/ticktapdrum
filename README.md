@@ -82,6 +82,9 @@ On iPhone and iPad, exported files appear in the Files app, under **On My iPhone
 Choose a device or program under **☰ > Settings > MIDI output**. The app's own sound goes quiet,
 and the beat plays on the device instead. Choose **None** to hear the app again.
 
+While a device is chosen, **Play** shows a small keyboard in its corner. The keyboard is struck
+through while the device is not connected; the app then plays the beat itself until it returns.
+
 The **Volume** slider under the list sets how loud the device plays every drum. Each drum's own
 volume still applies on top of it. A few devices ignore this setting; use the device's own volume
 there.
