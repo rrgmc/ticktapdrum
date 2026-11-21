@@ -676,9 +676,10 @@ Shown as JSON. Field names are proposals.
 - `format` is a version number, so later versions can read older files.
 - The downloaded bank is stored by its id and version, so a file always names the exact bank it
   was made with.
-- A user's own SoundFont is stored as `{ "kind": "file", "name": "..." }`. Storing only the name,
-  not a full path, keeps the file portable between machines. The app asks for the file if it cannot
-  find it.
+- A user's own SoundFont is stored as `{ "kind": "file", "name": "...", "sha256": "..." }`.
+  Storing only the name and digest, not a full path, keeps the file portable between machines. The
+  record and `kit_name` say which SoundFont and kit the kit was chosen with (see "Milestone 15:
+  other SoundFonts").
 
 ## Proof-of-concept milestones
 
@@ -1875,6 +1876,70 @@ long key. Not checked: listening to the fade on a device for a click.
 
 Still open: sounds that ring long while the beat plays. A single hit lasting 4 to 5 seconds is
 the 4-second note-off deadline plus the release; shortening it is a separate change.
+
+## Milestone 15: other SoundFonts
+
+ColomboGMGS2 stays the bank the app offers and recommends. People may also use any `.sf2` file
+they have. Every SoundFont has its own list of kits, so a beat made with one must still open and
+play as close as it can with another.
+
+### Definition of done
+
+- **Settings, Sound bank** opens a dialog that lists ColomboGMGS2 (marked "not downloaded" until
+  it is) and each SoundFont the person added, with its size. A tap on one switches to it. Each
+  added one has Delete; deleting the one in use switches to ColomboGMGS2. "Add a SoundFont file"
+  opens the system's dialog on a desktop and the host's picker on Android.
+- **The download page** also offers "Use your own SoundFont file", where the platform can pick a
+  file, so a person who has one need not download ColomboGMGS2 at all.
+- **An added file is copied** into the app's folder (`soundfonts/`), with its SHA-256 digest
+  computed on the way. A picked file's access can expire on a phone; the copy does not. A file
+  with the same name and digest as one already added is not copied again. One with the same name
+  and another digest is kept beside it, named `<name> (2).sf2`.
+- **A file with no drum kits is refused** and deleted again, with a message saying so. The app
+  checks by loading it, on a worker thread.
+- **The choice is kept** as a setting. At start the app loads the chosen SoundFont. If the file is
+  missing or does not load, the app goes back to ColomboGMGS2 (or its download page) and says why.
+- **A project file records the SoundFont its kit was chosen with**, and the kit's name:
+
+  ```json
+  "soundfont": { "kind": "file", "name": "GeneralUser-GS.sf2", "sha256": "…" },
+  "kit_program": 25,
+  "kit_name": "TR-808",
+  ```
+
+  ColomboGMGS2 is `{ "kind": "colombogmgs2-17.11" }`, as before. Both fields are optional when
+  reading, so older files open; older versions of the app ignore them, so the format number stays.
+  Choosing a kit clears the record; the next save fills it in from the SoundFont in use.
+- **Playing a kit the SoundFont lacks:** the app plays, in this order, the kit with the same
+  program number; else the kit with the same name (case and spaces ignored); else the first kit of
+  its General Standard group of 8 programs (GS falls back to that kit too); else Standard
+  (program 0); else the SoundFont's first kit.
+- **The project keeps the kit it asked for.** Saving does not replace it with the kit played
+  instead, so a beat made with ColomboGMGS2 gets its own kit back when it returns there. MIDI out
+  and MIDI export send the program the project asks for.
+- **Opening a beat made with another SoundFont** shows a notice naming it, and the kit played
+  instead when there is one: "Made with ColomboGMGS2. Its kit Swirls plays as Standard here."
+- **The kit picker** says the same at its top while the project's kit is played by another one.
+- **Rows with no sound** in the kit played show a mark beside their name, with a hint saying so.
+
+### Recommended route
+
+Three independent pieces, then the interface:
+
+1. `dm-audio`: `resolve_kit` (the order above) and the keys a kit has a sound for, from the
+   preset's and instruments' key ranges.
+2. `dm-project`: the kit's name and SoundFont record in `Project` and in the file.
+3. `dm-bank`: adding (copy with digest and size), listing and deleting the SoundFonts in
+   `soundfonts/`.
+4. `dm-ui`: the setting, the dialog, the download page's choice, switching banks at run time, the
+   notice, the picker's line and the row mark.
+
+### Left out
+
+- A pinned list of other SoundFonts to download, as ColomboGMGS2 is.
+- `.sf3` files: rustysynth reads only `.sf2`.
+- Matching drums by name when a SoundFont puts them on other keys than General MIDI's.
+
 ## Open questions
 
 None at present. The three earlier ones were researched in
