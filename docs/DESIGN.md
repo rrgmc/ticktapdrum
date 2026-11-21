@@ -1889,8 +1889,9 @@ play as close as it can with another.
   it is) and each SoundFont the person added, with its size. A tap on one switches to it. Each
   added one has Delete; deleting the one in use switches to ColomboGMGS2. "Add a SoundFont file"
   opens the system's dialog on a desktop and the host's picker on Android.
-- **The download page** also offers "Use your own SoundFont file", where the platform can pick a
-  file, so a person who has one need not download ColomboGMGS2 at all.
+- **The download page offers ColomboGMGS2 only.** Much of the app is made for it: the short kit
+  list, the kit descriptions and the ready-made styles. Another SoundFont is chosen in the menu,
+  once ColomboGMGS2 plays. A `.sf2` file shared to the app before then is still added.
 - **An added file is copied** into the app's folder (`soundfonts/`), with its SHA-256 digest
   computed on the way. A picked file's access can expire on a phone; the copy does not. A file
   with the same name and digest as one already added is not copied again. One with the same name
@@ -1955,7 +1956,7 @@ Three independent pieces, then the interface:
 Checked on Windows with GeneralUser GS added and chosen: the app starts on it from the setting; an
 autosave made with ColomboGMGS2 on kit Swirls opens with the notice "Made with ColomboGMGS2
 Vanilla 17.11. Its kit Swirls plays as Electronic here."; a row on key 88 shows the no-sound mark;
-the download page shows the logo, the new wording and "Use your own SoundFont file". Not checked:
+the download page shows the logo and the new wording, and offers ColomboGMGS2 only. Not checked:
 the Sound bank dialog, adding through the dialog or by dropping a file, deleting, and switching
 while running (no one has clicked through them yet); Android's picker; listening to any of it.
 

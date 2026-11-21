@@ -34,8 +34,6 @@ bank-error-render-cancelled = A renderização foi cancelada.
 bank-error-installer-stopped = O download parou inesperadamente.
 bank-error-loading-stopped = O carregamento dos sons de bateria parou inesperadamente.
 
-bank-use-own = Usar um arquivo SoundFont seu
-bank-use-added = Usar { $name }
 bank-adding-title = Adicionando um SoundFont
 bank-add-cancelled = A adição do SoundFont foi cancelada.
 bank-add-failed = Não foi possível adicionar { $name }. { $reason }

@@ -199,14 +199,6 @@ pub(crate) struct Adding<'a> {
     pub(crate) fraction: Option<f32>,
 }
 
-/// What the download page asks the app to do.
-pub(crate) enum PageAction {
-    /// Show the system's dialog or the host's picker for an `.sf2` file.
-    PickFile,
-    /// Play this SoundFont the person added before.
-    Use(UserSoundfont),
-}
-
 pub(crate) struct BankState {
     data_dir: PathBuf,
     phase: Phase,
@@ -570,15 +562,15 @@ impl BankState {
     }
 
     /// Draws everything before the grid: the offer, progress, loading and errors, under the app's
-    /// logo and name. `can_pick` says whether this platform can pick a file. Returns what the
-    /// person asked for that the app must do.
-    pub(crate) fn ui(&mut self, ui: &mut egui::Ui, can_pick: bool) -> Option<PageAction> {
+    /// logo and name. It offers ColomboGMGS2 only: much of the app (the short kit list, the kit
+    /// descriptions, the ready-made styles) is made for it. Other SoundFonts are chosen in the
+    /// menu once it plays.
+    pub(crate) fn ui(&mut self, ui: &mut egui::Ui) {
         if matches!(self.phase, Phase::Ready(_)) {
-            return None;
+            return;
         }
         let ctx = ui.ctx().clone();
         let mut start = false;
-        let mut action = None;
         // A column of at most 520 points, centred, with text wrapping inside it. A centred layout
         // alone does not wrap long labels on a narrow screen: they ran off both edges in portrait.
         // It scrolls, so a phone held sideways still reaches the button.
@@ -596,7 +588,7 @@ impl BankState {
                         header(ui);
                         ui.add_space(24.0);
                         card(ui, |ui| {
-                            (start, action) = self.phase_ui(ui, can_pick);
+                            start = self.phase_ui(ui);
                         });
                         ui.add_space(GUTTER);
                     });
@@ -606,17 +598,12 @@ impl BankState {
             self.notes.clear();
             self.start_install(&ctx, None);
         }
-        if action.is_some() {
-            self.notes.clear();
-        }
-        action
     }
 
-    /// The card's contents for the current phase. Returns whether to start the download, and
-    /// what else the person asked for.
-    fn phase_ui(&self, ui: &mut egui::Ui, can_pick: bool) -> (bool, Option<PageAction>) {
+    /// The card's contents for the current phase. Returns whether to start the download.
+    fn phase_ui(&self, ui: &mut egui::Ui) -> bool {
         let mut start = false;
-        let mut action = None;
+        // A SoundFont shared to the app before any played.
         if let Some(adding) = self.adding() {
             title(ui, tr!("bank-adding-title"));
             wrapped(ui, stem(adding.name));
@@ -626,7 +613,7 @@ impl BankState {
             if big_button(ui, &tr!("bank-cancel")).clicked() {
                 self.cancel_adding();
             }
-            return (false, None);
+            return false;
         }
         match &self.phase {
             Phase::Offer => {
@@ -654,7 +641,6 @@ impl BankState {
                 );
                 ui.add_space(4.0);
                 note(ui, license());
-                action = self.own_choices(ui, can_pick);
             }
             Phase::Installing {
                 progress, cancel, ..
@@ -681,33 +667,10 @@ impl BankState {
                 if primary_button(ui, &tr!("bank-try-again")).clicked() {
                     start = true;
                 }
-                action = self.own_choices(ui, can_pick);
             }
             Phase::Ready(_) => {}
         }
-        (start, action)
-    }
-
-    /// Below the offer: a way to use a SoundFont of one's own instead, and the ones added before.
-    fn own_choices(&self, ui: &mut egui::Ui, can_pick: bool) -> Option<PageAction> {
-        let added = self.added();
-        if !can_pick && added.is_empty() {
-            return None;
-        }
-        let mut action = None;
-        ui.add_space(16.0);
-        ui.separator();
-        ui.add_space(8.0);
-        if can_pick && ui.link(tr!("bank-use-own")).clicked() {
-            action = Some(PageAction::PickFile);
-        }
-        for soundfont in added {
-            let text = tr!("bank-use-added", name = stem(&soundfont.name));
-            if ui.link(text).clicked() {
-                action = Some(PageAction::Use(soundfont));
-            }
-        }
-        action
+        start
     }
 }
 

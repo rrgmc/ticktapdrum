@@ -39,9 +39,7 @@ bank-error-render-cancelled = The render was cancelled.
 bank-error-installer-stopped = The download stopped unexpectedly.
 bank-error-loading-stopped = Loading the drum sounds stopped unexpectedly.
 
-# A SoundFont of one's own. $name is the file's name without .sf2, which is not translated.
-bank-use-own = Use your own SoundFont file
-bank-use-added = Use { $name }
+# Adding a SoundFont of one's own. $name is the file's name without .sf2, which is not translated.
 bank-adding-title = Adding a SoundFont
 bank-add-cancelled = Adding the SoundFont was cancelled.
 # $reason is one of the errors above, or the system's own words.

@@ -492,13 +492,7 @@ impl DrumApp {
             widgets::set_safe_area(ui.ctx(), ui.max_rect());
             // Taken out of `self` for the frame, so the editor can borrow `self` mutably.
             if self.bank.engine_mut().is_none() {
-                match self.bank.ui(ui, self.can_pick()) {
-                    Some(bank::PageAction::PickFile) => self.pick_soundfont(),
-                    Some(bank::PageAction::Use(soundfont)) => {
-                        self.bank.switch(bank::Source::Added(soundfont));
-                    }
-                    None => {}
-                }
+                self.bank.ui(ui);
                 return;
             }
             let mut engine = self.bank.take_engine();
