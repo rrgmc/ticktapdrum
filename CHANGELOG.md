@@ -9,6 +9,24 @@ move into this file when a version is released.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-21
+
+### Added
+
+- A right click on a step gives it the level the last left click gave a step, such as soft, or
+  turns it off if it already has that level. A right-button drag paints that level.
+- A Sound kits button in the top bar, before Undo, to change the drum kit in one tap.
+
+### Changed
+
+- On desktop, the window opens larger, at 1280 by 820 points, or the screen's size if that is smaller.
+- The menu's Sounds item is now two items: Sound kits, and Add instrument, which shows the drums
+  to add straight away.
+
+### Fixed
+
+- Stop silences every sound at once, also the long ones some kits have.
+
 ## [1.3.0] - 2026-11-20
 
 ### Added
@@ -100,7 +118,8 @@ move into this file when a version is released.
   export, MIDI out on desktops and iOS, pictures for the drums, and English and Brazilian
   Portuguese.
 
-[Unreleased]: https://github.com/rrgmc/ticktapdrum/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/rrgmc/ticktapdrum/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.0.0...v1.1.0
