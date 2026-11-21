@@ -9,6 +9,37 @@ move into this file when a version is released.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-21
+
+### Added
+
+- In Add instrument and when changing a row's drum, a right click or long press on a drum plays it
+  without choosing it.
+- A double click on a bar's thumbnail plays the pattern from that bar.
+- A right click or long press on a bar's thumbnail plays only that bar, over and over. Do it
+  again to play the whole pattern.
+- Settings, Sound bank chooses which SoundFont plays: ColomboGMGS2 or a `.sf2` file of your own.
+- A beat remembers which SoundFont and kit it was made with. Opened with another SoundFont, it
+  plays the nearest kit that SoundFont has, and a notice says so.
+- A row whose drum has no sound in the kit playing shows a struck-through speaker.
+- On desktop, drag a row's name up or down to move the row.
+
+### Changed
+
+- In Add instrument, drums that already have a row show faint and cannot be added again.
+- Playing from a bar no longer turns Follow on.
+- The app is dark on every platform, including the window's title bar, whatever the system's
+  setting. Windows used to show it light.
+- The page that offers to download the drum sounds shows the app's logo, name and a short tagline,
+  with the offer in a card and an orange Download button.
+- While the chosen MIDI output is not connected, Play shows its keyboard mark struck through, and
+  the drums play on this device.
+- The download page says in simpler words why the drum sounds are needed.
+- Remove bar in the bar pop-up removes the bar shown in the grid, not the last one. Later bars
+  move back to close the gap.
+- On desktop, a left click on a row's name only plays its drum. A right click opens the row's
+  settings.
+
 ## [1.4.0] - 2026-11-21
 
 ### Added
@@ -118,7 +149,8 @@ move into this file when a version is released.
   export, MIDI out on desktops and iOS, pictures for the drums, and English and Brazilian
   Portuguese.
 
-[Unreleased]: https://github.com/rrgmc/ticktapdrum/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/rrgmc/ticktapdrum/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.1.0...v1.2.0
