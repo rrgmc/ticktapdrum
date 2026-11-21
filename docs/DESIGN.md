@@ -851,8 +851,8 @@ switches.
 - **The kit choice sends a program change**, when the output is chosen and whenever the kit
   changes.
 - **Choosing another output, or None, silences the old one.** The app sends a note-off for every
-  sounding note, then "All notes off" (controller 123) on channel 10. Stop lets hits ring out, as
-  the internal sound does; their note-offs follow on the usual schedule.
+  sounding note, then "All notes off" (controller 123) on channel 10. Stop sends the note-offs
+  still pending at once, as the internal sound fades out (see "Stop silences every sound").
 - **A device that disappears** (unplugged, or the other program closed) does not stop playback.
   The internal sound comes back at once, and one line says the device is gone. The remembered
   choice stays, so the app reconnects when the device returns. Nothing asks the user to confirm.
@@ -1832,6 +1832,30 @@ Not checked:
 - **Android and iOS:** opening a style there, sharing one to the app, and a link to one.
 - **Styles from other Yamaha models,** whose kits are not in the table yet.
 
+## Stop silences every sound
+
+Stop used to halt the sequencer only. Hits already started rang out, which in some kits lasted
+seconds. In the Swirls kit of the pinned bank, one hit on key 38, 40, 71 or 72 sounds for about
+5 seconds and one on key 84 for about 4: the renderer sends note-off 4 seconds after the last hit
+on a key (see the dm-audio crate documentation), and the sound only ends with its release after
+that. A person pressing Stop expects silence.
+
+- **Stop now fades every sound out over 20 ms**, then resets the synthesizer, which also ends the
+  reverb and chorus tails, and selects the kit again. A hard cut would click; 20 ms reads as
+  instant. The groove panel's Stop does the same.
+- **A hit or a Play during the fade ends it at once**, so the new sound starts whole and is not
+  faded.
+- **MIDI out sends its pending note-offs at once** on Stop.
+- **The end of a song that does not loop does not silence**, and neither does exporting a WAV:
+  their last hits ring out as before.
+
+Checked: unit tests on the pinned bank show the fade falls from the sound to exact silence, a
+snare hit during the fade sounds exactly as on a fresh synthesizer, and the kit survives the
+reset. A probe of the Swirls kit showed silence one tenth of a second after the command for each
+long key. Not checked: listening to the fade on a device for a click.
+
+Still open: sounds that ring long while the beat plays. A single hit lasting 4 to 5 seconds is
+the 4-second note-off deadline plus the release; shortening it is a separate change.
 ## Open questions
 
 None at present. The three earlier ones were researched in
