@@ -17,6 +17,9 @@
 //! tap on a step goes through ([`Project::set_step_levels`], [`next_level`]): on and off; on,
 //! soft and off; or on, loud, soft and off.
 //!
+//! [`Project::kit_origin`] records the SoundFont the kit was chosen with and the kit's name
+//! there ([`KitOrigin`]), so a beat opened with another SoundFont can say which kit it meant.
+//!
 //! [`to_midi`] writes the song as a Standard MIDI File for other music software, and a
 //! [`KeyboardKind`] writes the patterns as the drum part of an arranger keyboard's style, with
 //! the sections chosen in [`StyleSections`]. [`presets`] with [`preset_project`] give beginners ready-made
@@ -404,6 +407,25 @@ pub fn letter(index: usize) -> char {
     (b'A' + (index % MAX_PATTERNS) as u8) as char
 }
 
+/// The SoundFont a kit was chosen with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SoundfontRef {
+    /// A bank the app knows by id, such as "colombogmgs2-17.11".
+    Bank(String),
+    /// A file the person added: its file name, such as "GeneralUser-GS.sf2", and its SHA-256
+    /// digest in lowercase hex.
+    File { name: String, sha256: String },
+}
+
+/// Which kit the project's kit program meant: the SoundFont it was chosen with, and its name
+/// there when known. Another SoundFont may lack that program, and the record lets the interface
+/// say which kit the beat was made with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KitOrigin {
+    pub soundfont: SoundfontRef,
+    pub name: Option<String>,
+}
+
 /// A whole project.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Project {
@@ -419,6 +441,8 @@ pub struct Project {
     swing: f32,
     /// Which loudness levels a tap goes through. Only the interface uses it.
     step_levels: StepLevels,
+    /// The SoundFont and kit name the kit was chosen with, when known.
+    kit_origin: Option<KitOrigin>,
 }
 
 impl Default for Project {
@@ -444,6 +468,7 @@ impl Project {
             kit: DEFAULT_KIT,
             swing: 0.0,
             step_levels: StepLevels::OnOff,
+            kit_origin: None,
         }
     }
 
@@ -592,10 +617,30 @@ impl Project {
         Ok(self.gains())
     }
 
-    /// Chooses the drum kit.
+    /// Chooses the drum kit. The kit's origin is cleared, because it described the old kit; the
+    /// interface records the new one with [`Project::set_kit_origin`].
     pub fn set_kit(&mut self, program: u8) -> Vec<Change> {
         self.kit = program;
+        self.kit_origin = None;
         vec![Change::Kit(program)]
+    }
+
+    /// The SoundFont the kit was chosen with, and the kit's name there, when known.
+    pub fn kit_origin(&self) -> Option<&KitOrigin> {
+        self.kit_origin.as_ref()
+    }
+
+    /// Records the SoundFont the kit was chosen with. Nothing changes in the sound, so there is
+    /// no [`Change`], and it is not an edit to undo. A name is trimmed, and an empty one counts
+    /// as unknown.
+    pub fn set_kit_origin(&mut self, origin: Option<KitOrigin>) {
+        self.kit_origin = origin.map(|mut origin| {
+            origin.name = origin
+                .name
+                .map(|name| name.trim().to_owned())
+                .filter(|name| !name.is_empty());
+            origin
+        });
     }
 
     /// The swing: the fraction of a step every odd step is delayed. 0 is straight timing,
