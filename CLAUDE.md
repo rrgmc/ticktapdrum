@@ -5,6 +5,15 @@ TickTapDrum is a drum machine for people with little music knowledge. The design
 done so far. How to build and run it is in [`BUILDING.md`](BUILDING.md).
 [`README.md`](README.md) is for people who use the app, so keep build details out of it.
 
+## Commands
+
+Tasks are in `Taskfile.yml` (`task --list`); BUILDING.md has the setup and the details.
+
+- `task check`: format check, clippy and tests. Run it before calling a change done.
+- `task run`: run the desktop app.
+- `task build:android` / `task build:ios`: build the Android APK / the iOS app (macOS only).
+- `tools/changelog/changelog.sh preview`: show how the `changelog.d/` entries will read.
+
 ## How the user wants the work done
 
 - **Do not start implementing until the user asks.** Discussing, researching and writing up
