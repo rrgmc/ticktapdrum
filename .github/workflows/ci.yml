@@ -1,13 +1,14 @@
 # Checks every push to master and every pull request:
 #   - the format check and clippy, on Linux;
-#   - the tests, on Linux, Windows and macOS;
+#   - the tests, on Linux, Windows and macOS (Linux only on most pull requests; see "changes");
 #   - a debug build of the Android app;
 #   - a debug build of the iOS app, for the simulator and unsigned for devices;
 #   - the changelog entries in changelog.d/, which must use the known headings.
 # Tests that need a SoundFont (DM_TEST_SF2) or the network skip themselves, since CI has neither.
 #
-# A change that touches only documentation (Markdown files, docs/, changelog.d/, .gitignore) skips
-# the build jobs. So does a release's version pull request: the workspace version (Cargo.toml's
+# A change that touches only documentation (Markdown files, docs/, changelog.d/) or files no build
+# reads (.gitignore, .editorconfig, LICENSE, Taskfile.yml) skips the build jobs. A change only to
+# ports/android/ or tools/android/ builds only Android, and the same for iOS. So does a release's version pull request: the workspace version (Cargo.toml's
 # version and the workspace crates' versions in Cargo.lock) together with the changelog merge
 # (CHANGELOG.md and the deleted entries in changelog.d/), since the release workflow builds the
 # tag. The last job, "CI result", always runs and fails if any job before it failed or was
@@ -42,18 +43,25 @@ jobs:
     name: Changed files
     runs-on: ubuntu-latest
     outputs:
-      code: ${{ steps.diff.outputs.code }}
+      # Each is "true" or "false". A job runs unless its output is "false", so a failure here
+      # builds everything rather than nothing.
+      main: ${{ steps.diff.outputs.main }}
+      android: ${{ steps.diff.outputs.android }}
+      ios: ${{ steps.diff.outputs.ios }}
+      full: ${{ steps.diff.outputs.full }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Anything besides documentation?
+      - name: What needs building?
         id: diff
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.before }}
         run: |
+          out() { for kv in "$@"; do echo "$kv" >> "$GITHUB_OUTPUT"; done; }
+
           # A pull request's checkout is GitHub's test merge commit. Its first parent is the master
           # commit it was merged onto. The event's base.sha is not always that commit: when master
           # moves just as the pull request is opened or updated, it is the older one, and the diff
@@ -64,15 +72,17 @@ jobs:
 
           # No usable base (a new branch, or history rewritten): build everything.
           if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
+            out main=true android=true ios=true full=true
             exit 0
           fi
-          # Documentation. CHANGELOG.md and changelog.d/ count too, so a release's changelog merge
-          # leaves only the version files for the check below.
-          code=$(git diff --name-only "$BASE...HEAD" | grep -v -E '\.md$|^docs/|^changelog\.d/|^\.gitignore$' || true)
+          # Files no build reads: documentation (CHANGELOG.md and changelog.d/ count too, so a
+          # release's changelog merge leaves only the version files for the check below), the
+          # changelog script (the changelog job always runs), and files only people or local
+          # tools read.
+          code=$(git diff --name-only "$BASE...HEAD" | grep -v -E '\.md$|^docs/|^changelog\.d/|^tools/changelog/|^\.gitignore$|^\.editorconfig$|^LICENSE$|^Taskfile\.yml$|^\.github/personal-rules\.yml$' || true)
           if [ -z "$code" ]; then
             echo "Only documentation changed; skipping the build jobs."
-            echo "code=false" >> "$GITHUB_OUTPUT"
+            out main=false android=false ios=false full=false
             exit 0
           fi
 
@@ -100,14 +110,32 @@ jobs:
             merge_base=$(git merge-base "$BASE" HEAD)
             if [ "$(without_version "$merge_base")" = "$(without_version HEAD)" ]; then
               echo "Only the workspace version changed; skipping the build jobs."
-              echo "code=false" >> "$GITHUB_OUTPUT"
+              out main=false android=false ios=false full=false
               exit 0
             fi
           fi
 
           echo "Changed outside the documentation:"
           echo "$code"
-          echo "code=true" >> "$GITHUB_OUTPUT"
+
+          # The Android and iOS projects and their build scripts are read only by their own job.
+          # Everything else, the Rust workspace included (apps/dm-android and apps/dm-ios are
+          # workspace members, linted and tested with the rest), is main code, which every job
+          # builds.
+          has() { echo "$code" | grep -q -E "$1" && echo true || echo false; }
+          android=$(has '^(ports|tools)/android/')
+          ios=$(has '^(ports|tools)/ios/')
+          main=$(echo "$code" | grep -q -v -E '^(ports|tools)/(android|ios)/' && echo true || echo false)
+          [ "$main" = true ] && { android=true; ios=true; }
+
+          # Pull requests test on Linux only. Pushes to master, and changes to what can break one
+          # system and not another (the toolchain, the lockfile, the workflows, line endings), run
+          # every system.
+          full=$(has '^rust-toolchain\.toml$|^Cargo\.lock$|^\.github/workflows/|^\.gitattributes$')
+          [ "$EVENT" = push ] && full=true
+
+          out main="$main" android="$android" ios="$ios" full="$full"
+          echo "main=$main android=$android ios=$ios full=$full"
 
   changelog:
     name: Changelog entries
@@ -121,7 +149,7 @@ jobs:
   lint:
     name: Format and clippy
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.main != 'false' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
@@ -146,11 +174,12 @@ jobs:
   test:
     name: Tests (${{ matrix.os }})
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.main != 'false' }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-latest]
+        # Linux only on a pull request, unless the change can break one system and not another.
+        os: ${{ fromJSON(needs.changes.outputs.full == 'false' && '["ubuntu-22.04"]' || '["ubuntu-22.04", "windows-latest", "macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -172,7 +201,7 @@ jobs:
   android:
     name: Android (debug build)
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.android != 'false' }}
     runs-on: ubuntu-latest
     env:
       # The NDK the local builds use; see BUILDING.md.
@@ -205,7 +234,7 @@ jobs:
   ios:
     name: iOS (debug build)
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.ios != 'false' }}
     # main.m uses iOS 26 APIs, so the build needs Xcode 26 or newer.
     runs-on: macos-26
     steps:

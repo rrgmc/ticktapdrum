@@ -4,11 +4,12 @@ language: rust
 features: [ci, release, changelog, license]
 release-environment: ''
 custom: [ci, release]
+# apps/dm-android and apps/dm-ios are Rust workspace members: CI lints and tests them as main code.
 components:
   - name: android
     language: android
-    path: ports/android apps/dm-android tools/android
+    path: ports/android tools/android
     native: rust
   - name: ios
     language: ios
-    path: ports/ios apps/dm-ios tools/ios
+    path: ports/ios tools/ios
