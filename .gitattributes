@@ -1,8 +1,14 @@
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary
+*.ico binary
 # Shell scripts must keep LF endings: bash fails on a carriage return, and Git for Windows would
 # otherwise check them out with CRLF.
 *.sh text eol=lf
 gradlew text eol=lf
-*.bat text eol=crlf
 # tools/changelog/changelog.sh reads these, and a carriage return breaks its heading matches.
 CHANGELOG.md text eol=lf
 changelog.d/*.md text eol=lf

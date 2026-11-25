@@ -10,3 +10,6 @@ CLAUDE.local.md
 
 # Release packages, written by the packaging scripts.
 /dist/
+
+# personal-rules: worktrees and machine-local notes never get committed.
+.claude/settings.local.json

@@ -1,0 +1,14 @@
+version: 0.5.1
+stage: established
+language: rust
+features: [ci, release, changelog, license]
+release-environment: ''
+custom: [ci, release]
+components:
+  - name: android
+    language: android
+    path: ports/android apps/dm-android tools/android
+    native: rust
+  - name: ios
+    language: ios
+    path: ports/ios apps/dm-ios tools/ios
