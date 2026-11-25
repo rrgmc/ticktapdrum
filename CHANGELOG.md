@@ -9,6 +9,12 @@ move into this file when a version is released.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-25
+
+### Changed
+
+- Building from source needs Rust 1.98.1.
+
 ## [1.5.0] - 2026-11-21
 
 ### Added
@@ -149,7 +155,8 @@ move into this file when a version is released.
   export, MIDI out on desktops and iOS, pictures for the drums, and English and Brazilian
   Portuguese.
 
-[Unreleased]: https://github.com/rrgmc/ticktapdrum/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/rrgmc/ticktapdrum/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/rrgmc/ticktapdrum/compare/v1.2.0...v1.3.0
