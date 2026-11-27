@@ -45,6 +45,11 @@ pub(crate) enum MenuEvent {
         percent: u8,
         keep: bool,
     },
+    /// The volume of the app's own sound in percent moved. `keep` as for `MidiVolume`.
+    SoundVolume {
+        percent: u8,
+        keep: bool,
+    },
     /// The MIDI input dialog has just opened: read the list of inputs again.
     ListMidiInputs,
     /// Take the drum hits from this MIDI input, or from the output's own device if `None`.
@@ -94,6 +99,10 @@ pub(crate) struct MenuView<'a> {
     pub(crate) downloading: Option<link::Progress>,
     /// The Sound bank setting.
     pub(crate) bank: BankView<'a>,
+    /// The volume of the app's own sound in percent.
+    pub(crate) volume: u8,
+    /// Whether the app's own sound plays: false while MIDI out plays the drums instead.
+    pub(crate) sound_here: bool,
 }
 
 /// The dialog a menu item opened.
@@ -567,6 +576,28 @@ fn settings_items(
             .clicked()
     {
         events.push(MenuEvent::Project(ProjectEvent::KeyNames(!keys)));
+    }
+    // The volume of the app's own sound. Moving it does not close the menu. While MIDI out
+    // plays the drums the app is silent, so the slider rests and points to the output's own.
+    ui.add_enabled_ui(view.sound_here, |ui| {
+        ui.label(big(&format!(
+            "{} {}",
+            icons::SPEAKER_HIGH,
+            tr!("menu-sound-volume")
+        )));
+        ui.scope(|ui| {
+            ui.spacing_mut().slider_width = ITEM_WIDTH - 64.0;
+            ui.spacing_mut().interact_size.y = 40.0;
+            let mut percent = view.volume;
+            let slider = ui.add(egui::Slider::new(&mut percent, 0..=100).suffix("%"));
+            let keep = slider.drag_stopped() || (slider.changed() && !slider.dragged());
+            if slider.changed() || keep {
+                events.push(MenuEvent::SoundVolume { percent, keep });
+            }
+        });
+    });
+    if !view.sound_here {
+        ui.label(tr!("menu-sound-volume-midi"));
     }
     if ui.add(item(icons::GLOBE, &tr!("menu-language"))).clicked() {
         open(Shown::Language);
