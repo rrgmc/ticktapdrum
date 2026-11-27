@@ -1965,10 +1965,11 @@ the download page shows the logo and the new wording, and offers ColomboGMGS2 on
 the Sound bank dialog, adding through the dialog or by dropping a file, deleting, and switching
 while running (no one has clicked through them yet); Android's picker; listening to any of it.
 
-## Sound volume (proposed, 2026-11-27)
+## Sound volume (2026-11-27)
 
-Not built yet. The app has a volume for MIDI out (see "MIDI out volume") but none for its own
-sound: the only way to make it quieter is the system volume, or a row's slider one row at a time.
+Built as described below. Before it, the app had a volume for MIDI out (see "MIDI out volume")
+but none for its own sound: the only way to make it quieter was the system volume, or a row's
+slider one row at a time.
 
 ### Why not the system's volume for the app
 
@@ -2020,7 +2021,7 @@ set the overall level.
 The volume keys set the volume of whatever stream Android thinks is active. While the app is
 silent that may be the ringer, not media. `MainActivity` should call
 `setVolumeControlStream(AudioManager.STREAM_MUSIC)` so the keys always set the media volume the
-app plays at. This is a one-line change that can go with the slider or on its own.
+app plays at. This went in with the slider.
 
 ### Left out
 
@@ -2028,12 +2029,17 @@ app plays at. This is a one-line change that can go with the slider or on its ow
 - A volume per project, or volume automation in the song.
 - A limiter or loudness boost above 100%.
 
-### How to check it
+### How it was checked
 
-Unit tests: the command scales the output, the ramp has no step bigger than one block's share,
-0% renders silence, an offline render ignores it, and the stored setting round-trips. On a real
-target: listen while dragging the slider on the desktop app and on an Android phone, for level
-and for clicks, and press the phone's volume keys while the app is silent.
+Unit tests on the pinned bank: after the first block the output is exactly the full output
+times the gain, the first block ramps to it, 0% renders silence, and the stored setting
+round-trips apart from `midi.volume`. In the desktop app on Windows, the slider shows in
+Settings between the toggles and Language, dragging it to 34% wrote `sound.volume`, and dragging
+it back to 100% removed the file.
+
+**Not checked.** Nobody has listened to it: neither the level nor whether dragging clicks. The
+greyed-out slider with MIDI out playing was not seen. Nothing was run on Android, iOS or macOS,
+including the volume keys change, which was not built.
 
 ## Open questions
 
