@@ -38,6 +38,9 @@ menu-key-names = Keyboard notes
 menu-key-names-tip = With MIDI in on, show beside each drum the keyboard note that plays it.
 # Shows the bars as small pictures under the buttons all the time.
 menu-bar-line = Show bars under the buttons
+# The Settings slider for the app's own sound, and the line under it while MIDI out plays instead.
+menu-sound-volume = Volume
+menu-sound-volume-midi = The drums play on the MIDI output. Its volume is in the MIDI output dialog.
 menu-language = Language
 # The Sound bank setting: which SoundFont plays. $bank is its name, which is not translated.
 menu-sound-bank = Sound bank

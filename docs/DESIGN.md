@@ -1965,6 +1965,82 @@ the download page shows the logo and the new wording, and offers ColomboGMGS2 on
 the Sound bank dialog, adding through the dialog or by dropping a file, deleting, and switching
 while running (no one has clicked through them yet); Android's picker; listening to any of it.
 
+## Sound volume (2026-11-27)
+
+Built as described below. Before it, the app had a volume for MIDI out (see "MIDI out volume")
+but none for its own sound: the only way to make it quieter was the system volume, or a row's
+slider one row at a time.
+
+### Why not the system's volume for the app
+
+Only some systems give each app its own volume, and the app could reach it on fewer still:
+
+| Platform | Per-app volume in the system | Can the app set it |
+|---|---|---|
+| Windows | Yes, the Volume Mixer | Yes, through the WASAPI session volume, in Windows-only code |
+| Linux (PipeWire, PulseAudio) | Yes, per stream | Only by talking to the sound server |
+| macOS | No, one output volume | No |
+| Android | No, one volume per stream type; "media" is shared by all media apps | No |
+| iOS | No, one system volume | No; it can only show Apple's system slider |
+
+So the app keeps a volume of its own, applied to its sound before it leaves the app. It works the
+same on every platform and needs no platform code. The system volume stays on top of it: on
+Windows the app's level shows inside its Volume Mixer slider, and on a phone the volume keys still
+set the overall level.
+
+### What a person sees
+
+- **A Volume slider in the ☰ menu's Settings section**, 0 to 100%, 100% by default. Moving it
+  changes the sound at once, while playing or not.
+- **While MIDI out plays the sound, the slider is greyed out** with a hint pointing to the MIDI
+  output dialog's own Volume, since the app's sound is silent then and the slider would do
+  nothing.
+- **It belongs to the device, not to a project.** It is kept in the data folder as
+  `sound.volume` while it is not 100, like `midi.volume`, and is not saved in project files.
+
+### How it works
+
+- **An engine command `SetVolume { gain }`**, sent by `Engine::set_volume`. The renderer keeps the
+  gain and multiplies every output sample by it in `Renderer::render`, after the synthesizer, the
+  Stop fade and the MIDI out silence. It runs on the cpal output and on Android's AAudio output
+  alike, since both call the same renderer.
+- **Exports stay at full level.** WAV export renders with its own renderer (`OfflineRender`),
+  which never gets the command, so a quiet listening setting does not make a quiet file. Volume
+  is how loud the person listens, not part of the song.
+- **Mapping: gain = (percent / 100)².** The gain scales the samples, not the velocity, so a linear
+  slider would put most of the audible change in its last quarter. The square puts 50% at about
+  -12 dB, which sounds about half as loud, and matches how the row sliders feel (see the dm-audio
+  crate documentation on row gain). 0% is silence.
+- **No clicks.** A new gain is reached over one block (a linear ramp from the old gain), so
+  dragging the slider does not crackle.
+- **Rows, velocities and live hits are unchanged.** The volume does not touch velocities, so the
+  kit plays the same samples at every volume; only the level changes.
+
+### Related, on Android
+
+The volume keys set the volume of whatever stream Android thinks is active. While the app is
+silent that may be the ringer, not media. `MainActivity` should call
+`setVolumeControlStream(AudioManager.STREAM_MUSIC)` so the keys always set the media volume the
+app plays at. This went in with the slider.
+
+### Left out
+
+- Setting the system's per-app volume on Windows or Linux (see the table above).
+- A volume per project, or volume automation in the song.
+- A limiter or loudness boost above 100%.
+
+### How it was checked
+
+Unit tests on the pinned bank: after the first block the output is exactly the full output
+times the gain, the first block ramps to it, 0% renders silence, and the stored setting
+round-trips apart from `midi.volume`. In the desktop app on Windows, the slider shows in
+Settings between the toggles and Language, dragging it to 34% wrote `sound.volume`, and dragging
+it back to 100% removed the file.
+
+**Not checked.** Nobody has listened to it: neither the level nor whether dragging clicks. The
+greyed-out slider with MIDI out playing was not seen. Nothing was run on Android, iOS or macOS,
+including the volume keys change, which was not built.
+
 ## Open questions
 
 None at present. The three earlier ones were researched in

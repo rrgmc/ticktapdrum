@@ -32,6 +32,8 @@ const LANGUAGE: &str = "language";
 const MIDI_OUTPUT: &str = "midi.output";
 /// Holds the MIDI output volume in percent. Missing while it is the default, 100.
 const MIDI_VOLUME: &str = "midi.volume";
+/// Holds the volume of the app's own sound in percent. Missing while it is the default, 100.
+const SOUND_VOLUME: &str = "sound.volume";
 /// Holds "on" while the MIDI input is on. Missing while it is off, the default.
 const MIDI_INPUT: &str = "midi.input";
 /// Holds the name of the chosen MIDI input. Missing while it is the output's own device, the
@@ -295,14 +297,34 @@ impl Store {
     /// The MIDI output volume in percent, 0..=100; 100 when none was chosen or the file does
     /// not hold a number. A device setting, not part of any project.
     pub(crate) fn midi_volume(&self) -> u8 {
-        fs::read_to_string(self.dir.join(MIDI_VOLUME))
+        self.percent(MIDI_VOLUME)
+    }
+
+    pub(crate) fn set_midi_volume(&self, percent: u8) -> Result<(), String> {
+        self.set_percent(MIDI_VOLUME, percent)
+    }
+
+    /// The volume of the app's own sound in percent, 0..=100; 100 when none was chosen or the
+    /// file does not hold a number. A device setting, not part of any project.
+    pub(crate) fn sound_volume(&self) -> u8 {
+        self.percent(SOUND_VOLUME)
+    }
+
+    pub(crate) fn set_sound_volume(&self, percent: u8) -> Result<(), String> {
+        self.set_percent(SOUND_VOLUME, percent)
+    }
+
+    /// A percent kept in `file`, 0..=100; 100 when the file is missing or holds no number.
+    fn percent(&self, file: &str) -> u8 {
+        fs::read_to_string(self.dir.join(file))
             .ok()
             .and_then(|text| text.trim().parse::<u8>().ok())
             .map_or(100, |percent| percent.min(100))
     }
 
-    pub(crate) fn set_midi_volume(&self, percent: u8) -> Result<(), String> {
-        let path = self.dir.join(MIDI_VOLUME);
+    /// Keeps a percent in `file`, or removes the file at 100, the default.
+    fn set_percent(&self, file: &str, percent: u8) -> Result<(), String> {
+        let path = self.dir.join(file);
         if percent >= 100 {
             return match fs::remove_file(path) {
                 Err(e) if e.kind() != io::ErrorKind::NotFound => Err(delete_error(e)),
@@ -742,6 +764,18 @@ mod tests {
         assert_eq!(store.midi_volume(), 100);
         fs::write(store.dir.join(MIDI_VOLUME), "250").unwrap();
         assert_eq!(store.midi_volume(), 100);
+    }
+
+    #[test]
+    fn the_sound_volume_is_kept_apart_from_the_midi_volume() {
+        let store = temp_store("sound-volume");
+        assert_eq!(store.sound_volume(), 100);
+        store.set_sound_volume(30).unwrap();
+        assert_eq!(store.sound_volume(), 30);
+        assert_eq!(store.midi_volume(), 100);
+        store.set_sound_volume(100).unwrap();
+        assert!(!store.dir.join(SOUND_VOLUME).exists());
+        assert_eq!(store.sound_volume(), 100);
     }
 
     #[test]

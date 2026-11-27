@@ -101,6 +101,8 @@ pub struct DrumApp {
     /// Whether row names show the keyboard key that plays each drum while MIDI in is on. A
     /// device setting, kept in the store.
     key_names: bool,
+    /// The volume of the app's own sound in percent. A device setting, kept in the store.
+    volume: u8,
     /// Whether the bar thumbnails show under the strip, or `None` until the person chooses,
     /// when [`bar_line_default`] decides. A device setting.
     bar_line: Option<bool>,
@@ -228,6 +230,7 @@ impl DrumApp {
             store.midi_input(),
             store.midi_input_device(),
         );
+        let volume = store.sound_volume();
         let bank_choice = store.soundfont();
         // Only the names: reading the packs waits until the list opens.
         let app = Self {
@@ -261,6 +264,7 @@ impl DrumApp {
             export_dir: None,
             export_place: None,
             midi,
+            volume,
             recording: None,
             takes: 0,
             offered: offered::Offered::default(),
@@ -496,7 +500,7 @@ impl DrumApp {
                 return;
             }
             let mut engine = self.bank.take_engine();
-            self.new_engine(&engine);
+            self.new_engine(&mut engine);
             for note in self.bank.take_notes() {
                 self.show_notice_text(note);
             }
@@ -989,6 +993,8 @@ impl DrumApp {
                 adding: self.bank.adding().map(|a| (a.name, a.fraction)),
                 can_add: self.can_pick(),
             },
+            volume: self.volume,
+            sound_here: !self.midi.connected(),
         };
         let mut menu_events =
             widgets::popup(&strip.menu, |ui| self.menu.contents(ui, &view)).unwrap_or_default();
@@ -1208,6 +1214,13 @@ impl DrumApp {
                     self.midi.set_volume(engine, percent);
                     if keep && let Err(e) = self.store.set_midi_volume(percent) {
                         log::warn!("could not keep the MIDI volume setting: {e}");
+                    }
+                }
+                menu::MenuEvent::SoundVolume { percent, keep } => {
+                    self.volume = percent;
+                    engine.set_volume(volume_gain(percent));
+                    if keep && let Err(e) = self.store.set_sound_volume(percent) {
+                        log::warn!("could not keep the sound volume setting: {e}");
                     }
                 }
                 menu::MenuEvent::Language(choice) => {
@@ -1867,11 +1880,13 @@ impl DrumApp {
 
     /// Gives a newly started engine the project, once per engine. After a switch of SoundFont,
     /// a notice says which plays now and how the project's kit plays in it.
-    fn new_engine(&mut self, engine: &Engine) {
+    fn new_engine(&mut self, engine: &mut Engine) {
         let generation = self.bank.generation();
         if generation == self.bank_generation {
             return;
         }
+        // A new engine starts at full volume, not the chosen one.
+        engine.set_volume(volume_gain(self.volume));
         let first = self.bank_generation == 0;
         self.bank_generation = generation;
         self.bank_kits = engine.kits().to_vec();
@@ -2469,6 +2484,22 @@ fn scaled(velocity: u8, percent: u8) -> u8 {
         return 0;
     }
     ((u32::from(velocity) * u32::from(percent)).div_ceil(100)).clamp(1, 127) as u8
+}
+
+/// The engine gain for the sound volume slider in percent: its square, so 50% is about -12 dB
+/// and sounds about half as loud, as the row sliders do (see "Row gain" in the dm-audio crate).
+fn volume_gain(percent: u8) -> f32 {
+    let fraction = f32::from(percent.min(100)) / 100.0;
+    fraction * fraction
+}
+
+#[cfg(test)]
+#[test]
+fn the_volume_slider_maps_to_its_square() {
+    assert_eq!(volume_gain(100), 1.0);
+    assert_eq!(volume_gain(50), 0.25);
+    assert_eq!(volume_gain(0), 0.0);
+    assert_eq!(volume_gain(250), 1.0);
 }
 
 /// A button that shows whether it is on. Unlike egui's selectable button it always draws its

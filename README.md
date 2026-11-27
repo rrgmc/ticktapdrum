@@ -22,7 +22,7 @@ at that moment. It runs on Windows, macOS, Linux, Android, iPhone and iPad.
   such as A A B A.
 - **Kits.** Choose a drum kit, such as Standard, Room, TR-808, TR-909, Jazz or Brush, from 63 kits.
 - **Your own sound.** Set the tempo and swing. Each row has its own volume, mute and solo. Steps can
-  be loud or soft.
+  be loud or soft. **☰ > Settings > Volume** sets how loud the whole app plays.
 - **Undo and redo** for every change. The app saves your project as you work, so nothing is lost
   if it closes.
 - **Export** a MIDI file for other music software, or a WAV file to listen to anywhere.

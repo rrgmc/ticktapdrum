@@ -34,6 +34,9 @@ menu-landscape = Manter na horizontal
 menu-key-names = Notas do teclado
 menu-key-names-tip = Com a entrada MIDI ligada, mostra ao lado de cada peça a nota do teclado que a toca.
 menu-bar-line = Mostrar compassos abaixo dos botões
+# O controle de volume do som do próprio app nos Ajustes, e a linha abaixo dele enquanto a saída MIDI toca no lugar.
+menu-sound-volume = Volume
+menu-sound-volume-midi = A bateria toca na saída MIDI. O volume dela fica na janela da saída MIDI.
 menu-language = Idioma
 menu-sound-bank = Banco de sons
 menu-sound-bank-choice = Banco de sons: { $bank }
