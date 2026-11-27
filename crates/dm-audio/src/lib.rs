@@ -142,6 +142,15 @@
 //!
 //! A gain change counts from the next step that fires. Notes already sounding are not changed.
 //!
+//! # Volume
+//!
+//! [`Engine::set_volume`] sets a gain from 0.0 to 1.0, 1.0 by default, that scales every sample
+//! the engine outputs: after the synthesizer and the fade of [`Engine::silence`], before the
+//! device. Unlike row gain it scales the sound, not the velocity, so a bank with velocity layers
+//! plays the same samples at every volume. A new gain is reached over one block, by a linear ramp
+//! from the old one, so moving a slider does not click. It does not apply to MIDI out (see
+//! [`Engine::set_midi_volume`]) or to offline rendering, which has no command for it.
+//!
 //! # Kits
 //!
 //! A kit is a preset in the percussion bank of the SoundFont, which is bank 128 in rustysynth's
@@ -552,6 +561,10 @@ enum Command {
     SetMidiVolume {
         volume: u8,
     },
+    /// The gain of the whole output, 0.0..=1.0.
+    SetVolume {
+        gain: f32,
+    },
     /// Stops the preview if it plays, and clears all its hits.
     ClearPreview,
     /// One hit of the preview. Of two hits on the same step and key, the louder one counts.
@@ -935,6 +948,15 @@ enum Mode {
 /// The velocities of one pattern: `[row][step]`.
 type PatternSteps = [[u8; MAX_STEPS]; MAX_ROWS];
 
+/// `gain` clamped to 0.0..=1.0, with NaN as 1.0.
+fn clamp_gain(gain: f32) -> f32 {
+    if gain.is_nan() {
+        1.0
+    } else {
+        gain.clamp(0.0, 1.0)
+    }
+}
+
 /// The velocity a step of `velocity` plays at in a row of `gain`, clamped to 0.0..=1.0. Zero
 /// means the note is not played. The crate documentation explains why the scaling is linear.
 fn scaled_velocity(velocity: u8, gain: f32) -> u8 {
@@ -1227,6 +1249,7 @@ impl Sequencer {
             | Command::ProgramChange { .. }
             | Command::SetMidiOut { .. }
             | Command::SetMidiVolume { .. }
+            | Command::SetVolume { .. }
             | Command::Silence => {
                 // The renderer applies these; they do not touch the sequencer.
             }
@@ -1421,6 +1444,10 @@ pub(crate) struct Renderer {
     fade_left: u64,
     /// The length of a whole fade in frames, at least 1.
     fade_frames: u64,
+    /// The output gain set by [`Command::SetVolume`], 0.0..=1.0.
+    volume: f32,
+    /// The output gain at the end of the last block. The next block ramps from it to `volume`.
+    volume_reached: f32,
     /// For each key, the frame at which MIDI out's note-off is due, or `NO_NOTE_OFF`. Kept apart
     /// from `note_off_at` because MIDI notes end much sooner; see [`MIDI_NOTE_SECONDS`].
     midi_off_at: [u64; 128],
@@ -1494,6 +1521,8 @@ impl Renderer {
             ring_frames: (RING_SECONDS * sample_rate as f32) as u64,
             fade_left: 0,
             fade_frames: ((SILENCE_SECONDS * sample_rate as f32) as u64).max(1),
+            volume: 1.0,
+            volume_reached: 1.0,
             midi_off_at: [NO_NOTE_OFF; 128],
             midi_note_frames: (MIDI_NOTE_SECONDS * sample_rate as f32) as u64,
             sample_rate: f64::from(sample_rate),
@@ -1657,6 +1686,7 @@ impl Renderer {
         if self.fade_left > 0 {
             self.fade_block();
         }
+        self.volume_block();
         if self.midi_out {
             // The synthesizer keeps running so its state stays the same as with sound, but the
             // MIDI device plays the notes instead.
@@ -1770,8 +1800,26 @@ impl Renderer {
                     3,
                 );
             }
+            Command::SetVolume { gain } => self.volume = clamp_gain(gain),
             other => self.sequencer.apply(other, self.clock),
         }
+    }
+
+    /// Scales the block just rendered by the output volume, ramping linearly from the gain the
+    /// last block ended on to the one set now. Does nothing at full volume.
+    fn volume_block(&mut self) {
+        let from = self.volume_reached;
+        let to = self.volume;
+        if from == 1.0 && to == 1.0 {
+            return;
+        }
+        let frames = self.left.len() as f32;
+        for (i, (l, r)) in self.left.iter_mut().zip(self.right.iter_mut()).enumerate() {
+            let gain = from + (to - from) * ((i + 1) as f32 / frames);
+            *l *= gain;
+            *r *= gain;
+        }
+        self.volume_reached = to;
     }
 
     /// Starts a fade of every sound still ringing, unless one already runs, and sends MIDI out's
@@ -2006,6 +2054,15 @@ impl Engine {
     pub fn set_midi_volume(&mut self, volume: u8) {
         self.commands.send(Command::SetMidiVolume {
             volume: volume.min(127),
+        });
+    }
+
+    /// Sets the gain of everything the engine plays, 0.0..=1.0 (see "Volume" in the crate
+    /// documentation). It scales the sound, not the velocities, and is reached over one block.
+    /// A new engine starts at 1.0.
+    pub fn set_volume(&mut self, gain: f32) {
+        self.commands.send(Command::SetVolume {
+            gain: clamp_gain(gain),
         });
     }
 
@@ -4272,6 +4329,49 @@ mod tests {
         renderer.render(&mut out, 2);
         assert!(energy(&loud) > 1e-3);
         assert_eq!(out, loud);
+    }
+
+    #[test]
+    fn the_volume_scales_the_output_after_a_ramp() {
+        let font = soundfont_or_skip!();
+        let full = {
+            let (mut commands, mut renderer, _events) = midi_renderer(&font, 36);
+            commands.hit(38, 100);
+            let mut out = vec![0.0_f32; 2 * 6000];
+            renderer.render(&mut out, 2);
+            out
+        };
+        let (mut commands, mut renderer, _events) = midi_renderer(&font, 36);
+        commands.send(Command::SetVolume { gain: 0.25 });
+        commands.hit(38, 100);
+        let mut out = vec![0.0_f32; 2 * 6000];
+        renderer.render(&mut out, 2);
+        let block = renderer.left.len();
+        assert!(energy(&full) > 1e-3);
+        // After the first block, every sample is the full one times the gain.
+        for (quiet, loud) in out[2 * block..].iter().zip(&full[2 * block..]) {
+            assert!((quiet - loud * 0.25).abs() < 1e-6);
+        }
+        // During the first block the gain falls from 1.0 to 0.25 and never jumps.
+        for frame in 0..block {
+            let gain = 1.0 - 0.75 * ((frame + 1) as f32 / block as f32);
+            assert!((out[2 * frame] - full[2 * frame] * gain).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn volume_zero_is_silence_and_nan_is_full() {
+        let font = soundfont_or_skip!();
+        let (mut commands, mut renderer, _events) = midi_renderer(&font, 36);
+        commands.send(Command::SetVolume { gain: 0.0 });
+        let mut out = vec![0.0_f32; 2 * 640];
+        renderer.render(&mut out, 2);
+        commands.hit(38, 100);
+        renderer.render(&mut out, 2);
+        assert_eq!(energy(&out), 0.0);
+        assert_eq!(clamp_gain(f32::NAN), 1.0);
+        assert_eq!(clamp_gain(2.0), 1.0);
+        assert_eq!(clamp_gain(-1.0), 0.0);
     }
 
     #[test]
