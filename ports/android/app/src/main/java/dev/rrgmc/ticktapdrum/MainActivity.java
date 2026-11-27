@@ -3,6 +3,7 @@ package dev.rrgmc.ticktapdrum;
 import android.app.NativeActivity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -102,6 +103,9 @@ public class MainActivity extends NativeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // The volume keys set the media volume the drums play at, even while the app is silent,
+        // instead of the ringer.
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
         // A saved state means Android restarted the activity, and its intent was handled before.
         if (savedInstanceState == null) {
             handleShare(getIntent());
